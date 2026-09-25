@@ -1,4 +1,8 @@
-"""Network measures on a public social graph. Nothing here prints."""
+"""Network measures on a public social graph.
+
+The score functions do not print. ``cross_reference`` is the exception:
+it prints which community the top hubs fall in.
+"""
 
 from __future__ import annotations
 
@@ -61,3 +65,156 @@ def leiden_communities(G: nx.Graph, weight: str = "weight") -> dict[Any, int]:
     for index, community in enumerate(partition.membership):
         groups.setdefault(community, set()).add(names[index])
     return _community_index(list(groups.values()))
+
+
+# Girvan-Newman removes the highest-betweenness edge over and over.
+# That is O(m^2 n), so a few thousand nodes is already too slow to finish.
+GIRVAN_NEWMAN_NODE_LIMIT = 1000
+# Stop after this many splits and keep the split with the best modularity.
+GIRVAN_NEWMAN_MAX_ITER = 20
+
+
+def _ranks(scores: dict[Any, float]) -> tuple[dict[Any, int], list[Any]]:
+    # Highest score is rank 1. Equal scores break ties by node text so the
+    # order does not change between runs.
+    ordered = sorted(scores, key=lambda node: (-scores[node], str(node)))
+    return {node: index for index, node in enumerate(ordered, start=1)}, ordered
+
+
+def compare_centralities(G: nx.Graph) -> dict[str, Any]:
+    """Run several centrality measures and rank every node in each one.
+
+    The result is a dict of columns, like a table: ``rank`` maps each node
+    to its 1-based place in every measure, and ``order`` lists nodes from
+    strongest to weakest for that measure.
+    """
+    measures = {
+        "degree": degree_centrality(G),
+        # Weight is the edge attribute. NetworkX treats it as path length.
+        "betweenness": betweenness_centrality(G, weight="weight"),
+        "closeness": _by_score(nx.closeness_centrality(G)),
+        "pagerank": pagerank(G, weight="weight"),
+    }
+    try:
+        # NumPy solver. It can fail on a graph that is not a single component.
+        measures["eigenvector"] = _by_score(nx.eigenvector_centrality_numpy(G, weight="weight"))
+    except Exception as error:  # noqa: BLE001 - report the failure instead of inventing scores
+        measures["eigenvector"] = {}
+        eigenvector_error = f"{type(error).__name__}: {error}"
+    else:
+        eigenvector_error = None
+
+    rank: dict[Any, dict[str, int | None]] = {node: {} for node in G.nodes}
+    order: dict[str, list[Any]] = {}
+    for name, scores in measures.items():
+        places, ordered = _ranks(scores) if scores else ({}, [])
+        order[name] = ordered
+        for node in rank:
+            rank[node][name] = places.get(node)
+    return {
+        "columns": list(measures),
+        "rank": rank,
+        "order": order,
+        "eigenvector_error": eigenvector_error,
+    }
+
+
+def _partition_record(G: nx.Graph, assignment: dict[Any, int], weight: str = "weight") -> dict[str, Any]:
+    grouped: dict[int, set[Any]] = {}
+    for node, community in assignment.items():
+        grouped.setdefault(community, set()).add(node)
+    groups = list(grouped.values())
+    return {
+        "skipped": False,
+        "count": len(groups),
+        "modularity": float(nx.community.modularity(G, groups, weight=weight)) if groups else 0.0,
+        "assignment": assignment,
+    }
+
+
+def _girvan_newman(G: nx.Graph, weight: str = "weight") -> dict[str, Any]:
+    node_count = G.number_of_nodes()
+    if node_count > GIRVAN_NEWMAN_NODE_LIMIT:
+        return {
+            "skipped": True,
+            "count": None,
+            "modularity": None,
+            "assignment": {},
+            "message": (
+                f"Girvan-Newman skipped: this graph has {node_count} nodes. "
+                f"It is O(m^2 n), so it only runs on graphs of at most {GIRVAN_NEWMAN_NODE_LIMIT} nodes."
+            ),
+        }
+    # Each step yields a finer split. We keep only the first few and choose
+    # the one with the highest modularity.
+    best_groups: list[set[Any]] | None = None
+    best_score = float("-inf")
+    for index, communities in enumerate(nx.community.girvan_newman(G)):
+        if index >= GIRVAN_NEWMAN_MAX_ITER:
+            break
+        groups = [set(community) for community in communities]
+        score = nx.community.modularity(G, groups, weight=weight)
+        if score > best_score:
+            best_score = score
+            best_groups = groups
+    if not best_groups:
+        best_groups = [{node} for node in G.nodes]
+    return _partition_record(G, _community_index(best_groups), weight)
+
+
+def compare_communities(G: nx.Graph) -> dict[str, Any]:
+    """Compare Louvain, Leiden, and Girvan-Newman on one graph.
+
+    Girvan-Newman is skipped, with a message, when the graph has more than
+    1000 nodes. On smaller graphs it stops after ``GIRVAN_NEWMAN_MAX_ITER``
+    splits.
+    """
+    return {
+        "louvain": _partition_record(G, louvain_communities(G)),
+        "leiden": _partition_record(G, leiden_communities(G)),
+        "girvan_newman": _girvan_newman(G),
+    }
+
+
+def cross_reference(
+    G: nx.Graph,
+    communities: dict[str, Any],
+    centralities: dict[str, Any],
+    top_n: int = 10,
+) -> list[Any]:
+    """Print the community of each top hub, then say if those hubs share one community."""
+    del G  # The rankings and partitions already describe the graph.
+    seen: set[Any] = set()
+    hubs: list[Any] = []
+    for ordered in centralities["order"].values():
+        for node in ordered[:top_n]:
+            if node not in seen:
+                seen.add(node)
+                hubs.append(node)
+
+    print("COMMUNITY ASSIGNMENT OF TOP HUBS:")
+    print("Node | Louvain | Leiden | Girvan-Newman")
+    for node in hubs:
+        cells = [str(node)]
+        for name in ("louvain", "leiden", "girvan_newman"):
+            block = communities[name]
+            if block.get("skipped"):
+                cells.append("skipped")
+            else:
+                cells.append(str(block["assignment"].get(node, "")))
+        print(" | ".join(cells))
+
+    for name in ("louvain", "leiden", "girvan_newman"):
+        block = communities[name]
+        if block.get("skipped"):
+            print(block["message"])
+            continue
+        # One id means the hubs sit together. Several ids means they bridge groups.
+        ids = {block["assignment"][node] for node in hubs if node in block["assignment"]}
+        label = name.replace("_", "-")
+        if len(ids) <= 1:
+            only = next(iter(ids), None)
+            print(f"Top hubs are concentrated in one {label} community: {only}.")
+        else:
+            print(f"Top hubs span {len(ids)} {label} communities: {sorted(ids)}.")
+    return hubs

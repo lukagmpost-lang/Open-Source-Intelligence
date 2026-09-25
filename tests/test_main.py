@@ -47,6 +47,16 @@ def test_snap_source_uses_the_loader(monkeypatch, tmp_path, capsys):
     assert "Louvain communities:" in capsys.readouterr().out
 
 
+def test_compare_flag_prints_the_centrality_table(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(main, "fetch_github_graph", lambda username: _tiny_graph())
+    main.main(
+        ["--username", "octocat", "--analyze", "communities", "--compare", "centrality", "--out", str(tmp_path / "g.json")]
+    )
+    output = capsys.readouterr().out
+    assert "TOP NODES BY EACH CENTRALITY MEASURE:" in output
+    assert "Rank | Degree | Betweenness | Closeness | PageRank" in output
+
+
 def test_github_requires_username():
     try:
         main.main(["--source", "github", "--analyze", "communities"])
