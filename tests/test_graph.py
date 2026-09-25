@@ -75,7 +75,11 @@ class _FakeHandler(Handler):
 
 
 def test_github_fetch_caps_pages_and_marks_mutuals(monkeypatch):
+    import networkx as nx
+
     from osi.connectors import github
+    from osi.github_graph import fetch_github_graph
+    from osi.graph import fetch_github_graph as exposed
 
     calls = []
 
@@ -89,7 +93,12 @@ def test_github_fetch_caps_pages_and_marks_mutuals(monkeypatch):
             return [{"login": "grace"}] if "page=1" in url else []
         raise AssertionError(url)
 
-    monkeypatch.setattr(github, "get_json", fake_get)
+    monkeypatch.setattr("osi.github_graph.get_json", fake_get)
+    nx_graph = fetch_github_graph("octocat")
+    assert isinstance(nx_graph, nx.Graph)
+    assert exposed is fetch_github_graph
+    assert nx_graph.edges["octocat", "grace"]["relation"] == "mutual"
+    assert nx_graph.edges["octocat", "ada"]["direction"] == "follower"
     graph = github.fetch_github("octocat")
     layers = {(edge.source, edge.target, edge.layer) for edge in graph.edges}
     assert ("github:octocat", "github:grace", "mutual") in layers

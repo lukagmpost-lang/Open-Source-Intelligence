@@ -1,4 +1,8 @@
-"""Weighted multi-layer graph of public social relations."""
+"""Weighted multi-layer graph of public social relations.
+
+``fetch_github_graph`` is the importable NetworkX builder. The script
+``python -m osi.github_graph USERNAME`` uses the same function.
+"""
 
 from __future__ import annotations
 
@@ -144,3 +148,6 @@ class Graph:
             right = graph.add_node(link["same_platform"], link["same_account_id"], link.get("same_label"))
             graph.add_edge(left.id, right.id, "same_as", 1.0, {"asserted_by": "input"})
         return graph
+
+
+from osi.github_graph import fetch_github_graph as fetch_github_graph  # noqa: E402

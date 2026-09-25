@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Multi-layer social graph built from official public APIs and files you supply."
 readme = "README.md"
 requires-python = ">=3.11"
+dependencies = ["networkx>=3.2"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
