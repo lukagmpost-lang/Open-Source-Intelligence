@@ -57,6 +57,12 @@ def test_compare_flag_prints_the_centrality_table(monkeypatch, tmp_path, capsys)
     assert "Rank | Degree | Betweenness | Closeness | PageRank" in output
 
 
+def test_reddit_source_uses_the_user_layer(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(main, "load_reddit_layers", lambda: {"reddit_user": _tiny_graph(), "reddit_subreddit": _tiny_graph()})
+    main.main(["--source", "reddit", "--analyze", "communities", "--out", str(tmp_path / "g.json")])
+    assert "Louvain communities:" in capsys.readouterr().out
+
+
 def test_plot_flag_writes_graph_png(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(main, "fetch_github_graph", lambda username: _tiny_graph())
     monkeypatch.chdir(tmp_path)

@@ -10,6 +10,7 @@ from pathlib import Path
 import networkx as nx
 
 ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
 from osi.analysis import (  # noqa: E402
@@ -22,13 +23,14 @@ from osi.analysis import (  # noqa: E402
     louvain_communities,
     pagerank,
 )
+from layers.reddit_archive import load_reddit_layers  # noqa: E402
 from osi.datasets import load_snap_facebook  # noqa: E402
 from osi.graph import fetch_github_graph  # noqa: E402
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build a public social graph and analyze it.")
-    parser.add_argument("--source", choices=("github", "snap_facebook"), default="github")
+    parser.add_argument("--source", choices=("github", "snap_facebook", "reddit"), default="github")
     parser.add_argument("--username", help="Public GitHub login. Required when --source is github.")
     parser.add_argument("--analyze", choices=("all", "centrality", "communities"), default="all")
     parser.add_argument(
@@ -48,6 +50,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def build_graph(args: argparse.Namespace) -> nx.Graph:
     if args.source == "snap_facebook":
         return load_snap_facebook()
+    if args.source == "reddit":
+        # The user co-participation layer is the graph the report and the plot use.
+        return load_reddit_layers()["reddit_user"]
     return fetch_github_graph(args.username)
 
 
