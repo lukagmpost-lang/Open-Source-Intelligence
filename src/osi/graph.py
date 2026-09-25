@@ -50,6 +50,9 @@ class Graph:
     def __init__(self) -> None:
         self.nodes: dict[str, Node] = {}
         self.edges: list[Edge] = []
+        # Lookup by layer and unordered endpoints. Scanning the edge list is
+        # too slow once a month has hundreds of thousands of relations.
+        self._edge_index: dict[tuple[str, str, str], Edge] = {}
 
     def add_node(
         self,
@@ -92,14 +95,16 @@ class Graph:
         weight = float(weight)
         if weight <= 0:
             return None
-        for edge in self.edges:
-            if edge.layer == layer and {edge.source, edge.target} == {source, target}:
-                edge.weight += weight
-                if meta:
-                    edge.meta.update(meta)
-                return edge
+        left, right = (source, target) if source <= target else (target, source)
+        existing = self._edge_index.get((layer, left, right))
+        if existing is not None:
+            existing.weight += weight
+            if meta:
+                existing.meta.update(meta)
+            return existing
         edge = Edge(source=source, target=target, layer=layer, weight=weight, meta=dict(meta or {}))
         self.edges.append(edge)
+        self._edge_index[(layer, left, right)] = edge
         return edge
 
     def merge(self, other: Graph) -> None:
