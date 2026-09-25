@@ -1,10 +1,32 @@
 import json
 
+import networkx as nx
+
 from osi.analyze import bridges, communities
+from osi.graph import build_supra_graph
 from osi.app import Handler, analyze_graph
 from osi.connectors.telegram import gifts_to_graph
 from osi.graph import Graph
 from osi.sample import sample_graph
+
+
+def test_build_supra_graph_rewrites_people_and_ties_layers():
+    github = nx.Graph()
+    github.add_edge("ada", "grace", weight=2.0)
+    reddit = nx.Graph()
+    reddit.add_edge("ada_r", "linus_r", weight=1.0)
+    merged = build_supra_graph(
+        {"github": github, "reddit": reddit},
+        {"person_a": {"github": "ada", "reddit": "ada_r"}},
+        interlayer_weight=0.5,
+    )
+    assert merged.nodes["person_a|github"]["person"] == "person_a"
+    assert merged.nodes["github:grace"]["person"] is None
+    assert merged.edges["person_a|github", "github:grace"]["weight"] == 2.0
+    assert merged.edges["person_a|github", "github:grace"]["kind"] == "intralayer"
+    assert merged.edges["person_a|github", "person_a|reddit"]["weight"] == 0.5
+    assert merged.edges["person_a|github", "person_a|reddit"]["kind"] == "interlayer"
+    assert "reddit:ada_r" not in merged
 
 
 def test_sample_has_two_communities_and_a_bridge():

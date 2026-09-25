@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Iterable
 
+import networkx as nx
+
 
 def node_id(platform: str, account_id: str) -> str:
     platform = platform.strip().lower()
@@ -148,6 +150,69 @@ class Graph:
             right = graph.add_node(link["same_platform"], link["same_account_id"], link.get("same_label"))
             graph.add_edge(left.id, right.id, "same_as", 1.0, {"asserted_by": "input"})
         return graph
+
+
+# Multislice / identity interlayer ties.
+# Each layer stays its own slice. Accounts listed in identity_map are
+# rewritten to a canonical person id, but the layer is kept on the node so
+# the person is not collapsed into one vertex. The same person is then tied
+# across slices with an interlayer edge of interlayer_weight. That is the
+# supra-graph: intralayer edges plus identity coupling between layers.
+def build_supra_graph(
+    layers: dict[str, nx.Graph],
+    identity_map: dict[str, dict[str, str]],
+    interlayer_weight: float = 1.0,
+) -> nx.Graph:
+    handle_to_person: dict[tuple[str, str], str] = {}
+    for person, accounts in identity_map.items():
+        for layer, handle in accounts.items():
+            handle_to_person[(layer, str(handle))] = person
+
+    merged = nx.Graph()
+    for layer, graph in layers.items():
+        for node, data in graph.nodes(data=True):
+            account = str(node)
+            person = handle_to_person.get((layer, account))
+            supra_id = f"{person}|{layer}" if person is not None else f"{layer}:{account}"
+            attrs = dict(data)
+            attrs.update({"layer": layer, "account": account, "person": person})
+            merged.add_node(supra_id, **attrs)
+        for left, right, data in graph.edges(data=True):
+            left_id = _supra_id(layer, left, handle_to_person)
+            right_id = _supra_id(layer, right, handle_to_person)
+            if left_id == right_id:
+                continue
+            attrs = dict(data)
+            attrs["weight"] = float(attrs.get("weight", 1.0))
+            attrs["kind"] = "intralayer"
+            attrs["layer"] = layer
+            merged.add_edge(left_id, right_id, **attrs)
+
+    by_person: dict[str, list[str]] = {}
+    for node, data in merged.nodes(data=True):
+        person = data.get("person")
+        if person is not None:
+            by_person.setdefault(person, []).append(node)
+    for person, nodes in by_person.items():
+        ordered = sorted(nodes)
+        for index, left in enumerate(ordered):
+            for right in ordered[index + 1 :]:
+                merged.add_edge(
+                    left,
+                    right,
+                    weight=float(interlayer_weight),
+                    kind="interlayer",
+                    person=person,
+                )
+    return merged
+
+
+def _supra_id(layer: str, node: Any, handle_to_person: dict[tuple[str, str], str]) -> str:
+    account = str(node)
+    person = handle_to_person.get((layer, account))
+    if person is None:
+        return f"{layer}:{account}"
+    return f"{person}|{layer}"
 
 
 from osi.github_graph import fetch_github_graph as fetch_github_graph  # noqa: E402
