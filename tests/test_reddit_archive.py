@@ -36,6 +36,16 @@ def test_subreddit_edges_count_shared_users():
     assert graph.number_of_nodes() == 2
 
 
+def test_2012_layer_names_do_not_replace_2008():
+    comments = _comments()
+    users = user_co_participation(comments, layer="reddit_2012_user")
+    topics = subreddit_similarity(comments, layer="reddit_2012_subreddit")
+    merged = as_multilayer(users, topics, user_layer="reddit_2012_user", subreddit_layer="reddit_2012_subreddit")
+    assert "reddit_2012_user" in merged.layers()
+    assert "reddit_user" not in merged.layers()
+    assert users.nodes["ada"]["layer"] == "reddit_2012_user"
+
+
 def test_layers_plug_into_the_multilayer_graph_and_louvain():
     comments = _comments()
     users = user_co_participation(comments)
