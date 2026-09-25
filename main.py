@@ -14,18 +14,35 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
 from osi.analysis import (  # noqa: E402
+    adamic_adar,
     betweenness_centrality,
     compare_centralities,
     compare_communities,
+    cpm_communities,
     cross_reference,
     degree_centrality,
+    jaccard,
     leiden_communities,
     louvain_communities,
     pagerank,
+    preferential_attachment,
+    print_cpm_summary,
 )
+from viz.interactive import to_interactive_html  # noqa: E402
 from layers.reddit_archive import load_reddit_layers  # noqa: E402
 from osi.datasets import load_snap_facebook  # noqa: E402
 from osi.graph import fetch_github_graph  # noqa: E402
+
+
+def _parse_top(value: str) -> int:
+    text = value.strip().removeprefix("top=")
+    try:
+        number = int(text)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("use top=N") from error
+    if number < 1:
+        raise argparse.ArgumentTypeError("top must be at least 1")
+    return number
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -41,6 +58,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--out", default="graph.json", help="Node-link JSON output path.")
     # Draw graph.png after the text report. Off unless this flag is present.
     parser.add_argument("--plot", action="store_true", help="Save graph.png after the analysis.")
+    # Value is top=N, for example --link-predict top=10.
+    parser.add_argument("--link-predict", type=_parse_top, metavar="top=N")
+    parser.add_argument("--cpm", action="store_true", help="Print overlapping k-clique communities.")
+    parser.add_argument("--interactive", action="store_true", help="Save graph.html.")
     args = parser.parse_args(argv)
     if args.source == "github" and not args.username:
         parser.error("--username is required when --source is github")
@@ -180,6 +201,30 @@ def save_plot(graph: nx.Graph, path: str = "graph.png") -> None:
     print("Saved graph.png")
 
 
+def print_link_predictions(graph: nx.Graph, top_n: int) -> None:
+    """Print the strongest predicted links and whether each pair shares a Louvain community."""
+    print(f"link-predict before: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges")
+    communities = louvain_communities(graph)
+    # Score one method at a time. Holding every method's pair list at once
+    # does not fit when tens of millions of pairs share a neighbor.
+    for name, scorer in (
+        ("adamic_adar", adamic_adar),
+        ("jaccard", jaccard),
+        ("preferential_attachment", preferential_attachment),
+    ):
+        rows = scorer(graph)
+        print(name)
+        for left, right, score in rows[:top_n]:
+            left_community = communities.get(left)
+            right_community = communities.get(right)
+            shared = left_community == right_community
+            print(
+                f"{score:.6f} {left} community {left_community} "
+                f"{right} community {right_community} shared={shared}"
+            )
+    print(f"link-predict after: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges")
+
+
 def write_graph(graph: nx.Graph, path: str) -> None:
     payload = nx.node_link_data(graph, edges="links")
     Path(path).write_text(json.dumps(payload), encoding="utf-8")
@@ -198,6 +243,14 @@ def main(argv: list[str] | None = None) -> int:
     # Plot last so "Saved graph.png" is the final line of the run.
     if args.plot:
         save_plot(graph)
+    if args.link_predict:
+        print_link_predictions(graph, args.link_predict)
+    if args.cpm:
+        print(f"cpm before: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges")
+        print_cpm_summary(cpm_communities(graph))
+        print(f"cpm after: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges")
+    if args.interactive:
+        to_interactive_html(graph)
     return 0
 
 

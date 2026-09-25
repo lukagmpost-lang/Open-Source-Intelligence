@@ -57,6 +57,16 @@ def test_compare_flag_prints_the_centrality_table(monkeypatch, tmp_path, capsys)
     assert "Rank | Degree | Betweenness | Closeness | PageRank" in output
 
 
+def test_link_predict_flag_prints_shared_community(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(main, "fetch_github_graph", lambda username: _tiny_graph())
+    main.main(
+        ["--username", "octocat", "--analyze", "communities", "--link-predict", "top=2", "--out", str(tmp_path / "g.json")]
+    )
+    output = capsys.readouterr().out
+    assert "adamic_adar" in output
+    assert "shared=" in output
+
+
 def test_reddit_source_uses_the_user_layer(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(main, "load_reddit_layers", lambda: {"reddit_user": _tiny_graph(), "reddit_subreddit": _tiny_graph()})
     main.main(["--source", "reddit", "--analyze", "communities", "--out", str(tmp_path / "g.json")])

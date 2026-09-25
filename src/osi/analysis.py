@@ -218,3 +218,101 @@ def cross_reference(
         else:
             print(f"Top hubs span {len(ids)} {label} communities: {sorted(ids)}.")
     return hubs
+
+
+def _graph_counts(G: nx.Graph, label: str) -> None:
+    print(f"{label}: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
+
+
+def _predicted_pairs(G: nx.Graph) -> list[tuple[Any, Any]] | None:
+    """Pairs to score. None means every missing pair, which only fits a small graph."""
+    missing = G.number_of_nodes() * (G.number_of_nodes() - 1) // 2 - G.number_of_edges()
+    # A few million missing pairs can be listed. The 2012 user graph has about 1.5 billion.
+    if missing <= 2_000_000:
+        return None
+    seen: set[tuple[Any, Any]] = set()
+    pairs: list[tuple[Any, Any]] = []
+    for node in G:
+        neighbors = set(G[node])
+        for neighbor in neighbors:
+            for other in G[neighbor]:
+                if other == node or other in neighbors:
+                    continue
+                # One undirected pair, stored in a stable order.
+                pair = (node, other) if str(node) <= str(other) else (other, node)
+                if pair in seen:
+                    continue
+                seen.add(pair)
+                pairs.append(pair)
+    print(
+        f"link candidates: {len(pairs)} pairs that share a neighbor "
+        f"(not all {missing} missing pairs)"
+    )
+    return pairs
+
+
+def _sorted_predictions(rows) -> list[tuple[Any, Any, float]]:
+    return sorted(rows, key=lambda item: (-item[2], str(item[0]), str(item[1])))
+
+
+def adamic_adar(G: nx.Graph) -> list[tuple[Any, Any, float]]:
+    """Score missing edges by how rare the shared neighbors are."""
+    _graph_counts(G, "adamic_adar before")
+    pairs = _predicted_pairs(G)
+    # NetworkX scores every missing pair when ebunch is omitted.
+    scored = nx.adamic_adar_index(G, ebunch=pairs)
+    ranked = _sorted_predictions(scored)
+    _graph_counts(G, "adamic_adar after")
+    return ranked
+
+
+def jaccard(G: nx.Graph) -> list[tuple[Any, Any, float]]:
+    """Score missing edges by the share of neighbors two accounts have in common."""
+    _graph_counts(G, "jaccard before")
+    pairs = _predicted_pairs(G)
+    scored = nx.jaccard_coefficient(G, ebunch=pairs)
+    ranked = _sorted_predictions(scored)
+    _graph_counts(G, "jaccard after")
+    return ranked
+
+
+def preferential_attachment(G: nx.Graph) -> list[tuple[Any, Any, float]]:
+    """Score missing edges by the product of the two degrees."""
+    _graph_counts(G, "preferential_attachment before")
+    pairs = _predicted_pairs(G)
+    scored = nx.preferential_attachment(G, ebunch=pairs)
+    ranked = _sorted_predictions(scored)
+    _graph_counts(G, "preferential_attachment after")
+    return ranked
+
+
+def cpm_communities(G: nx.Graph, k: int = 3) -> dict[Any, list[int]]:
+    """Clique percolation. A node can sit in more than one community."""
+    _graph_counts(G, "cpm before")
+    membership: dict[Any, list[int]] = {node: [] for node in G.nodes}
+    # Each yielded set is one k-clique community. They are allowed to overlap.
+    for index, community in enumerate(nx.community.k_clique_communities(G, k)):
+        for node in community:
+            membership[node].append(index)
+    _graph_counts(G, "cpm after")
+    return membership
+
+
+def print_cpm_summary(membership: dict[Any, list[int]]) -> None:
+    """Count nodes by how many communities they belong to, then list the most overlapped."""
+    buckets = {1: 0, 2: 0, "3+": 0}
+    for communities in membership.values():
+        count = len(communities)
+        if count == 1:
+            buckets[1] += 1
+        elif count == 2:
+            buckets[2] += 1
+        elif count >= 3:
+            buckets["3+"] += 1
+    print(f"nodes in 1 community: {buckets[1]}")
+    print(f"nodes in 2 communities: {buckets[2]}")
+    print(f"nodes in 3+ communities: {buckets['3+']}")
+    ranked = sorted(membership, key=lambda node: (-len(membership[node]), str(node)))
+    print("top 20 nodes by overlapping communities:")
+    for node in ranked[:20]:
+        print(f"{node} {len(membership[node])}")

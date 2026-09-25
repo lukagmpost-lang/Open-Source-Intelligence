@@ -11,3 +11,5 @@ python-louvain
 # Read one month of Arctic Shift Parquet without loading the whole archive.
 pandas
 pyarrow
+# Standalone force-directed HTML. in_line resources need no extra download at view time.
+pyvis

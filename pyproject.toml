@@ -12,6 +12,7 @@ dependencies = [
     "python-louvain",
     "pandas",
     "pyarrow",
+    "pyvis",
 ]
 
 [tool.pytest.ini_options]
