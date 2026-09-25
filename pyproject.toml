@@ -10,6 +10,8 @@ dependencies = [
     "matplotlib",
     "leidenalg",
     "python-louvain",
+    "pandas",
+    "pyarrow",
 ]
 
 [tool.pytest.ini_options]

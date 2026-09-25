@@ -152,6 +152,11 @@ class Graph:
         return graph
 
 
+# Same object the rest of the pipeline already uses. The longer name matches
+# the layer loaders, which add one platform per slice.
+MultiLayerGraph = Graph
+
+
 # Multislice / identity interlayer ties.
 # Each layer stays its own slice. Accounts listed in identity_map are
 # rewritten to a canonical person id, but the layer is kept on the node so
