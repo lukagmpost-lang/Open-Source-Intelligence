@@ -57,6 +57,17 @@ def test_compare_flag_prints_the_centrality_table(monkeypatch, tmp_path, capsys)
     assert "Rank | Degree | Betweenness | Closeness | PageRank" in output
 
 
+def test_plot_flag_writes_graph_png(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(main, "fetch_github_graph", lambda username: _tiny_graph())
+    monkeypatch.chdir(tmp_path)
+    main.main(["--username", "octocat", "--analyze", "communities", "--plot", "--out", str(tmp_path / "g.json")])
+    output = capsys.readouterr().out
+    assert output.strip().endswith("Saved graph.png")
+    image = tmp_path / "graph.png"
+    assert image.is_file()
+    assert image.stat().st_size > 1000
+
+
 def test_github_requires_username():
     try:
         main.main(["--source", "github", "--analyze", "communities"])
