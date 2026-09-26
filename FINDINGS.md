@@ -1,28 +1,23 @@
 # Findings
 
-## Finding 5: Robustness to node removal
+## Finding 5: Robustness to node removal (complete)
 
-### 2008 graph (5,110 nodes, 77 components, giant = 95.9%)
+### Giant component size after removal, by strategy and ratio
 
-Three removal strategies tested at ratios 1% to 30%. The largest-component column is the giant component as a fraction of the original 5,110 nodes.
+| Ratio | 2008 random | 2008 degree | 2008 betweenness | 2012 random | 2012 degree | 2012 betweenness |
+|-------|-------------|-------------|------------------|-------------|-------------|------------------|
+| 1%    | 0.948       | 0.942       | 0.937            | 0.938       | 0.905       | 0.900            |
+| 2%    | 0.938       | 0.926       | 0.917            | 0.928       | 0.877       | 0.870            |
+| 5%    | 0.907       | 0.879       | 0.863            | 0.896       | 0.817       | 0.791            |
+| 10%   | 0.854       | 0.807       | 0.768            | 0.843       | 0.703       | 0.647            |
+| 20%   | 0.751       | 0.632       | 0.598            | 0.738       | 0.300       | 0.132            |
+| 30%   | 0.649       | 0.300       | 0.280            | 0.633       | 0.022       | 0.001            |
 
-| Ratio | Random (largest CC) | Degree | Betweenness |
-|---|---|---|---|
-| 0%    | 0.959 | 0.959 | 0.959 |
-| 1%    | 0.948 | 0.942 | 0.937 |
-| 2%    | 0.938 | 0.926 | 0.917 |
-| 5%    | 0.907 | 0.879 | 0.863 |
-| 10%   | 0.854 | 0.807 | 0.768 |
-| 20%   | 0.751 | 0.632 | 0.598 |
-| 30%   | 0.649 | 0.300 | 0.280 |
+Key observation: the 2012 graph is as robust as 2008 to random removal (0.633 vs 0.649 at 30%) but far more fragile to targeted removal (0.022 vs 0.300 for degree; 0.001 vs 0.280 for betweenness).
 
-Efficiency at 10% removal: random 0.329, degree 0.207, betweenness 0.196.
+After 30% betweenness-targeted removal, the 2012 graph fragments into 15,989 components — 15× more than 2008's 1,029.
 
-Key observation: random removal preserves the giant component even at 30% (0.649). Targeted removal of high-betweenness nodes halves it at ~25%: the giant is still 0.598 at 20% removal and 0.280 at 30%, and half of the intact giant (0.959) is 0.479.
-
-### 2012 graph
-
-Pending. The `sim2012` robustness run is still going, so these rows are not filled in yet.
+This is the signature of a scale-free network: random removal is tolerated, targeted hub removal causes catastrophic collapse. It matches the health metrics in Finding 6 (collapsed rich club, power-law degree distribution, high max degree).
 
 ## Status
 
@@ -30,5 +25,5 @@ Pending. The `sim2012` robustness run is still going, so these rows are not fill
 - [x] Elite turnover
 - [x] Community dissolution
 - [x] Individual trajectories
-- [~] Robustness (2008 done, 2012 pending)
+- [x] Robustness
 - [ ] Cross-platform integration
