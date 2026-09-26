@@ -1,4 +1,4 @@
-"""Compare two stored runs on one metric, or on community overlap."""
+"""Compare two stored runs on one metric, or on community containment."""
 
 from __future__ import annotations
 
@@ -12,10 +12,10 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from osi.store import get_run, list_runs, load_communities, load_metrics
 
-# A match has to clear this before it counts as split, merge, or survival.
-_MATCH = 0.3
-# One-to-one overlap has to clear this before the community is called stable.
-_STABLE = 0.7
+# Share of an earlier community sitting inside one later community.
+_TRACE = 0.1
+_SPLIT = 0.2
+_KEEP = 0.5
 
 
 def _print_table(headers: tuple[str, ...], rows: list[tuple]) -> None:
@@ -79,24 +79,22 @@ def _groups(membership: dict) -> dict[int, set]:
     return groups
 
 
-def _jaccard(intersection: int, size_a: int, size_b: int) -> float:
-    union = size_a + size_b - intersection
-    # A community with no members has no overlap with anything.
-    return intersection / union if union else 0.0
+def _containment(intersection: int, size_a: int) -> float:
+    # Denominator is the earlier community, so a large later community is not punished.
+    return intersection / size_a if size_a else 0.0
 
 
-def _classify(best: float, strong: list[int], absorbed: set[int]) -> str:
-    # Split wins over merge: a community that breaks apart is not one stable piece.
-    if not strong:
-        return "DISSOLVED"
-    if len(strong) >= 2:
+def _classify(best: float, over_10: int, over_20: int, absorbs_other: bool) -> str:
+    # Two large pieces beat a merge: the earlier community itself broke apart.
+    if over_20 >= 2:
         return "SPLIT"
-    if strong[0] in absorbed:
+    if best < _TRACE:
+        return "DISSOLVED"
+    if best > _KEEP and absorbs_other:
         return "MERGED"
-    if best > _STABLE:
+    if best > _KEEP and over_10 == 1:
         return "STABLE"
-    # One 2012 community overlaps this one by more than 0.3, but not by more than 0.7.
-    return "below-stable"
+    return "unclassified"
 
 
 def _community_table(run_a: str, run_b: str, algorithm: str) -> int:
@@ -107,7 +105,6 @@ def _community_table(run_a: str, run_b: str, algorithm: str) -> int:
         print(f"{missing} has no {algorithm}")
         return 1
     groups_a = _groups(left)
-    groups_b = _groups(right)
     # Node to its B community, so each A member is counted without scanning every B community.
     home_b = {node: int(community_id) for node, community_id in right.items()}
     overlaps: dict[int, list[tuple[int, float]]] = {}
@@ -115,25 +112,22 @@ def _community_table(run_a: str, run_b: str, algorithm: str) -> int:
         counts: dict[int, int] = {}
         for node in members:
             other = home_b.get(node)
-            # Absent from B: the node stays in the union through size_a and adds no intersection.
+            # Absent from B: counted in the denominator, and in no later community.
             if other is None:
                 continue
             counts[other] = counts.get(other, 0) + 1
-        scored = [
-            (other, _jaccard(count, len(members), len(groups_b[other])))
-            for other, count in counts.items()
-        ]
+        scored = [(other, _containment(count, len(members))) for other, count in counts.items()]
         scored.sort(key=lambda item: (-item[1], item[0]))
         overlaps[community_id] = scored
 
-    # A B community absorbs two A communities when each overlaps it by more than the match cutoff.
+    # Later communities that hold more than 20% of at least two earlier communities.
     absorbed: set[int] = set()
-    partners: dict[int, list[int]] = {}
+    holders: dict[int, list[int]] = {}
     for community_id, scored in overlaps.items():
         for other, score in scored:
-            if score > _MATCH:
-                partners.setdefault(other, []).append(community_id)
-    for other, sources in partners.items():
+            if score > _SPLIT:
+                holders.setdefault(other, []).append(community_id)
+    for other, sources in holders.items():
         if len(sources) >= 2:
             absorbed.add(other)
 
@@ -141,10 +135,29 @@ def _community_table(run_a: str, run_b: str, algorithm: str) -> int:
     for community_id, members in sorted(groups_a.items(), key=lambda item: (-len(item[1]), item[0])):
         scored = overlaps[community_id]
         best_id, best = scored[0] if scored else ("", 0.0)
-        strong = [other for other, score in scored if score > _MATCH]
-        label = _classify(best, strong, absorbed)
-        rows.append((community_id, len(members), best_id, _score(best), label))
-    _print_table(("a_community", "size", "b_community", "overlap", "classification"), rows)
+        over_10 = sum(1 for _other, score in scored if score > _TRACE)
+        over_20 = sum(1 for _other, score in scored if score > _SPLIT)
+        absorbs_other = best_id in absorbed if scored else False
+        label = _classify(best, over_10, over_20, absorbs_other)
+        rows.append((community_id, len(members), best_id, _score(best), over_10, label))
+    _print_table(
+        ("a_community", "size", "b_community", "containment", "over_10pct", "classification"),
+        rows,
+    )
+
+    # Reverse map: which earlier communities put more than 10% of their members here.
+    fed: dict[int, list[tuple[int, float]]] = {}
+    for community_id, scored in overlaps.items():
+        for other, score in scored:
+            if score > _TRACE:
+                fed.setdefault(other, []).append((community_id, score))
+    print("FED")
+    fed_rows = []
+    for other, sources in sorted(fed.items(), key=lambda item: (-len(item[1]), item[0])):
+        sources.sort(key=lambda item: (-item[1], item[0]))
+        listed = ", ".join(f"{community_id}:{_score(score)}" for community_id, score in sources)
+        fed_rows.append((other, listed))
+    _print_table(("b_community", "a_communities"), fed_rows)
     return 0
 
 

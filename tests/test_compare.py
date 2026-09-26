@@ -60,12 +60,21 @@ def test_metric_tables_split_risers_fallers_new_and_gone(tmp_path, monkeypatch, 
 def test_community_classes(tmp_path, monkeypatch, capsys):
     _runs(tmp_path, monkeypatch)
     assert compare.main(["--a", "a", "--b", "b", "--algorithm", "louvain", "--mode", "communities"]) == 0
-    rows = {line.split()[0]: line.split()[-1] for line in capsys.readouterr().out.splitlines()[1:]}
+    lines = capsys.readouterr().out.splitlines()
+    forward = []
+    for line in lines[1:]:
+        if line == "FED":
+            break
+        if line.strip():
+            forward.append(line)
+    rows = {line.split()[0]: line.split()[-1] for line in forward}
     assert rows["0"] == "STABLE"
     assert rows["1"] == "SPLIT"
     assert rows["2"] == "MERGED"
     assert rows["3"] == "MERGED"
     assert rows["4"] == "DISSOLVED"
+    fed = "\n".join(lines[lines.index("FED") + 1 :])
+    assert "2:1.000000" in fed and "3:1.000000" in fed
 
 
 def test_missing_run_lists_what_is_stored(tmp_path, monkeypatch, capsys):
