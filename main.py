@@ -32,6 +32,17 @@ from viz.interactive import to_interactive_html  # noqa: E402
 from layers.reddit_archive import load_reddit_layers  # noqa: E402
 from osi.datasets import load_snap_facebook  # noqa: E402
 from osi.graph import fetch_github_graph  # noqa: E402
+from osi.store import (  # noqa: E402
+    create_run,
+    get_run,
+    list_runs,
+    load_communities,
+    load_graph,
+    load_metrics,
+    save_communities,
+    save_graph,
+    save_metrics,
+)
 
 
 def _parse_top(value: str) -> int:
@@ -79,7 +90,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=2,
         help="Drop interactive edges lighter than this before the node cap.",
     )
+    # The store is optional. Omitting these flags keeps the old one-shot run.
+    parser.add_argument("--save-run", metavar="NAME", help="Save results under this run id.")
+    parser.add_argument("--load-run", metavar="NAME", help="Load a previous run instead of recomputing.")
+    parser.add_argument("--list-runs", action="store_true", help="Print saved runs and exit.")
+    parser.add_argument("--no-cache", action="store_true", help="Bypass the store and compute fresh.")
     args = parser.parse_args(argv)
+    # Listing or loading does not build a GitHub graph, so a login is not required yet.
+    if args.list_runs or (args.load_run and not args.no_cache):
+        return args
     if args.source == "github" and not args.username:
         parser.error("--username is required when --source is github")
     if args.max_nodes < 1:
@@ -110,25 +129,37 @@ def community_sizes(membership: dict) -> list[tuple[int, int]]:
     return sorted(counts.items())
 
 
-def print_pagerank(graph: nx.Graph) -> None:
-    degree_centrality(graph)
-    ranks = pagerank(graph)
-    # Betweenness is the slow centrality. It still runs when centrality is requested.
-    betweenness_centrality(graph)
+def print_rank_list(ranks: dict) -> None:
     print("PageRank top 20:")
     for index, (node, score) in enumerate(list(ranks.items())[:20], start=1):
         print(f"{index}. {node} {score:.6f}")
 
 
-def print_communities(graph: nx.Graph) -> None:
-    for name, membership in (
-        ("Louvain", louvain_communities(graph)),
-        ("Leiden", leiden_communities(graph)),
+def print_pagerank(graph: nx.Graph) -> dict:
+    degree_centrality(graph)
+    ranks = pagerank(graph)
+    # Betweenness is the slow centrality. It still runs when centrality is requested.
+    betweenness_centrality(graph)
+    print_rank_list(ranks)
+    return ranks
+
+
+def print_membership(name: str, membership: dict) -> None:
+    sizes = community_sizes(membership)
+    print(f"{name} communities: {len(sizes)}")
+    for community, size in sizes:
+        print(f"  community {community}: {size}")
+
+
+def print_communities(graph: nx.Graph) -> dict[str, dict]:
+    saved: dict[str, dict] = {}
+    for name, algorithm, membership in (
+        ("Louvain", "louvain", louvain_communities(graph)),
+        ("Leiden", "leiden", leiden_communities(graph)),
     ):
-        sizes = community_sizes(membership)
-        print(f"{name} communities: {len(sizes)}")
-        for community, size in sizes:
-            print(f"  community {community}: {size}")
+        saved[algorithm] = membership
+        print_membership(name, membership)
+    return saved
 
 
 def print_centrality_table(centralities: dict, top_n: int = 10) -> None:
@@ -256,15 +287,101 @@ def write_graph(graph: nx.Graph, path: str) -> None:
     Path(path).write_text(json.dumps(payload), encoding="utf-8")
 
 
+def graph_layer(args: argparse.Namespace) -> str:
+    if args.source == "reddit":
+        return "reddit_user"
+    if args.source == "reddit_2012":
+        return "reddit_2012_user"
+    if args.source == "snap_facebook":
+        return "snap_facebook"
+    return "github"
+
+
+def _print_saved_runs() -> None:
+    for run_id, source, created_at, notes in list_runs():
+        print(f"{run_id} {source} {created_at} {notes}")
+
+
+def _load_saved_graph(run_id: str) -> nx.Graph:
+    meta = get_run(run_id)
+    if meta is None:
+        raise LookupError(f"run {run_id} not found")
+    # The layer is recorded with the run so a later command can omit --source.
+    layer = (meta.get("config") or {}).get("layer")
+    if not layer:
+        raise LookupError(f"run {run_id} has no layer")
+    graph = load_graph(run_id, layer)
+    if graph is None:
+        raise LookupError(f"run {run_id} has no graph for {layer}")
+    return graph
+
+
+def _report_from_store(args: argparse.Namespace, graph: nx.Graph) -> None:
+    """Print the saved report. Missing pieces are computed from the loaded graph."""
+    if args.analyze in ("all", "centrality"):
+        ranks = load_metrics(args.load_run, "pagerank")
+        if ranks:
+            print_rank_list(ranks)
+        else:
+            print_pagerank(graph)
+    if args.analyze in ("all", "communities"):
+        louvain = load_communities(args.load_run, "louvain")
+        leiden = load_communities(args.load_run, "leiden")
+        if louvain and leiden:
+            print_membership("Louvain", louvain)
+            print_membership("Leiden", leiden)
+        else:
+            print_communities(graph)
+
+
+def _persist_run(args: argparse.Namespace, graph: nx.Graph, ranks: dict | None, communities: dict | None) -> None:
+    layer = graph_layer(args)
+    config = {
+        "source": args.source,
+        "username": args.username,
+        "analyze": args.analyze,
+        "layer": layer,
+    }
+    # The flag value is the primary key, so a second save with the same name replaces it.
+    run_id = create_run(args.source, config, args.save_run, run_id=args.save_run)
+    save_graph(run_id, layer, graph)
+    if ranks:
+        save_metrics(run_id, ranks, metric="pagerank")
+    for algorithm, membership in (communities or {}).items():
+        save_communities(run_id, algorithm, membership)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    graph = build_graph(args)
-    if args.analyze in ("all", "centrality"):
-        print_pagerank(graph)
-    if args.analyze in ("all", "communities"):
-        print_communities(graph)
+    if args.list_runs:
+        _print_saved_runs()
+        return 0
+    loaded = False
+    if args.load_run and not args.no_cache:
+        try:
+            graph = _load_saved_graph(args.load_run)
+            loaded = True
+        except (LookupError, json.JSONDecodeError, OSError, ValueError) as error:
+            # A bad or missing run must not stop the command. Rebuild from the source.
+            print(f"warning: could not load run {args.load_run}: {error}; computing fresh", file=sys.stderr)
+            if args.source == "github" and not args.username:
+                raise SystemExit("--username is required when --source is github") from error
+            graph = build_graph(args)
+    else:
+        graph = build_graph(args)
+    ranks = None
+    communities = None
+    if loaded:
+        _report_from_store(args, graph)
+    else:
+        if args.analyze in ("all", "centrality"):
+            ranks = print_pagerank(graph)
+        if args.analyze in ("all", "communities"):
+            communities = print_communities(graph)
     if args.compare:
         print_comparison(graph, args.compare)
+    if args.save_run and not args.no_cache and not loaded:
+        _persist_run(args, graph, ranks, communities)
     write_graph(graph, args.out)
     # Plot last so "Saved graph.png" is the final line of the run.
     if args.plot:

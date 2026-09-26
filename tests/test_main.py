@@ -123,6 +123,66 @@ def test_interactive_uses_node_and_weight_limits(monkeypatch, tmp_path, capsys):
     assert seen == {"max_nodes": 1000, "min_edge_weight": 2.0}
 
 
+def test_save_and_load_run_print_the_same_report(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("OSI_STORE", str(tmp_path / "store.db"))
+    calls = {"n": 0}
+
+    def fetch(username):
+        calls["n"] += 1
+        return _tiny_graph()
+
+    monkeypatch.setattr(main, "fetch_github_graph", fetch)
+    first_out = tmp_path / "a.json"
+    second_out = tmp_path / "b.json"
+    main.main(["--username", "octocat", "--save-run", "tiny", "--out", str(first_out)])
+    first = capsys.readouterr().out
+    main.main(["--load-run", "tiny", "--out", str(second_out)])
+    second = capsys.readouterr().out
+    assert calls["n"] == 1
+    assert first == second
+    assert first_out.read_text() == second_out.read_text()
+
+
+def test_missing_run_warns_and_computes(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("OSI_STORE", str(tmp_path / "store.db"))
+    monkeypatch.setattr(main, "fetch_github_graph", lambda username: _tiny_graph())
+    code = main.main(
+        ["--load-run", "missing", "--username", "octocat", "--analyze", "communities", "--out", str(tmp_path / "g.json")]
+    )
+    captured = capsys.readouterr()
+    assert code == 0
+    assert "warning:" in captured.err
+    assert "computing fresh" in captured.err
+    assert "Louvain communities:" in captured.out
+
+
+def test_no_cache_rebuilds(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("OSI_STORE", str(tmp_path / "store.db"))
+    calls = {"n": 0}
+
+    def fetch(username):
+        calls["n"] += 1
+        return _tiny_graph()
+
+    monkeypatch.setattr(main, "fetch_github_graph", fetch)
+    main.main(["--username", "octocat", "--save-run", "tiny", "--analyze", "communities", "--out", str(tmp_path / "a.json")])
+    capsys.readouterr()
+    main.main(
+        ["--load-run", "tiny", "--no-cache", "--username", "octocat", "--analyze", "communities", "--out", str(tmp_path / "b.json")]
+    )
+    assert calls["n"] == 2
+
+
+def test_list_runs_prints_saved_ids(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("OSI_STORE", str(tmp_path / "store.db"))
+    monkeypatch.setattr(main, "fetch_github_graph", lambda username: _tiny_graph())
+    main.main(["--username", "octocat", "--save-run", "tiny", "--analyze", "communities", "--out", str(tmp_path / "a.json")])
+    capsys.readouterr()
+    code = main.main(["--list-runs"])
+    assert code == 0
+    assert "tiny github" in capsys.readouterr().out
+
+
 def test_github_requires_username():
     try:
         main.main(["--source", "github", "--analyze", "communities"])
