@@ -67,6 +67,17 @@ def test_link_predict_flag_prints_shared_community(monkeypatch, tmp_path, capsys
     assert "shared=" in output
 
 
+def test_reddit_2012_source_uses_that_month(monkeypatch, tmp_path, capsys):
+    def fake_layers(*args, **kwargs):
+        assert kwargs.get("user_layer") == "reddit_2012_user"
+        assert args[0] == "2012-08"
+        return {"reddit_2012_user": _tiny_graph()}
+
+    monkeypatch.setattr(main, "load_reddit_layers", fake_layers)
+    main.main(["--source", "reddit_2012", "--analyze", "communities", "--out", str(tmp_path / "g.json")])
+    assert "Louvain communities:" in capsys.readouterr().out
+
+
 def test_reddit_source_uses_the_user_layer(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(main, "load_reddit_layers", lambda: {"reddit_user": _tiny_graph(), "reddit_subreddit": _tiny_graph()})
     main.main(["--source", "reddit", "--analyze", "communities", "--out", str(tmp_path / "g.json")])

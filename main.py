@@ -47,7 +47,11 @@ def _parse_top(value: str) -> int:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build a public social graph and analyze it.")
-    parser.add_argument("--source", choices=("github", "snap_facebook", "reddit"), default="github")
+    parser.add_argument(
+        "--source",
+        choices=("github", "snap_facebook", "reddit", "reddit_2012"),
+        default="github",
+    )
     parser.add_argument("--username", help="Public GitHub login. Required when --source is github.")
     parser.add_argument("--analyze", choices=("all", "centrality", "communities"), default="all")
     parser.add_argument(
@@ -74,6 +78,13 @@ def build_graph(args: argparse.Namespace) -> nx.Graph:
     if args.source == "reddit":
         # The user co-participation layer is the graph the report and the plot use.
         return load_reddit_layers()["reddit_user"]
+    if args.source == "reddit_2012":
+        # August 2012 keeps its own layer names, so the 2008 graph is left as it is.
+        return load_reddit_layers(
+            "2012-08",
+            user_layer="reddit_2012_user",
+            subreddit_layer="reddit_2012_subreddit",
+        )["reddit_2012_user"]
     return fetch_github_graph(args.username)
 
 
