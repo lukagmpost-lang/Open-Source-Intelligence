@@ -18,6 +18,7 @@ from osi.analysis import (  # noqa: E402
     betweenness_centrality,
     compare_centralities,
     compare_communities,
+    closeness_centrality,
     cpm_communities,
     cross_reference,
     degree_centrality,
@@ -135,13 +136,15 @@ def print_rank_list(ranks: dict) -> None:
         print(f"{index}. {node} {score:.6f}")
 
 
-def print_pagerank(graph: nx.Graph) -> dict:
-    degree_centrality(graph)
-    ranks = pagerank(graph)
-    # Betweenness is the slow centrality. It still runs when centrality is requested.
-    betweenness_centrality(graph)
-    print_rank_list(ranks)
-    return ranks
+def print_pagerank(graph: nx.Graph) -> dict[str, dict]:
+    # Kept and returned so --save-run does not compute betweenness a second time.
+    scores = {
+        "degree": degree_centrality(graph),
+        "pagerank": pagerank(graph),
+        "betweenness": betweenness_centrality(graph),
+    }
+    print_rank_list(scores["pagerank"])
+    return scores
 
 
 def print_membership(name: str, membership: dict) -> None:
@@ -334,7 +337,20 @@ def _report_from_store(args: argparse.Namespace, graph: nx.Graph) -> None:
             print_communities(graph)
 
 
-def _persist_run(args: argparse.Namespace, graph: nx.Graph, ranks: dict | None, communities: dict | None) -> None:
+def _eigenvector_scores(graph: nx.Graph) -> dict | None:
+    # A disconnected graph has no single leading eigenvector. Skip it instead of failing the save.
+    if graph.number_of_nodes() == 0 or not nx.is_connected(graph):
+        print("warning: eigenvector skipped: graph is disconnected", file=sys.stderr)
+        return None
+    try:
+        raw = nx.eigenvector_centrality_numpy(graph, weight="weight")
+    except Exception as error:
+        print(f"warning: eigenvector skipped: {type(error).__name__}: {error}", file=sys.stderr)
+        return None
+    return dict(sorted(raw.items(), key=lambda item: (-float(item[1]), str(item[0]))))
+
+
+def _persist_run(args: argparse.Namespace, graph: nx.Graph, centralities: dict | None, communities: dict | None) -> None:
     layer = graph_layer(args)
     config = {
         "source": args.source,
@@ -345,8 +361,21 @@ def _persist_run(args: argparse.Namespace, graph: nx.Graph, ranks: dict | None, 
     # The flag value is the primary key, so a second save with the same name replaces it.
     run_id = create_run(args.source, config, args.save_run, run_id=args.save_run)
     save_graph(run_id, layer, graph)
-    if ranks:
-        save_metrics(run_id, ranks, metric="pagerank")
+    # Always store the standard metrics, including ones this report did not print.
+    scores = dict(centralities or {})
+    if "degree" not in scores:
+        scores["degree"] = degree_centrality(graph)
+    if "pagerank" not in scores:
+        scores["pagerank"] = pagerank(graph)
+    if "betweenness" not in scores:
+        scores["betweenness"] = betweenness_centrality(graph)
+    if "closeness" not in scores:
+        scores["closeness"] = closeness_centrality(graph)
+    eigenvector = _eigenvector_scores(graph)
+    if eigenvector is not None:
+        scores["eigenvector"] = eigenvector
+    for metric, values in scores.items():
+        save_metrics(run_id, values, metric=metric)
     for algorithm, membership in (communities or {}).items():
         save_communities(run_id, algorithm, membership)
 
@@ -369,19 +398,19 @@ def main(argv: list[str] | None = None) -> int:
             graph = build_graph(args)
     else:
         graph = build_graph(args)
-    ranks = None
+    centralities = None
     communities = None
     if loaded:
         _report_from_store(args, graph)
     else:
         if args.analyze in ("all", "centrality"):
-            ranks = print_pagerank(graph)
+            centralities = print_pagerank(graph)
         if args.analyze in ("all", "communities"):
             communities = print_communities(graph)
     if args.compare:
         print_comparison(graph, args.compare)
     if args.save_run and not args.no_cache and not loaded:
-        _persist_run(args, graph, ranks, communities)
+        _persist_run(args, graph, centralities, communities)
     write_graph(graph, args.out)
     # Plot last so "Saved graph.png" is the final line of the run.
     if args.plot:

@@ -183,6 +183,25 @@ def test_list_runs_prints_saved_ids(monkeypatch, tmp_path, capsys):
     assert "tiny github" in capsys.readouterr().out
 
 
+def test_save_run_stores_standard_metrics(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("OSI_STORE", str(tmp_path / "store.db"))
+    # Two components, so eigenvector must be skipped rather than aborting the save.
+    disconnected = nx.Graph([(0, 1), (2, 3)])
+    nx.set_edge_attributes(disconnected, 1.0, "weight")
+    monkeypatch.setattr(main, "fetch_github_graph", lambda username: disconnected)
+    code = main.main(
+        ["--username", "octocat", "--analyze", "communities", "--save-run", "disc", "--out", str(tmp_path / "g.json")]
+    )
+    captured = capsys.readouterr()
+    assert code == 0
+    assert "eigenvector skipped" in captured.err
+    from osi.store import load_metrics
+
+    for metric in ("degree", "pagerank", "betweenness", "closeness"):
+        assert set(load_metrics("disc", metric)) == {0, 1, 2, 3}
+    assert load_metrics("disc", "eigenvector") == {}
+
+
 def test_github_requires_username():
     try:
         main.main(["--source", "github", "--analyze", "communities"])

@@ -14,7 +14,13 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import networkx as nx
 
-from osi.analysis import betweenness_centrality, degree_centrality, louvain_communities, pagerank
+from osi.analysis import (
+    betweenness_centrality,
+    closeness_centrality,
+    degree_centrality,
+    louvain_communities,
+    pagerank,
+)
 from osi.store import get_run, list_runs, load_communities, load_graph, load_metrics
 
 # Checked in this order. "top N in …" must be tried before "top N by …".
@@ -46,9 +52,7 @@ def _compute_metric(graph: nx.Graph, metric: str) -> dict:
         return pagerank(graph)
     if metric == "betweenness":
         return betweenness_centrality(graph)
-    # compare_centralities uses unweighted closeness. Weight is path length, not tie strength.
-    raw = nx.closeness_centrality(graph)
-    return dict(sorted(raw.items(), key=lambda item: (-item[1], str(item[0]))))
+    return closeness_centrality(graph)
 
 
 def _metric_scores(run_id: str, graph: nx.Graph, metric: str) -> dict:

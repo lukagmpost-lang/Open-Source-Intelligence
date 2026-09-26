@@ -30,6 +30,11 @@ def betweenness_centrality(G: nx.Graph, weight: str = "weight") -> dict[Any, flo
     return _by_score(nx.betweenness_centrality(G, weight=weight))
 
 
+def closeness_centrality(G: nx.Graph) -> dict[Any, float]:
+    # Unweighted. Edge weight is tie strength, and closeness would treat it as distance.
+    return _by_score(nx.closeness_centrality(G))
+
+
 def _community_index(groups: list[set[Any]]) -> dict[Any, int]:
     ordered = sorted(groups, key=lambda members: (-len(members), str(sorted(members, key=str))))
     scores: dict[Any, int] = {}
@@ -92,7 +97,7 @@ def compare_centralities(G: nx.Graph) -> dict[str, Any]:
         "degree": degree_centrality(G),
         # Weight is the edge attribute. NetworkX treats it as path length.
         "betweenness": betweenness_centrality(G, weight="weight"),
-        "closeness": _by_score(nx.closeness_centrality(G)),
+        "closeness": closeness_centrality(G),
         "pagerank": pagerank(G, weight="weight"),
     }
     try:
