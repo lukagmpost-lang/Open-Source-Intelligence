@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import sys
 from typing import Any
 
 import networkx as nx
 
+from osi.github_graph import fetch_github_graph
 from osi.graph import build_supra_graph
 
 
@@ -112,6 +114,85 @@ def _ids_supra_expects(graph: nx.Graph, layer_name: str, rewritten_ids: set[str]
     if not mapping:
         return graph
     return nx.relabel_nodes(graph, mapping, copy=True)
+
+
+def fetch_github_identities(identity_map: dict[str, dict[str, str]]) -> nx.Graph:
+    """Followers and following for every GitHub handle in the map.
+
+    One missing or private account is skipped. The other handles are still fetched.
+    """
+    combined = nx.Graph()
+    seen: set[str] = set()
+    for person, accounts in identity_map.items():
+        if not isinstance(accounts, dict):
+            continue
+        handle = accounts.get("github")
+        if not handle or handle in seen:
+            continue
+        seen.add(str(handle))
+        try:
+            piece = fetch_github_graph(str(handle))
+        except (OSError, RuntimeError, ValueError) as error:
+            # The GitHub side of this person is absent. Reddit can still be linked.
+            print(f"warning: github handle {handle} for {person} skipped: {error}", file=sys.stderr)
+            continue
+        # A login can be the center of one ego graph and a neighbor in another.
+        combined = nx.compose(combined, piece)
+    return combined
+
+
+def warn_missing_handles(layers: dict[str, nx.Graph | None], identity_map: dict[str, dict[str, str]]) -> None:
+    """Warn when a mapped handle is not a node on the layer that was loaded."""
+    for person, accounts in identity_map.items():
+        if not isinstance(accounts, dict):
+            continue
+        for layer_name, handle in accounts.items():
+            graph = layers.get(layer_name)
+            if graph is None:
+                continue
+            # Archive layers store the bare handle. A built layer may use "reddit:handle".
+            if handle in graph or f"{layer_name}:{handle}" in graph:
+                continue
+            print(f"warning: {layer_name} handle {handle} for {person} was not in the layer", file=sys.stderr)
+
+
+def annotate_coverage(graph: nx.Graph) -> dict[str, list[str]]:
+    """Mark each node github-only, reddit-only, or both, and record the identity persons.
+
+    A person is "both" only when the supra-graph actually contains both of their layer nodes.
+    Other nodes take the label of the single layer they were loaded from.
+    """
+    by_person: dict[str, list[Any]] = {}
+    for node, data in graph.nodes(data=True):
+        person = data.get("person")
+        if person:
+            by_person.setdefault(str(person), []).append(node)
+    buckets: dict[str, list[str]] = {"both": [], "github-only": [], "reddit-only": []}
+    for person, nodes in by_person.items():
+        layers = {graph.nodes[node].get("layer") for node in nodes}
+        if "github" in layers and "reddit" in layers:
+            label = "both"
+        elif "github" in layers:
+            label = "github-only"
+        elif "reddit" in layers:
+            label = "reddit-only"
+        else:
+            continue
+        buckets[label].append(person)
+        for node in nodes:
+            graph.nodes[node]["coverage"] = label
+    for node, data in graph.nodes(data=True):
+        if data.get("coverage"):
+            continue
+        layer = data.get("layer")
+        if layer == "github":
+            data["coverage"] = "github-only"
+        elif layer == "reddit":
+            data["coverage"] = "reddit-only"
+    listed = {label: sorted(people) for label, people in buckets.items()}
+    # Saved with the graph so a later load can see who was linked without recomputing.
+    graph.graph["coverage"] = listed
+    return listed
 
 
 def merge_identity_layers(

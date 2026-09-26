@@ -22,6 +22,22 @@ def _store(tmp_path, monkeypatch):
     save_communities("tiny", "louvain", {"akdas": 0, "yellowking": 0, "sjs": 1}, path=tmp_path / "store.db")
 
 
+def test_neighbors_of_a_person_id_includes_each_layer(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("OSI_STORE", str(tmp_path / "store.db"))
+    graph = nx.Graph()
+    graph.add_node("linus_torvalds|github", person="linus_torvalds", layer="github")
+    graph.add_node("linus_torvalds|reddit", person="linus_torvalds", layer="reddit")
+    graph.add_edge("linus_torvalds|github", "github:grace", weight=2)
+    graph.add_edge("linus_torvalds|github", "linus_torvalds|reddit", weight=1, kind="interlayer")
+    path = tmp_path / "store.db"
+    create_run("identity", {"layer": "supra"}, "cross", run_id="cross", path=path)
+    save_graph("cross", "supra", graph, path=path)
+    assert query.main(["--run", "cross", "neighbors of linus_torvalds"]) == 0
+    text = capsys.readouterr().out
+    assert "github:grace" in text
+    assert "linus_torvalds|reddit" in text
+
+
 def test_queries_print_a_table(tmp_path, monkeypatch, capsys):
     _store(tmp_path, monkeypatch)
     assert query.main(["--run", "tiny", "top 2 by pagerank"]) == 0

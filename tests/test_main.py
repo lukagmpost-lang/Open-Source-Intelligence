@@ -80,6 +80,8 @@ def test_identity_flag_prints_layer_membership(monkeypatch, tmp_path, capsys):
     assert "PageRank top 20 layer membership:" in output
     assert "person_a|github" in output and "layer github" in output
     assert "person_a|reddit" in output and "layer reddit" in output
+    assert "cross-platform persons 1" in output
+    assert "interlayer edges 1" in output
 
 
 def test_communities_mode_skips_pagerank(monkeypatch, tmp_path, capsys):

@@ -213,8 +213,19 @@ def _run_query(kind: str, groups: re.Match[str], run_id: str, graph: nx.Graph) -
         return 0
     if kind == "neighbors":
         node = groups.group(1)
+        # A supra-graph stores "person|layer". The bare person id still selects those nodes.
+        if node in graph:
+            names = [node]
+        else:
+            names = sorted(other for other, data in graph.nodes(data=True) if data.get("person") == node)
+        if not names:
+            _print_missing(graph, node)
+            return 1
+        linked = []
+        for name in names:
+            linked.extend(graph.edges(name, data=True))
         # Stronger shared-thread ties first. Missing weight is the same default as the archive loader.
-        linked = sorted(graph.edges(node, data=True), key=lambda item: (-float(item[2].get("weight", 1.0)), str(item[1])))
+        linked = sorted(linked, key=lambda item: (-float(item[2].get("weight", 1.0)), str(item[1])))
         _print_table(("neighbor", "weight"), [(other, _score_cell(float(data.get("weight", 1.0)))) for _left, other, data in linked])
         return 0
     if kind == "community":

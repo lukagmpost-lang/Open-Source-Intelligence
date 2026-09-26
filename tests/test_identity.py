@@ -2,7 +2,7 @@ import json
 
 import networkx as nx
 
-from osi.identity import apply_identity_map, load_identity_map, merge_identity_layers
+from osi.identity import annotate_coverage, apply_identity_map, fetch_github_identities, load_identity_map, merge_identity_layers
 
 
 def test_identity_merges_one_person_across_github_and_reddit(tmp_path):
@@ -32,3 +32,42 @@ def test_identity_merges_one_person_across_github_and_reddit(tmp_path):
     rewritten = apply_identity_map(github, "github", identity)
     assert "person_a|github" in rewritten and rewritten.nodes["person_a|github"]["color"] == "blue"
     assert "github:grace" in rewritten
+
+
+def test_coverage_marks_a_person_github_only_when_reddit_is_missing():
+    identity = {
+        "linus_torvalds": {"github": "torvalds", "reddit": "not-there"},
+        "ada": {"github": "ada", "reddit": "ada_r"},
+    }
+    github = nx.Graph()
+    github.add_node("torvalds")
+    github.add_node("ada")
+    github.add_node("grace")
+    reddit = nx.Graph()
+    reddit.add_node("ada_r")
+    merged = merge_identity_layers({"github": github, "reddit": reddit}, identity)
+    listed = annotate_coverage(merged)
+    assert listed["both"] == ["ada"]
+    assert listed["github-only"] == ["linus_torvalds"]
+    assert merged.nodes["linus_torvalds|github"]["coverage"] == "github-only"
+    assert merged.nodes["ada|github"]["coverage"] == "both"
+    assert merged.nodes["ada|reddit"]["coverage"] == "both"
+    assert "linus_torvalds|reddit" not in merged
+    # A follower who is not in the identity map stays github-only.
+    assert merged.nodes["github:grace"]["coverage"] == "github-only"
+
+
+def test_missing_github_account_is_skipped(monkeypatch, capsys):
+    def fake_fetch(username: str) -> nx.Graph:
+        if username == "missing":
+            raise RuntimeError("upstream HTTP 404")
+        graph = nx.Graph()
+        graph.add_node(username)
+        return graph
+
+    monkeypatch.setattr("osi.identity.fetch_github_graph", fake_fetch)
+    graph = fetch_github_identities(
+        {"linus_torvalds": {"github": "missing"}, "ada": {"github": "ada", "reddit": "ada_r"}}
+    )
+    assert list(graph.nodes) == ["ada"]
+    assert "github handle missing for linus_torvalds skipped" in capsys.readouterr().err

@@ -37,7 +37,13 @@ from viz.interactive import to_interactive_html  # noqa: E402
 from layers.reddit_archive import load_reddit_layers  # noqa: E402
 from osi.datasets import load_snap_facebook  # noqa: E402
 from osi.graph import fetch_github_graph  # noqa: E402
-from osi.identity import load_identity_map, merge_identity_layers  # noqa: E402
+from osi.identity import (  # noqa: E402
+    annotate_coverage,
+    fetch_github_identities,
+    load_identity_map,
+    merge_identity_layers,
+    warn_missing_handles,
+)
 from osi.store import (  # noqa: E402
     create_run,
     get_run,
@@ -162,10 +168,18 @@ def _load_named_layer(name: str, args: argparse.Namespace) -> nx.Graph | None:
     """Load one layer. Any failure returns None so the rest of the merge can continue."""
     try:
         if name == "github":
+            # Identity mode fetches every mapped login, not the single --username ego graph.
+            if args.identity:
+                return fetch_github_identities(load_identity_map(args.identity))
             if not args.username:
                 return None
             return fetch_github_graph(args.username)
         if name == "reddit":
+            if args.identity:
+                # Read the saved January 2008 user layer. Do not rebuild it and do not write that run.
+                stored = load_graph("r2008-v2", "reddit_user")
+                if stored is not None:
+                    return stored
             return load_reddit_layers()["reddit_user"]
         if name == "reddit_2012":
             return load_reddit_layers(
@@ -190,7 +204,20 @@ def _graph_from_identity(args: argparse.Namespace) -> nx.Graph:
             print(f"warning: layer {name} not loaded", file=sys.stderr)
             continue
         layers[name] = graph
-    return merge_identity_layers(layers, identity_map)
+    warn_missing_handles(layers, identity_map)
+    merged = merge_identity_layers(layers, identity_map)
+    annotate_coverage(merged)
+    return merged
+
+
+def print_identity_summary(graph: nx.Graph) -> None:
+    """Print how many mapped people landed on both platforms, plus the supra-graph size."""
+    coverage = graph.graph.get("coverage") or {}
+    # "both" lists person ids, so its length is the cross-platform count.
+    print(f"cross-platform persons {len(coverage.get('both') or [])}")
+    print(f"nodes {graph.number_of_nodes()}")
+    interlayer = sum(1 for _left, _right, data in graph.edges(data=True) if data.get("kind") == "interlayer")
+    print(f"interlayer edges {interlayer}")
 
 
 def print_identity_membership(graph: nx.Graph, ranks: dict) -> None:
@@ -525,6 +552,8 @@ def write_graph(graph: nx.Graph, path: str) -> None:
 
 
 def graph_layer(args: argparse.Namespace) -> str:
+    if args.identity:
+        return "supra"
     if args.source == "reddit":
         return "reddit_user"
     if args.source == "reddit_2012":
@@ -586,14 +615,17 @@ def _eigenvector_scores(graph: nx.Graph) -> dict | None:
 
 def _persist_run(args: argparse.Namespace, graph: nx.Graph, centralities: dict | None, communities: dict | None) -> None:
     layer = graph_layer(args)
+    source = "identity" if args.identity else args.source
     config = {
-        "source": args.source,
+        "source": source,
         "username": args.username,
         "analyze": args.analyze,
         "layer": layer,
+        "identity": args.identity,
+        "layers": args.layers,
     }
     # The flag value is the primary key, so a second save with the same name replaces it.
-    run_id = create_run(args.source, config, args.save_run, run_id=args.save_run)
+    run_id = create_run(source, config, args.save_run, run_id=args.save_run)
     save_graph(run_id, layer, graph)
     # Always store the standard metrics, including ones this report did not print.
     scores = dict(centralities or {})
@@ -612,6 +644,9 @@ def _persist_run(args: argparse.Namespace, graph: nx.Graph, centralities: dict |
         save_metrics(run_id, values, metric=metric)
     for algorithm, membership in (communities or {}).items():
         save_communities(run_id, algorithm, membership)
+    if args.identity:
+        # Person ids already classified on the graph: both platforms, or one side only.
+        save_result(run_id, "identity", graph.graph.get("coverage") or {})
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -687,6 +722,8 @@ def main(argv: list[str] | None = None) -> int:
             max_nodes=args.max_nodes,
             min_edge_weight=args.min_edge_weight,
         )
+    if args.identity:
+        print_identity_summary(graph)
     return 0
 
 
