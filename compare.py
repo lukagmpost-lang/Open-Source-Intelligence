@@ -12,10 +12,9 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from osi.store import get_run, list_runs, load_communities, load_metrics
 
-# Share of an earlier community sitting inside one later community.
-_TRACE = 0.1
-_SPLIT = 0.2
-_KEEP = 0.5
+# Lift above the uniform null. Two destinations past 10 is a split; one past 50 is stable.
+_LIFT_SPLIT = 10
+_LIFT_STABLE = 50
 
 
 def _print_table(headers: tuple[str, ...], rows: list[tuple]) -> None:
@@ -84,15 +83,23 @@ def _containment(intersection: int, size_a: int) -> float:
     return intersection / size_a if size_a else 0.0
 
 
-def _classify(best: float, over_10: int, over_20: int, absorbs_other: bool) -> str:
-    # Two large pieces beat a merge: the earlier community itself broke apart.
-    if over_20 >= 2:
+def _lift(containment: float, n_later: int) -> float:
+    # Uniform null: members spread evenly, about one per later community.
+    # Expected containment is 1 / n_later (about 0.001 for the 2012 partition).
+    if n_later <= 0:
+        return 0.0
+    return containment * n_later
+
+
+def _classify(best_lift: float, n_destinations: int, absorbs_other: bool) -> str:
+    # Two destinations each well above chance means the earlier community broke apart.
+    if n_destinations >= 2:
         return "SPLIT"
-    if best < _TRACE:
+    if best_lift < _LIFT_SPLIT:
         return "DISSOLVED"
-    if best > _KEEP and absorbs_other:
+    if n_destinations == 1 and absorbs_other:
         return "MERGED"
-    if best > _KEEP and over_10 == 1:
+    if best_lift > _LIFT_STABLE and n_destinations == 1:
         return "STABLE"
     return "unclassified"
 
@@ -105,9 +112,12 @@ def _community_table(run_a: str, run_b: str, algorithm: str) -> int:
         print(f"{missing} has no {algorithm}")
         return 1
     groups_a = _groups(left)
+    groups_b = _groups(right)
+    n_later = len(groups_b)
     # Node to its B community, so each A member is counted without scanning every B community.
     home_b = {node: int(community_id) for node, community_id in right.items()}
-    overlaps: dict[int, list[tuple[int, float]]] = {}
+    # Each entry is (later community, containment, lift).
+    overlaps: dict[int, list[tuple[int, float, float]]] = {}
     for community_id, members in groups_a.items():
         counts: dict[int, int] = {}
         for node in members:
@@ -116,46 +126,49 @@ def _community_table(run_a: str, run_b: str, algorithm: str) -> int:
             if other is None:
                 continue
             counts[other] = counts.get(other, 0) + 1
-        scored = [(other, _containment(count, len(members))) for other, count in counts.items()]
-        scored.sort(key=lambda item: (-item[1], item[0]))
+        scored = []
+        for other, count in counts.items():
+            contained = _containment(count, len(members))
+            scored.append((other, contained, _lift(contained, n_later)))
+        scored.sort(key=lambda item: (-item[2], item[0]))
         overlaps[community_id] = scored
 
-    # Later communities that hold more than 20% of at least two earlier communities.
+    # Later communities that hold lift > 10 from at least two earlier communities.
     absorbed: set[int] = set()
     holders: dict[int, list[int]] = {}
     for community_id, scored in overlaps.items():
-        for other, score in scored:
-            if score > _SPLIT:
+        for other, _contained, lift in scored:
+            if lift > _LIFT_SPLIT:
                 holders.setdefault(other, []).append(community_id)
     for other, sources in holders.items():
         if len(sources) >= 2:
             absorbed.add(other)
 
+    print(f"null containment {_score(1 / n_later if n_later else 0.0)} (1/{n_later})")
     rows = []
     for community_id, members in sorted(groups_a.items(), key=lambda item: (-len(item[1]), item[0])):
         scored = overlaps[community_id]
-        best_id, best = scored[0] if scored else ("", 0.0)
-        over_10 = sum(1 for _other, score in scored if score > _TRACE)
-        over_20 = sum(1 for _other, score in scored if score > _SPLIT)
+        best_id, best, best_lift = scored[0] if scored else ("", 0.0, 0.0)
+        n_destinations = sum(1 for _other, _contained, lift in scored if lift > _LIFT_SPLIT)
         absorbs_other = best_id in absorbed if scored else False
-        label = _classify(best, over_10, over_20, absorbs_other)
-        rows.append((community_id, len(members), best_id, _score(best), over_10, label))
+        label = _classify(best_lift, n_destinations, absorbs_other)
+        rows.append((community_id, len(members), best_id, _score(best), f"{best_lift:.2f}", n_destinations, label))
     _print_table(
-        ("a_community", "size", "b_community", "containment", "over_10pct", "classification"),
+        ("a_community", "size", "b_community", "containment", "lift", "destinations", "classification"),
         rows,
     )
 
-    # Reverse map: which earlier communities put more than 10% of their members here.
+    # Reverse map: earlier communities with lift > 10 into this later community.
     fed: dict[int, list[tuple[int, float]]] = {}
     for community_id, scored in overlaps.items():
-        for other, score in scored:
-            if score > _TRACE:
-                fed.setdefault(other, []).append((community_id, score))
+        for other, _contained, lift in scored:
+            if lift > _LIFT_SPLIT:
+                fed.setdefault(other, []).append((community_id, lift))
     print("FED")
     fed_rows = []
     for other, sources in sorted(fed.items(), key=lambda item: (-len(item[1]), item[0])):
         sources.sort(key=lambda item: (-item[1], item[0]))
-        listed = ", ".join(f"{community_id}:{_score(score)}" for community_id, score in sources)
+        listed = ", ".join(f"{community_id}:{lift:.2f}" for community_id, lift in sources)
         fed_rows.append((other, listed))
     _print_table(("b_community", "a_communities"), fed_rows)
     return 0

@@ -41,6 +41,8 @@ def _runs(tmp_path, monkeypatch):
             "p4": 2,
             "p5": 2,
             **{name: 3 for name in ("u", "v", "w", "x", "y", "z")},
+            # Enough later communities that a perfect containment clears lift 50.
+            **{f"f{i}": 100 + i for i in range(60)},
         },
         path=path,
     )
@@ -57,12 +59,22 @@ def test_metric_tables_split_risers_fallers_new_and_gone(tmp_path, monkeypatch, 
     assert "stay" not in text
 
 
+def test_lift_is_containment_times_later_communities():
+    assert compare._lift(0.5, 1141) == 0.5 * 1141
+    assert compare._classify(60, 1, False) == "STABLE"
+    assert compare._classify(60, 2, True) == "SPLIT"
+    assert compare._classify(20, 1, True) == "MERGED"
+    assert compare._classify(5, 0, False) == "DISSOLVED"
+    assert compare._classify(20, 1, False) == "unclassified"
+
+
 def test_community_classes(tmp_path, monkeypatch, capsys):
     _runs(tmp_path, monkeypatch)
     assert compare.main(["--a", "a", "--b", "b", "--algorithm", "louvain", "--mode", "communities"]) == 0
     lines = capsys.readouterr().out.splitlines()
+    header = next(index for index, line in enumerate(lines) if line.startswith("a_community"))
     forward = []
-    for line in lines[1:]:
+    for line in lines[header + 1 :]:
         if line == "FED":
             break
         if line.strip():
@@ -74,7 +86,7 @@ def test_community_classes(tmp_path, monkeypatch, capsys):
     assert rows["3"] == "MERGED"
     assert rows["4"] == "DISSOLVED"
     fed = "\n".join(lines[lines.index("FED") + 1 :])
-    assert "2:1.000000" in fed and "3:1.000000" in fed
+    assert "2:64.00" in fed and "3:64.00" in fed
 
 
 def test_missing_run_lists_what_is_stored(tmp_path, monkeypatch, capsys):
