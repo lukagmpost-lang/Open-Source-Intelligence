@@ -89,6 +89,33 @@ def test_community_classes(tmp_path, monkeypatch, capsys):
     assert "2:64.00" in fed and "3:64.00" in fed
 
 
+def test_percentile_mode_uses_stored_ranks(tmp_path, monkeypatch, capsys):
+    _runs(tmp_path, monkeypatch)
+    path = tmp_path / "store.db"
+    save_metrics("a", {"x": 1.0, "y": 3.0, "z": 2.0}, metric="degree", path=path)
+    save_metrics("b", {"x": 4.0, "y": 1.0, "z": 2.0}, metric="degree", path=path)
+    assert compare.main(["--a", "a", "--b", "b", "--metric", "pagerank", "--mode", "percentile"]) == 0
+    text = capsys.readouterr().out
+    risers, rest = text.split("FALLERS", 1)
+    fallers, rest = rest.split("ONLY_A", 1)
+    only_a, rest = rest.split("ONLY_B", 1)
+    only_b, top = rest.split("TOP100", 1)
+    assert "up" in risers and "-50.0000%" in risers
+    assert "stay" not in risers and "down" not in risers
+    assert "down" in fallers and "+75.0000%" in fallers
+    assert "stay" not in fallers
+    assert only_a.startswith(" 1") and "gone" in only_a and "50.0000%" in only_a
+    assert only_b.startswith(" 1") and "new" in only_b and "25.0000%" in only_b
+    assert "stay" in top and "up" in top and "down" in top
+    assert "gone" not in top and "new" not in top
+    assert compare.main(["--a", "a", "--b", "b", "--metric", "betweenness", "--mode", "percentile"]) == 1
+    assert "has no betweenness" in capsys.readouterr().out
+    assert compare.main(["--a", "a", "--b", "b", "--metric", "degree", "--mode", "percentile"]) == 0
+    degree = capsys.readouterr().out
+    assert "x" in degree.split("FALLERS", 1)[0]
+    assert "y" in degree.split("FALLERS", 1)[1].split("ONLY_A", 1)[0]
+
+
 def test_missing_run_lists_what_is_stored(tmp_path, monkeypatch, capsys):
     _runs(tmp_path, monkeypatch)
     assert compare.main(["--a", "missing", "--b", "b", "--metric", "pagerank"]) == 1
