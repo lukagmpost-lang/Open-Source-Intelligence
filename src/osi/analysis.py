@@ -24,15 +24,64 @@ def pagerank(G: nx.Graph, weight: str = "weight") -> dict[Any, float]:
     return _by_score(nx.pagerank(G, weight=weight))
 
 
+def _as_igraph(G: nx.Graph, weight: str | None):
+    """Copy an undirected NetworkX graph into igraph, optionally with edge weights."""
+    import igraph as ig
+
+    names = list(G.nodes)
+    index = {node: position for position, node in enumerate(names)}
+    edges = []
+    weights: list[float] = []
+    for left, right, data in G.edges(data=True):
+        edges.append((index[left], index[right]))
+        if weight is not None:
+            weights.append(float(data.get(weight, 1.0)))
+    graph = ig.Graph(n=len(names), edges=edges, directed=False)
+    if weight is not None and weights:
+        graph.es["weight"] = weights
+    return names, graph
+
+
 def betweenness_centrality(G: nx.Graph, weight: str = "weight") -> dict[Any, float]:
-    # Slow. Exact betweenness inspects shortest paths for every pair, so it
-    # gets expensive quickly as accounts are added. Keep it on small graphs.
-    return _by_score(nx.betweenness_centrality(G, weight=weight))
+    # Exact betweenness. igraph implements the same sum as NetworkX, in C++,
+    # which is what makes the August 2012 graph finish.
+    node_count = G.number_of_nodes()
+    if node_count < 3:
+        return _by_score({node: 0.0 for node in G.nodes})
+    try:
+        names, graph = _as_igraph(G, weight)
+        raw = graph.betweenness(directed=False, weights="weight" if graph.ecount() else None)
+    except ImportError:
+        return _by_score(nx.betweenness_centrality(G, weight=weight))
+    # Undirected NetworkX divides by the number of unordered node pairs.
+    scale = 2.0 / ((node_count - 1) * (node_count - 2))
+    return _by_score({names[index]: float(raw[index]) * scale for index in range(node_count)})
 
 
 def closeness_centrality(G: nx.Graph) -> dict[Any, float]:
     # Unweighted. Edge weight is tie strength, and closeness would treat it as distance.
-    return _by_score(nx.closeness_centrality(G))
+    node_count = G.number_of_nodes()
+    if node_count <= 1:
+        return _by_score({node: 0.0 for node in G.nodes})
+    try:
+        names, graph = _as_igraph(G, None)
+        raw = graph.closeness(mode="all", normalized=True)
+        membership = graph.connected_components(mode="weak").membership
+    except ImportError:
+        return _by_score(nx.closeness_centrality(G))
+    component_sizes: dict[int, int] = {}
+    for component in membership:
+        component_sizes[component] = component_sizes.get(component, 0) + 1
+    scores: dict[Any, float] = {}
+    for index, node in enumerate(names):
+        value = raw[index]
+        component_size = component_sizes[membership[index]]
+        # NetworkX wf_improved scales by the share of nodes this component can reach.
+        if value != value or component_size <= 1:
+            scores[node] = 0.0
+        else:
+            scores[node] = float(value) * (component_size - 1) / (node_count - 1)
+    return _by_score(scores)
 
 
 def _community_index(groups: list[set[Any]]) -> dict[Any, int]:

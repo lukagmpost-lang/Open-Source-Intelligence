@@ -18,6 +18,20 @@ def _barbell() -> nx.Graph:
     return graph
 
 
+def test_betweenness_and_closeness_match_networkx():
+    graph = _barbell()
+    graph.add_edge(100, 101, weight=2.0)
+    bridges = betweenness_centrality(graph)
+    expected_bridges = nx.betweenness_centrality(graph, weight="weight")
+    closeness = nx.closeness_centrality(graph)
+    from osi.analysis import closeness_centrality
+
+    scored = closeness_centrality(graph)
+    for node in graph:
+        assert abs(bridges[node] - expected_bridges[node]) < 1e-8
+        assert abs(scored[node] - closeness[node]) < 1e-8
+
+
 def test_centralities_are_sorted_dicts_without_printing(capsys):
     graph = _barbell()
     degree = degree_centrality(graph)
