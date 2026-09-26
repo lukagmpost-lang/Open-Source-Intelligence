@@ -33,7 +33,17 @@ def test_github_all_prints_pagerank_and_communities(monkeypatch, tmp_path, capsy
 def test_robustness_flag_prints_removal_table(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(main, "fetch_github_graph", lambda username: _tiny_graph())
     code = main.main(
-        ["--username", "octocat", "--analyze", "communities", "--robustness", "--out", str(tmp_path / "g.json")]
+        [
+            "--source",
+            "github",
+            "--username",
+            "octocat",
+            "--analyze",
+            "communities",
+            "--robustness",
+            "--out",
+            str(tmp_path / "g.json"),
+        ]
     )
     output = capsys.readouterr().out
     assert code == 0
@@ -242,6 +252,49 @@ def test_save_run_stores_standard_metrics(monkeypatch, tmp_path, capsys):
     for metric in ("degree", "pagerank", "betweenness", "closeness"):
         assert set(load_metrics("disc", metric)) == {0, 1, 2, 3}
     assert load_metrics("disc", "eigenvector") == {}
+
+
+def test_robustness_without_source_uses_the_newest_run(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("OSI_STORE", str(tmp_path / "store.db"))
+    from osi.store import create_run, save_graph
+
+    older = nx.Graph()
+    older.add_node("old-node")
+    newer = nx.Graph()
+    newer.add_node("new-node")
+    path = tmp_path / "store.db"
+    create_run("reddit", {"layer": "old"}, "old", run_id="older", path=path)
+    save_graph("older", "old", older, path=path)
+    create_run("reddit_2012", {"layer": "new"}, "new", run_id="newer", path=path)
+    save_graph("newer", "new", newer, path=path)
+    # Same-second timestamps would tie. Pin the order so "newer" is unambiguously latest.
+    import sqlite3
+
+    with sqlite3.connect(path) as conn:
+        conn.execute("UPDATE runs SET created_at = ? WHERE id = ?", ("2020-01-01T00:00:00+00:00", "older"))
+        conn.execute("UPDATE runs SET created_at = ? WHERE id = ?", ("2021-01-01T00:00:00+00:00", "newer"))
+    seen = {}
+
+    def fake_robustness(graph):
+        seen["nodes"] = set(graph.nodes)
+        return {"baseline": {"remaining": 1, "largest": 1.0, "components": 1.0, "efficiency": 0.0}}
+
+    monkeypatch.setattr(main, "robustness", fake_robustness)
+    code = main.main(["--robustness", "--analyze", "communities", "--out", str(tmp_path / "g.json")])
+    assert code == 0
+    assert "using saved run newer" in capsys.readouterr().out
+    assert seen["nodes"] == {"new-node"}
+
+
+def test_robustness_without_source_or_saved_runs_explains_why(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("OSI_STORE", str(tmp_path / "empty.db"))
+    try:
+        main.main(["--robustness", "--out", str(tmp_path / "g.json")])
+    except SystemExit as error:
+        assert error.code != 0
+    else:
+        raise AssertionError("expected an empty-store error")
+    assert "store is empty" in capsys.readouterr().err
 
 
 def test_github_requires_username():

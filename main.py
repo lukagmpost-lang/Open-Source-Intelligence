@@ -64,7 +64,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--source",
         choices=("github", "snap_facebook", "reddit", "reddit_2012"),
-        default="github",
+        default=None,
     )
     parser.add_argument("--username", help="Public GitHub login. Required when --source is github.")
     parser.add_argument("--analyze", choices=("all", "centrality", "communities"), default="all")
@@ -101,14 +101,29 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--robustness",
         action="store_true",
-        help="Remove nodes at random, by degree, and by betweenness, and print what remains.",
+        help="Remove nodes at random, by degree, and by betweenness, and print what remains. With no --source and no --load-run, the newest saved run is used.",
     )
     parser.add_argument("--identity", metavar="path.json", help="JSON map from person id to platform handles.")
     parser.add_argument("--layers", help="Comma-separated layer names. Used only with --identity.")
     args = parser.parse_args(argv)
-    # Listing or loading does not build a GitHub graph, so a login is not required yet.
-    if args.list_runs or (args.load_run and not args.no_cache):
+    args.robustness_loaded_latest = False
+    if args.list_runs:
         return args
+    # --robustness with no source and no named run uses the store. GitHub is not assumed.
+    if args.robustness and args.source is None and not args.load_run and not args.identity:
+        if args.no_cache:
+            parser.error("pass --source with --robustness --no-cache")
+        saved = list_runs()
+        if not saved:
+            parser.error("pass --source with --robustness, or save a run first. The store is empty.")
+        # list_runs is oldest first, so the last row is the newest save.
+        args.load_run = saved[-1][0]
+        args.robustness_loaded_latest = True
+    # Loading does not build a GitHub graph, so a login is not required yet.
+    if args.load_run and not args.no_cache:
+        return args
+    if args.source is None:
+        args.source = "github"
     # Identity loads each named layer on its own, so a GitHub login is not required up front.
     if args.identity:
         if args.max_nodes < 1:
@@ -490,6 +505,8 @@ def _persist_run(args: argparse.Namespace, graph: nx.Graph, centralities: dict |
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.robustness_loaded_latest:
+        print(f"using saved run {args.load_run}")
     if args.list_runs:
         _print_saved_runs()
         return 0
