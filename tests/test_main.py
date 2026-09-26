@@ -275,7 +275,7 @@ def test_robustness_without_source_uses_the_newest_run(monkeypatch, tmp_path, ca
         conn.execute("UPDATE runs SET created_at = ? WHERE id = ?", ("2021-01-01T00:00:00+00:00", "newer"))
     seen = {}
 
-    def fake_robustness(graph):
+    def fake_robustness(graph, **_kwargs):
         seen["nodes"] = set(graph.nodes)
         return {"baseline": {"remaining": 1, "largest": 1.0, "components": 1.0, "efficiency": 0.0}}
 

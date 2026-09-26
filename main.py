@@ -535,6 +535,17 @@ def main(argv: list[str] | None = None) -> int:
         graph = build_graph(args)
     centralities = None
     communities = None
+    if args.robustness:
+        # Saved centralities are the intact-graph ranking. Recomputing betweenness here would repeat that work.
+        degree_scores = load_metrics(args.load_run, "degree") if loaded else None
+        between_scores = load_metrics(args.load_run, "betweenness") if loaded else None
+        print_robustness(
+            robustness(
+                graph,
+                degree_scores=degree_scores or None,
+                betweenness_scores=between_scores or None,
+            )
+        )
     if loaded:
         _report_from_store(args, graph)
     else:
@@ -566,8 +577,6 @@ def main(argv: list[str] | None = None) -> int:
             max_nodes=args.max_nodes,
             min_edge_weight=args.min_edge_weight,
         )
-    if args.robustness:
-        print_robustness(robustness(graph))
     return 0
 
 

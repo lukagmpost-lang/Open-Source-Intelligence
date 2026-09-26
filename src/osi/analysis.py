@@ -404,6 +404,16 @@ def _removal_count(node_count: int, ratio: float) -> int:
     return max(0, min(node_count, int(ratio * node_count)))
 
 
+def _attack_order(nodes, index: dict, scores: dict | None, degree_of) -> list[int]:
+    """Highest score first, on the intact graph. Ties break by node name."""
+    if scores:
+        # A node missing from a stored table is ranked last, not dropped from the attack.
+        ranked = sorted(nodes, key=lambda node: (-float(scores.get(node, 0.0)), str(node)))
+    else:
+        ranked = sorted(nodes, key=lambda node: (-degree_of(node), str(node)))
+    return [index[node] for node in ranked]
+
+
 def _average_stats(rows: list[dict[str, float]]) -> dict[str, float]:
     count = len(rows)
     averaged = {
@@ -415,27 +425,31 @@ def _average_stats(rows: list[dict[str, float]]) -> dict[str, float]:
     return averaged
 
 
+# Intact graph plus the six attack sizes. One progress step per strategy and ratio.
+_DEFAULT_RATIOS = [0.0, 0.01, 0.02, 0.05, 0.10, 0.20, 0.30]
+
+
 def robustness(
     G: nx.Graph,
     strategies: list[str] | None = None,
     remove_ratio: list[float] | None = None,
-    runs: int = 20,
+    runs: int = 10,
+    degree_scores: dict | None = None,
+    betweenness_scores: dict | None = None,
 ) -> dict[str, Any]:
-    """For each strategy, remove that fraction of nodes and compute:
-    - largest connected component size (as fraction of original)
-    - number of components
-    - global efficiency
+    """Remove a fixed prefix of the intact-graph ranking and measure what remains.
 
-    'random' averages over `runs` trials.
-    'degree' removes highest-degree first.
-    'betweenness' removes highest-betweenness first.
+    Degree and betweenness are scored once, before any deletion. Later ratios
+    delete a longer prefix of that same list. Random draws a fresh set each
+    trial and averages `runs` trials. Nothing in the ranking is recomputed
+    on the damaged graph.
     """
     if strategies is None:
         strategies = ["random", "degree", "betweenness"]
     else:
         strategies = list(strategies)
     if remove_ratio is None:
-        remove_ratio = [0.01, 0.02, 0.05, 0.10, 0.20, 0.30]
+        remove_ratio = list(_DEFAULT_RATIOS)
     else:
         remove_ratio = list(remove_ratio)
     if runs < 1:
@@ -452,70 +466,126 @@ def robustness(
     names, base = _as_igraph(G, None)
     index = {node: position for position, node in enumerate(names)}
     edges = base.get_edgelist()
-    # Rank once on the intact graph, then delete a prefix. Centrality is not recomputed after each deletion.
-    degree_order = [index[node] for node, _degree in sorted(G.degree, key=lambda item: (-item[1], str(item[0])))]
+    nodes = list(names)
+    # One ranking of the intact graph. Stored scores are that same ranking when the caller already has them.
+    degree_order = _attack_order(nodes, index, degree_scores, G.degree)
     between_order: list[int] = []
     if "betweenness" in strategies:
-        # Same weighted betweenness the rest of the tool stores.
-        between_order = [index[node] for node in betweenness_centrality(G)]
+        if betweenness_scores:
+            between_order = _attack_order(nodes, index, betweenness_scores, G.degree)
+        else:
+            between_order = [index[node] for node in betweenness_centrality(G)]
 
     import random
 
     # Fixed seed so the random average does not change between calls.
     rng = random.Random(0)
-    tasks: list[tuple[tuple, list[int]]] = [(("baseline", 0.0, 0), [])]
-    for name in strategies:
-        for ratio in remove_ratio:
-            count = _removal_count(node_count, ratio)
-            if name == "degree":
-                tasks.append(((name, ratio, 0), degree_order[:count]))
+    # Larger attacks first. Those graphs are smaller, so the progress counter moves before the intact graph is scored.
+    ratios_by_cost = sorted(remove_ratio, key=lambda ratio: (-_removal_count(node_count, ratio), ratio))
+    groups: list[list[list[int]]] = []
+    labels: list[tuple[str, float]] = []
+    # Targeted attacks before random trials, so the first finished step is one deletion list, not ten samples.
+    strategy_order = [name for name in ("degree", "betweenness", "random") if name in strategies]
+    for ratio in ratios_by_cost:
+        count = _removal_count(node_count, ratio)
+        for name in strategy_order:
+            labels.append((name, ratio))
+            if count == 0:
+                # Every strategy at 0% is the intact graph. One measurement is enough.
+                groups.append([[]])
+            elif name == "degree":
+                groups.append([degree_order[:count]])
             elif name == "betweenness":
-                tasks.append(((name, ratio, 0), between_order[:count]))
+                groups.append([between_order[:count]])
             else:
-                for trial in range(runs):
-                    chosen = rng.sample(range(node_count), count) if count else []
-                    tasks.append(((name, ratio, trial), chosen))
+                groups.append([rng.sample(range(node_count), count) for _trial in range(runs)])
 
-    measured = _measure_removals(edges, node_count, [remove for _key, remove in tasks])
-    grouped: dict[tuple, list[dict[str, float]]] = {}
-    for (key, _remove), stats in zip(tasks, measured):
-        grouped.setdefault(key[:2], []).append(stats)
-
-    results: dict[str, Any] = {"baseline": _average_stats(grouped[("baseline", 0.0)])}
+    measured = _measure_groups(edges, node_count, groups)
+    by_label = {label: stats for label, stats in zip(labels, measured)}
+    # 0% removal is the baseline. If the caller did not ask for it, measure the intact graph once.
+    if any(ratio == 0.0 for _name, ratio in labels):
+        baseline = by_label[(strategies[0], 0.0)]
+    else:
+        baseline = _measure_groups(edges, node_count, [[[]]])[0]
+    results: dict[str, Any] = {"baseline": baseline}
     for name in strategies:
-        results[name] = {ratio: _average_stats(grouped[(name, ratio)]) for ratio in remove_ratio}
+        # Stored in the caller's ratio order, which is what the table and giant_halved_at walk.
+        results[name] = {ratio: by_label[(name, ratio)] for ratio in remove_ratio}
     return results
 
 
-def _measure_removals(edges: list[tuple[int, int]], node_count: int, removals: list[list[int]]) -> list[dict[str, float]]:
-    # Process startup dominates on small graphs. Large graphs spend minutes in all-pairs distances.
-    if node_count < _ROBUSTNESS_PARALLEL_NODES or len(removals) <= 1:
+def _progress(done: int, total: int) -> None:
+    import sys
+
+    print(f"robustness {done}/{total}", file=sys.stderr, flush=True)
+
+
+def _measure_groups(edges: list[tuple[int, int]], node_count: int, groups: list[list[list[int]]]) -> list[dict[str, float]]:
+    """Average each group. The stderr counter is one step per group, not one step per random trial."""
+    total = len(groups)
+    _progress(0, total)
+    keys_per_group = [[frozenset(trial) for trial in group] for group in groups]
+    unique: dict[frozenset[int], list[int]] = {}
+    for group, keys in zip(groups, keys_per_group):
+        for trial, key in zip(group, keys):
+            unique.setdefault(key, trial)
+
+    # Process startup dominates on small graphs. Large graphs spend the time in all-pairs distances.
+    if node_count < _ROBUSTNESS_PARALLEL_NODES or len(unique) <= 1:
         import igraph as ig
 
         base = ig.Graph(n=node_count, edges=edges, directed=False)
-        return [_stats_after_removal(base, remove, node_count) for remove in removals]
+        cache: dict[frozenset[int], dict[str, float]] = {}
+        averaged = []
+        done = 0
+        for keys, group in zip(keys_per_group, groups):
+            rows = []
+            for trial, key in zip(group, keys):
+                if key not in cache:
+                    cache[key] = _stats_after_removal(base, trial, node_count)
+                rows.append(cache[key])
+            averaged.append(_average_stats(rows))
+            done += 1
+            _progress(done, total)
+        return averaged
 
     import multiprocessing as mp
-    from concurrent.futures import ProcessPoolExecutor
+    from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 
     # Two copies of the 2012 graph fit in memory. More workers start swapping and the distances slow down.
-    workers = min(2, os_cpu_count(), len(removals))
+    workers = min(2, os_cpu_count(), len(unique))
     # Fork, not spawn: spawn re-imports the parent script, which fails for python -c and for stdin.
     context = mp.get_context("fork")
-    import sys
-
+    pending_groups = [set(keys) for keys in keys_per_group]
+    rows_by_key: dict[frozenset[int], dict[str, float]] = {}
+    averaged: list[dict[str, float] | None] = [None] * total
+    done = 0
     with ProcessPoolExecutor(
         max_workers=workers,
         mp_context=context,
         initializer=_init_robustness_worker,
         initargs=(edges, node_count),
     ) as pool:
-        futures = [pool.submit(_robustness_worker, remove) for remove in removals]
-        measured = []
-        for index, future in enumerate(futures, start=1):
-            measured.append(future.result())
-            print(f"robustness {index}/{len(futures)}", file=sys.stderr, flush=True)
-        return measured
+        future_to_key = {pool.submit(_robustness_worker, trial): key for key, trial in unique.items()}
+        pending = set(future_to_key)
+        while pending:
+            finished, pending = wait(pending, return_when=FIRST_COMPLETED)
+            for future in finished:
+                key = future_to_key[future]
+                rows_by_key[key] = future.result()
+                for index, needed in enumerate(pending_groups):
+                    if key not in needed or averaged[index] is not None:
+                        continue
+                    needed.remove(key)
+                    if needed:
+                        continue
+                    group_rows = [rows_by_key[group_key] for group_key in keys_per_group[index]]
+                    averaged[index] = _average_stats(group_rows)
+                    done += 1
+                    _progress(done, total)
+    if any(row is None for row in averaged):
+        raise RuntimeError("a robustness step finished without a measurement")
+    return [row for row in averaged if row is not None]
 
 
 def os_cpu_count() -> int:

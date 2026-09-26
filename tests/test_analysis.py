@@ -56,6 +56,33 @@ def test_robustness_degree_removes_the_hub_first():
     assert halved["betweenness"] == 0.1
 
 
+def test_robustness_ranks_the_intact_graph_once(monkeypatch, capsys):
+    from osi.analysis import betweenness_centrality as real_betweenness
+    from osi.analysis import robustness
+
+    calls = {"betweenness": 0}
+
+    def counted(graph):
+        calls["betweenness"] += 1
+        return real_betweenness(graph)
+
+    monkeypatch.setattr("osi.analysis.betweenness_centrality", counted)
+    graph = nx.star_graph(10)
+    nx.set_edge_attributes(graph, 1.0, "weight")
+    results = robustness(graph)
+    assert calls["betweenness"] == 1
+    assert list(results["degree"]) == [0.0, 0.01, 0.02, 0.05, 0.10, 0.20, 0.30]
+    # 0% is the intact graph for every strategy. The center is still connected to every leaf.
+    assert results["degree"][0.0]["largest"] == 1.0
+    assert results["betweenness"][0.0] == results["degree"][0.0]
+    lines = [line for line in capsys.readouterr().err.splitlines() if line.startswith("robustness ")]
+    assert "robustness 0/21" in lines
+    assert "robustness 21/21" in lines
+    # Passing the ranking skips the second computation.
+    robustness(graph, betweenness_scores=real_betweenness(graph), degree_scores={node: graph.degree(node) for node in graph})
+    assert calls["betweenness"] == 1
+
+
 def test_centralities_are_sorted_dicts_without_printing(capsys):
     graph = _barbell()
     degree = degree_centrality(graph)
