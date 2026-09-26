@@ -45,9 +45,26 @@ def test_cpm_reports_overlap_counts(capsys):
 
 def test_interactive_html_is_standalone(tmp_path):
     graph = nx.path_graph(4)
+    nx.set_edge_attributes(graph, 2.0, "weight")
     target = tmp_path / "graph.html"
-    to_interactive_html(graph, str(target))
+    to_interactive_html(graph, str(target), max_nodes=1000, min_edge_weight=2)
     text = target.read_text()
     assert "user: 0 | community:" in text
     assert "pagerank:" in text
     assert target.stat().st_size > 1000
+
+
+def test_interactive_filter_keeps_top_nodes_and_heavy_edges(tmp_path, capsys):
+    graph = nx.Graph()
+    graph.add_edge("a", "b", weight=5)
+    graph.add_edge("b", "c", weight=5)
+    graph.add_edge("a", "c", weight=5)
+    graph.add_edge("a", "d", weight=1)
+    graph.add_edge("d", "e", weight=4)
+    target = tmp_path / "graph.html"
+    to_interactive_html(graph, str(target), max_nodes=3, min_edge_weight=2)
+    output = capsys.readouterr().out
+    assert "filtered: 3 nodes, 3 edges" in output
+    text = target.read_text()
+    assert "user: a |" in text
+    assert "user: e |" not in text

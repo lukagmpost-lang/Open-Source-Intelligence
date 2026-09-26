@@ -95,6 +95,34 @@ def test_plot_flag_writes_graph_png(monkeypatch, tmp_path, capsys):
     assert image.stat().st_size > 1000
 
 
+def test_interactive_uses_node_and_weight_limits(monkeypatch, tmp_path, capsys):
+    seen = {}
+
+    def fake_html(graph, output="graph.html", max_nodes=1000, min_edge_weight=2):
+        seen["max_nodes"] = max_nodes
+        seen["min_edge_weight"] = min_edge_weight
+        return output
+
+    monkeypatch.setattr(main, "to_interactive_html", fake_html)
+    monkeypatch.setattr(main, "fetch_github_graph", lambda username: _tiny_graph())
+    main.main(
+        [
+            "--username",
+            "octocat",
+            "--analyze",
+            "communities",
+            "--interactive",
+            "--max-nodes",
+            "1000",
+            "--min-edge-weight",
+            "2",
+            "--out",
+            str(tmp_path / "g.json"),
+        ]
+    )
+    assert seen == {"max_nodes": 1000, "min_edge_weight": 2.0}
+
+
 def test_github_requires_username():
     try:
         main.main(["--source", "github", "--analyze", "communities"])

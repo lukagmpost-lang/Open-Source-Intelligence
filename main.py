@@ -66,9 +66,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--link-predict", type=_parse_top, metavar="top=N")
     parser.add_argument("--cpm", action="store_true", help="Print overlapping k-clique communities.")
     parser.add_argument("--interactive", action="store_true", help="Save graph.html.")
+    # Interactive HTML only. The analysis above still uses the full graph.
+    parser.add_argument("--max-nodes", type=int, default=1000, help="Top PageRank nodes to draw.")
+    parser.add_argument(
+        "--min-edge-weight",
+        type=float,
+        default=2,
+        help="Drop interactive edges lighter than this.",
+    )
     args = parser.parse_args(argv)
     if args.source == "github" and not args.username:
         parser.error("--username is required when --source is github")
+    if args.max_nodes < 1:
+        parser.error("--max-nodes must be at least 1")
     return args
 
 
@@ -261,7 +271,11 @@ def main(argv: list[str] | None = None) -> int:
         print_cpm_summary(cpm_communities(graph))
         print(f"cpm after: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges")
     if args.interactive:
-        to_interactive_html(graph)
+        to_interactive_html(
+            graph,
+            max_nodes=args.max_nodes,
+            min_edge_weight=args.min_edge_weight,
+        )
     return 0
 
 
