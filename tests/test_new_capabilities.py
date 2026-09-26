@@ -8,7 +8,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
 from osi.analysis import adamic_adar, cpm_communities, jaccard, preferential_attachment, print_cpm_summary
-from viz.interactive import to_interactive_html
+from viz.interactive import filter_graph, to_interactive_html
 
 
 def _path_with_a_chordless_gap() -> nx.Graph:
@@ -68,3 +68,19 @@ def test_interactive_filter_keeps_top_nodes_and_heavy_edges(tmp_path, capsys):
     text = target.read_text()
     assert "user: a |" in text
     assert "user: e |" not in text
+
+
+def test_filter_prunes_edges_before_the_node_cap():
+    graph = nx.Graph()
+    graph.add_edge("a", "b", weight=5)
+    graph.add_edge("b", "c", weight=5)
+    graph.add_edge("a", "c", weight=5)
+    # This bridge is lighter than the cutoff, so the pair stays its own component.
+    graph.add_edge("a", "p", weight=1)
+    graph.add_edge("p", "q", weight=5)
+    view = filter_graph(graph, max_nodes=2, min_edge_weight=2)
+    assert set(view.nodes) == {"p", "q"}
+    assert view.number_of_edges() == 1
+    whole = filter_graph(graph, max_nodes=1000, min_edge_weight=2)
+    assert nx.number_connected_components(whole) == 2
+    assert whole.number_of_edges() == 4

@@ -67,12 +67,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--cpm", action="store_true", help="Print overlapping k-clique communities.")
     parser.add_argument("--interactive", action="store_true", help="Save graph.html.")
     # Interactive HTML only. The analysis above still uses the full graph.
-    parser.add_argument("--max-nodes", type=int, default=1000, help="Top PageRank nodes to draw.")
+    parser.add_argument(
+        "--max-nodes",
+        type=int,
+        default=1000,
+        help="Interactive node cap, applied after light edges are removed.",
+    )
     parser.add_argument(
         "--min-edge-weight",
         type=float,
         default=2,
-        help="Drop interactive edges lighter than this.",
+        help="Drop interactive edges lighter than this before the node cap.",
     )
     args = parser.parse_args(argv)
     if args.source == "github" and not args.username:
