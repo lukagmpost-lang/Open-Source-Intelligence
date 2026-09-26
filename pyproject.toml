@@ -1,0 +1,20 @@
+[project]
+name = "osi"
+version = "0.1.0"
+description = "Multi-layer social graph built from official public APIs and files you supply."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "requests",
+    "networkx",
+    "matplotlib",
+    "leidenalg",
+    "python-louvain",
+    "pandas",
+    "pyarrow",
+    "pyvis",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

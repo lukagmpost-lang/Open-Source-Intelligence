@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OSI public graph</title>
+  <style>
+    :root { color-scheme: light; --ink: #1c1917; --muted: #57534e; --line: #e7e5e4; --paper: #fafaf9; --accent: #0f766e; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 15px/1.45 "Segoe UI", sans-serif; color: var(--ink); background: var(--paper); }
+    header { display: flex; justify-content: space-between; gap: 16px; align-items: end; padding: 20px 24px; border-bottom: 1px solid var(--line); }
+    h1 { margin: 0; font-size: 22px; }
+    p { margin: 4px 0 0; color: var(--muted); }
+    main { display: grid; grid-template-columns: 320px 1fr; min-height: calc(100vh - 78px); }
+    aside, section { padding: 16px 20px; }
+    aside { border-right: 1px solid var(--line); }
+    label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 4px; }
+    input, textarea, select, button { width: 100%; font: inherit; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: white; }
+    button { background: var(--accent); color: white; border: 0; cursor: pointer; }
+    button.secondary { background: white; color: var(--ink); border: 1px solid var(--line); margin-top: 8px; }
+    canvas { width: 100%; height: 420px; background: white; border: 1px solid var(--line); border-radius: 8px; }
+    .stats { display: flex; gap: 16px; margin: 12px 0; color: var(--muted); }
+    ul { padding-left: 18px; }
+    .error { color: #b91c1c; min-height: 1.2em; }
+    @media (max-width: 800px) { main { grid-template-columns: 1fr; } aside { border-right: 0; border-bottom: 1px solid var(--line); } }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>OSI public graph</h1>
+      <p>Communities and bridges from public APIs and files you supply. Private gifts, private channels, and unauthenticated scraping are not collected.</p>
+    </div>
+  </header>
+  <main>
+    <aside>
+      <button id="sample" type="button">Load sample</button>
+      <label for="source">Public source</label>
+      <select id="source">
+        <option value="github">GitHub login</option>
+        <option value="reddit">Reddit username</option>
+        <option value="steam">SteamID64</option>
+        <option value="spotify">Spotify token owner</option>
+        <option value="telegram">Telegram user id (displayed gifts)</option>
+      </select>
+      <label for="query">Account</label>
+      <input id="query" placeholder="octocat" />
+      <button id="fetch" class="secondary" type="button">Fetch within API caps</button>
+      <label for="file">Graph JSON</label>
+      <textarea id="file" rows="8" placeholder='{"nodes":[],"edges":[]}'></textarea>
+      <button id="import" class="secondary" type="button">Analyze file</button>
+      <p id="error" class="error"></p>
+    </aside>
+    <section>
+      <div class="stats" id="stats"></div>
+      <canvas id="view" width="900" height="420"></canvas>
+      <h2>Communities</h2>
+      <ul id="communities"></ul>
+      <h2>Bridges</h2>
+      <ul id="bridges"></ul>
+    </section>
+  </main>
+  <script>
+    const error = document.querySelector("#error");
+    const colors = ["#0f766e", "#b45309", "#1d4ed8", "#be123c", "#6d28d9", "#3f6212"];
+
+    async function post(url, body) {
+      const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "request failed");
+      return payload;
+    }
+
+    function draw(data) {
+      const canvas = document.querySelector("#view");
+      const ctx = canvas.getContext("2d");
+      const width = canvas.width;
+      const height = canvas.height;
+      ctx.clearRect(0, 0, width, height);
+      const membership = {};
+      data.communities.forEach((community) => {
+        community.members.forEach((member) => { membership[member.id] = community.id; });
+      });
+      const nodes = data.graph.nodes;
+      const positions = {};
+      nodes.forEach((node, index) => {
+        const angle = (Math.PI * 2 * index) / Math.max(nodes.length, 1);
+        const ring = 40 + (membership[node.id] % 3) * 70;
+        positions[node.id] = { x: width / 2 + Math.cos(angle) * (120 + ring), y: height / 2 + Math.sin(angle) * (90 + ring / 2) };
+      });
+      ctx.strokeStyle = "#d6d3d1";
+      data.graph.edges.forEach((edge) => {
+        const a = positions[edge.source];
+        const b = positions[edge.target];
+        if (!a || !b) return;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      });
+      nodes.forEach((node) => {
+        const point = positions[node.id];
+        ctx.beginPath();
+        ctx.fillStyle = colors[(membership[node.id] || 0) % colors.length];
+        ctx.arc(point.x, point.y, 8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#1c1917";
+        ctx.font = "12px sans-serif";
+        ctx.fillText(node.label, point.x + 10, point.y + 4);
+      });
+      const accounts = nodes.length === 1 ? "account" : "accounts";
+      const relations = data.graph.edges.length === 1 ? "relation" : "relations";
+      document.querySelector("#stats").textContent = `${nodes.length} ${accounts} · ${data.graph.edges.length} ${relations} · layers: ${data.layers.join(", ") || "none"}`;
+      document.querySelector("#communities").innerHTML = data.communities.map((community) =>
+        `<li>Community ${community.id} (${community.size}): ${community.members.map((member) => member.label).join(", ")}</li>`
+      ).join("");
+      document.querySelector("#bridges").innerHTML = data.bridges.length
+        ? data.bridges.map((bridge) => `<li>${bridge.label} touches communities ${bridge.communities.join(", ")}</li>`).join("")
+        : "<li>No account sits between communities.</li>";
+    }
+
+    async function run(task) {
+      error.textContent = "";
+      try { draw(await task()); } catch (problem) { error.textContent = problem.message; }
+    }
+
+    document.querySelector("#sample").onclick = () => run(() => fetch("/api/sample").then((response) => response.json()));
+    document.querySelector("#import").onclick = () => run(() => post("/api/import", JSON.parse(document.querySelector("#file").value || "{}")));
+    document.querySelector("#fetch").onclick = () => run(() => {
+      const source = document.querySelector("#source").value;
+      const query = document.querySelector("#query").value.trim();
+      const body = source === "steam" ? { steam_id: query } : source === "telegram" ? { user_id: query } : source === "spotify" ? {} : { username: query };
+      return post(`/api/fetch/${source}`, body);
+    });
+    document.querySelector("#sample").click();
+  </script>
+</body>
+</html>

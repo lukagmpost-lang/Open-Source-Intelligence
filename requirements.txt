@@ -1,0 +1,15 @@
+# HTTP client for public downloads such as the SNAP edge list.
+requests
+# Graphs, centrality, and node-link JSON.
+networkx
+# Figures for later steps. Import is checked here so a missing wheel fails early.
+matplotlib
+# Leiden communities. analysis.py uses Louvain if this import fails.
+leidenalg
+# Louvain communities. The import name is "community", not "python-louvain".
+python-louvain
+# Read one month of Arctic Shift Parquet without loading the whole archive.
+pandas
+pyarrow
+# Standalone force-directed HTML. in_line resources need no extra download at view time.
+pyvis
