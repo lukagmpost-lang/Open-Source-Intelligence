@@ -74,19 +74,8 @@ def filter_graph(G: nx.Graph, max_nodes: int = 1000, min_edge_weight: float = 2)
     return pruned.subgraph(keep).copy()
 
 
-def to_interactive_html(
-    G: nx.Graph,
-    output: str = "graph.html",
-    max_nodes: int = 1000,
-    min_edge_weight: float = 2,
-) -> str:
-    """Write a self-contained HTML file with search, filter, and physics."""
-    print(f"interactive before: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
-    # Always filter. Drawing every Reddit edge makes PyVis write for minutes.
-    view = filter_graph(G, max_nodes=max_nodes, min_edge_weight=min_edge_weight)
-    print(f"filtered: {view.number_of_nodes()} nodes, {view.number_of_edges()} edges")
-    scores = pagerank(view)
-    communities = louvain_communities(view)
+def write_pyvis(G: nx.Graph, output: str, scores: dict, communities: dict) -> str:
+    """Write one graph with PageRank sizes, Louvain colors, and the PyVis search menu."""
     # in_line embeds the scripts so the file works without a network connection.
     net = Network(
         height="800px",
@@ -100,20 +89,35 @@ def to_interactive_html(
     # Barnes-Hut is PyVis's force-directed layout.
     net.barnes_hut()
     net.toggle_physics(True)
-    for node in view.nodes:
+    for node in G.nodes:
         community = communities.get(node, 0)
-        score = scores.get(node, 0.0)
+        score = float(scores.get(node, 0.0))
         net.add_node(
             str(node),
             label=str(node),
             # Same size scale as the static plot: PageRank times 20000.
             size=max(score * 20000, 1),
-            color=_community_color(community),
+            color=_community_color(int(community)),
             title=f"user: {node} | community: {community} | pagerank: {score:.6f}",
         )
-    for left, right in view.edges:
+    for left, right in G.edges:
         net.add_edge(str(left), str(right))
     net.write_html(output, notebook=False, open_browser=False)
+    return output
+
+
+def to_interactive_html(
+    G: nx.Graph,
+    output: str = "graph.html",
+    max_nodes: int = 1000,
+    min_edge_weight: float = 2,
+) -> str:
+    """Write a self-contained HTML file with search, filter, and physics."""
+    print(f"interactive before: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
+    # Always filter. Drawing every Reddit edge makes PyVis write for minutes.
+    view = filter_graph(G, max_nodes=max_nodes, min_edge_weight=min_edge_weight)
+    print(f"filtered: {view.number_of_nodes()} nodes, {view.number_of_edges()} edges")
+    write_pyvis(view, output, pagerank(view), louvain_communities(view))
     print(f"interactive after: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
     print(f"Saved {output}")
     return output
