@@ -13,6 +13,8 @@ dependencies = [
     "pandas",
     "pyarrow",
     "pyvis",
+    "numpy",
+    "scipy",
 ]
 
 [tool.pytest.ini_options]

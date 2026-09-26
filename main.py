@@ -22,12 +22,15 @@ from osi.analysis import (  # noqa: E402
     cpm_communities,
     cross_reference,
     degree_centrality,
+    degree_distribution,
     jaccard,
     leiden_communities,
     louvain_communities,
+    network_health,
     pagerank,
     preferential_attachment,
     print_cpm_summary,
+    rich_club,
     robustness,
 )
 from viz.interactive import to_interactive_html  # noqa: E402
@@ -38,13 +41,16 @@ from osi.identity import load_identity_map, merge_identity_layers  # noqa: E402
 from osi.store import (  # noqa: E402
     create_run,
     get_run,
+    list_results,
     list_runs,
     load_communities,
     load_graph,
     load_metrics,
+    load_result,
     save_communities,
     save_graph,
     save_metrics,
+    save_result,
 )
 
 
@@ -103,6 +109,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--robustness",
         action="store_true",
         help="Remove nodes at random, by degree, and by betweenness, and print what remains. With no --source and no --run, the newest saved run is used.",
+    )
+    parser.add_argument(
+        "--health",
+        action="store_true",
+        help="Print network health, degree-distribution fits, and rich-club coefficients. Stored under the source key health.",
     )
     parser.add_argument("--identity", metavar="path.json", help="JSON map from person id to platform handles.")
     parser.add_argument("--layers", help="Comma-separated layer names. Used only with --identity.")
@@ -397,6 +408,102 @@ def print_robustness(results: dict) -> None:
         )
 
 
+# The metrics table is one row per node. Health is one JSON document per run.
+_HEALTH_SOURCE = "health"
+_HEALTH_KEYS = (
+    "assortativity",
+    "avg_clustering",
+    "transitivity",
+    "num_components",
+    "avg_degree",
+    "max_degree",
+)
+_FIT_NAMES = ("power_law", "lognormal", "exponential")
+
+
+def _health_cell(value) -> str:
+    if value is None:
+        return "na"
+    if isinstance(value, str):
+        return value
+    # bool is a subclass of int. It is not a health value, but keep it from printing as 0 or 1.
+    if isinstance(value, bool):
+        return str(value)
+    if isinstance(value, int):
+        return str(value)
+    return f"{float(value):.6f}"
+
+
+def _health_payload(graph: nx.Graph) -> dict:
+    # JSON object keys are strings. rich_club's keys are the degree thresholds.
+    return {
+        "network": network_health(graph),
+        "degree_distribution": degree_distribution(graph),
+        "rich_club": {str(k): value for k, value in rich_club(graph).items()},
+    }
+
+
+def print_health(run_id: str, payload: dict) -> None:
+    network = payload["network"]
+    print(f"health {run_id}")
+    for key in _HEALTH_KEYS:
+        print(f"{key} {_health_cell(network.get(key))}")
+    for key, value in payload["rich_club"].items():
+        print(f"rich_club {key} {_health_cell(value)}")
+    distribution = payload["degree_distribution"]
+    print(f"best_fit {_health_cell(distribution.get('best_fit'))}")
+    for name in _FIT_NAMES:
+        fit = distribution.get(name) or {}
+        params = fit.get("params") or {}
+        pieces = [name]
+        for param in sorted(params):
+            pieces.append(f"{param} {_health_cell(params[param])}")
+        pieces.append(f"r_squared {_health_cell(fit.get('r_squared'))}")
+        print(" ".join(pieces))
+
+
+def print_health_comparison(rows: list[tuple[str, dict]]) -> None:
+    """Print one column per run once at least two runs have health stored."""
+    if len(rows) < 2:
+        return
+    print("health compare " + " ".join(run_id for run_id, _payload in rows))
+
+    def line(label: str, getter) -> None:
+        print(label + " " + " ".join(_health_cell(getter(payload)) for _run_id, payload in rows))
+
+    for key in _HEALTH_KEYS:
+        # The default argument binds this iteration's key. A bare closure would keep the last one.
+        line(key, lambda payload, key=key: payload["network"].get(key))
+    club_keys: list[str] = []
+    for _run_id, payload in rows:
+        for key in payload["rich_club"]:
+            if key not in club_keys:
+                club_keys.append(key)
+    for key in club_keys:
+        line(f"rich_club_{key}", lambda payload, key=key: payload["rich_club"].get(key))
+    line("best_fit", lambda payload: payload["degree_distribution"].get("best_fit"))
+    for name in _FIT_NAMES:
+        line(
+            f"{name}_r2",
+            lambda payload, name=name: (payload["degree_distribution"].get(name) or {}).get("r_squared"),
+        )
+
+
+def _emit_health(run_id: str | None, graph: nx.Graph) -> None:
+    # A repeat call for the same run reads the stored document instead of refitting.
+    payload = load_result(run_id, _HEALTH_SOURCE) if run_id else None
+    if payload is None:
+        payload = _health_payload(graph)
+        if run_id:
+            save_result(run_id, _HEALTH_SOURCE, payload)
+    print_health(run_id or "graph", payload)
+    # Other runs may already have a health document. Two or more is the comparison table.
+    stored = list_results(_HEALTH_SOURCE)
+    if run_id and all(saved_id != run_id for saved_id, _payload in stored):
+        stored.append((run_id, payload))
+    print_health_comparison(stored)
+
+
 def print_robustness_pair(label_a: str, left: dict, label_b: str, right: dict) -> None:
     print(f"a {label_a}")
     print(f"b {label_b}")
@@ -557,6 +664,9 @@ def main(argv: list[str] | None = None) -> int:
         # Communities-only runs have not ranked nodes yet. PageRank is computed here for the membership list.
         scores = (centralities or {}).get("pagerank") if centralities else None
         print_identity_membership(graph, scores or pagerank(graph))
+    if args.health:
+        # Loaded runs keep their id. A fresh build can still store health when --save-run is set.
+        _emit_health(args.load_run or args.save_run, graph)
     if args.compare:
         print_comparison(graph, args.compare)
     if args.save_run and not args.no_cache and not loaded:

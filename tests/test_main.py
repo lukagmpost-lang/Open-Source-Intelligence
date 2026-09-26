@@ -338,6 +338,40 @@ def test_missing_run_does_not_rebuild(monkeypatch, tmp_path, capsys):
     assert "run missing was not found" in capsys.readouterr().err
 
 
+def test_health_reuses_the_store_and_compares_runs(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("OSI_STORE", str(tmp_path / "store.db"))
+    from osi.store import create_run, save_graph
+
+    path = tmp_path / "store.db"
+    for run_id, graph in (("left", nx.star_graph(4)), ("right", nx.path_graph(5))):
+        nx.set_edge_attributes(graph, 1.0, "weight")
+        create_run("reddit", {"layer": "users"}, run_id, run_id=run_id, path=path)
+        save_graph(run_id, "users", graph, path=path)
+    calls = {"n": 0}
+    original = main.network_health
+
+    def wrapped(graph):
+        calls["n"] += 1
+        return original(graph)
+
+    monkeypatch.setattr(main, "network_health", wrapped)
+    assert main.main(["--health", "--run", "left", "--out", str(tmp_path / "a.json")]) == 0
+    first = capsys.readouterr().out
+    assert "health left" in first
+    assert "health compare" not in first
+    assert "assortativity" in first
+    assert calls["n"] == 1
+    assert main.main(["--health", "--run", "left", "--out", str(tmp_path / "b.json")]) == 0
+    second = capsys.readouterr().out
+    assert calls["n"] == 1
+    assert "health left" in second
+    assert "health compare" not in second
+    assert main.main(["--health", "--run", "right", "--out", str(tmp_path / "c.json")]) == 0
+    third = capsys.readouterr().out
+    assert calls["n"] == 2
+    assert "health compare left right" in third
+
+
 def test_github_requires_username():
     try:
         main.main(["--source", "github", "--analyze", "communities"])

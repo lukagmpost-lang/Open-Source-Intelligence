@@ -67,6 +67,14 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             local_path TEXT,
             fetched_at TIMESTAMP
         );
+        -- Graph-level payloads. source is the lookup key, for example "health".
+        -- It is not the runs.source column, which names the platform the graph came from.
+        CREATE TABLE IF NOT EXISTS results (
+            run_id TEXT,
+            source TEXT,
+            payload_json TEXT,
+            PRIMARY KEY (run_id, source)
+        );
         """
     )
 
@@ -260,4 +268,47 @@ def delete_run(run_id: str, path: str | Path | None = None) -> None:
         conn.execute("DELETE FROM graphs WHERE run_id = ?", (run_id,))
         conn.execute("DELETE FROM metrics WHERE run_id = ?", (run_id,))
         conn.execute("DELETE FROM communities WHERE run_id = ?", (run_id,))
+        conn.execute("DELETE FROM results WHERE run_id = ?", (run_id,))
         conn.execute("DELETE FROM runs WHERE id = ?", (run_id,))
+
+
+def save_result(run_id: str, source: str, payload: dict, path: str | Path | None = None) -> None:
+    """Replace the JSON payload stored under one source key, such as "health"."""
+    encoded = json.dumps(payload)
+    with _connection(path) as conn:
+        conn.execute(
+            """
+            INSERT INTO results (run_id, source, payload_json)
+            VALUES (?, ?, ?)
+            ON CONFLICT(run_id, source) DO UPDATE SET payload_json = excluded.payload_json
+            """,
+            (run_id, source, encoded),
+        )
+
+
+def load_result(run_id: str, source: str, path: str | Path | None = None) -> dict | None:
+    """Return the payload for one run and source key, or None when it was never stored."""
+    with _connection(path) as conn:
+        row = conn.execute(
+            "SELECT payload_json FROM results WHERE run_id = ? AND source = ?",
+            (run_id, source),
+        ).fetchone()
+    if row is None:
+        return None
+    return json.loads(row["payload_json"])
+
+
+def list_results(source: str, path: str | Path | None = None) -> list[tuple[str, dict]]:
+    """Return (run id, payload) for one source key, oldest run first."""
+    with _connection(path) as conn:
+        rows = conn.execute(
+            """
+            SELECT results.run_id, results.payload_json
+            FROM results
+            JOIN runs ON runs.id = results.run_id
+            WHERE results.source = ?
+            ORDER BY runs.created_at, runs.id
+            """,
+            (source,),
+        ).fetchall()
+    return [(row["run_id"], json.loads(row["payload_json"])) for row in rows]

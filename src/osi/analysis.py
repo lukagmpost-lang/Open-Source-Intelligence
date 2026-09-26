@@ -6,10 +6,13 @@ it prints which community the top hubs fall in.
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import networkx as nx
+import numpy as np
 from networkx.algorithms.community import louvain_communities as _louvain_communities
+from scipy import stats
 
 
 def _by_score(scores: dict[Any, float]) -> dict[Any, float]:
@@ -627,3 +630,156 @@ def print_cpm_summary(membership: dict[Any, list[int]]) -> None:
     print("top 20 nodes by overlapping communities:")
     for node in ranked[:20]:
         print(f"{node} {len(membership[node])}")
+
+
+def _finite(value: float) -> float | None:
+    # Assortativity is NaN when every node in the component has the same degree.
+    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+        return None
+    return value
+
+
+def network_health(G: nx.Graph) -> dict[str, Any]:
+    """Return a dict with:
+    - assortativity: nx.degree_assortativity_coefficient(G)
+    - avg_clustering: nx.average_clustering(G)
+    - transitivity: nx.transitivity(G)
+    - num_components: len(list(nx.connected_components(G)))
+    - avg_degree: mean degree
+    - max_degree: max degree
+    """
+    degrees = [degree for _node, degree in G.degree()]
+    node_count = len(degrees)
+    if node_count == 0:
+        avg_degree = 0.0
+        max_degree = 0
+    else:
+        avg_degree = float(sum(degrees)) / node_count
+        max_degree = int(max(degrees))
+    components = list(nx.connected_components(G))
+    # Same count as len(list(nx.connected_components(G))). The list is reused below.
+    num_components = len(components)
+    if node_count == 0:
+        # average_clustering rejects an empty graph. The other scalars are already defined.
+        return {
+            "assortativity": None,
+            "avg_clustering": 0.0,
+            "transitivity": 0.0,
+            "num_components": 0,
+            "avg_degree": avg_degree,
+            "max_degree": max_degree,
+        }
+    # Disconnected graphs mix several degree patterns. The coefficient is the largest piece only.
+    largest = max(components, key=len)
+    if len(largest) < 2:
+        assortativity = None
+    else:
+        try:
+            assortativity = _finite(float(nx.degree_assortativity_coefficient(G.subgraph(largest))))
+        except nx.NetworkXError:
+            assortativity = None
+    return {
+        "assortativity": assortativity,
+        "avg_clustering": float(nx.average_clustering(G)),
+        "transitivity": float(nx.transitivity(G)),
+        "num_components": num_components,
+        "avg_degree": avg_degree,
+        "max_degree": max_degree,
+    }
+
+
+def _r_squared(observed, predicted) -> float | None:
+    observed = np.asarray(observed, dtype=float)
+    predicted = np.asarray(predicted, dtype=float)
+    total = float(np.sum((observed - observed.mean()) ** 2))
+    # A flat series has no variance, so the ratio is undefined.
+    if total == 0.0:
+        return None
+    residual = float(np.sum((observed - predicted) ** 2))
+    return _finite(1.0 - residual / total)
+
+
+def _blank_fit() -> dict[str, Any]:
+    return {"params": {}, "r_squared": None}
+
+
+def degree_distribution(G: nx.Graph) -> dict[str, Any]:
+    """Fit power-law, lognormal, and exponential to the degree distribution.
+
+    Return dict with best_fit, params, r_squared for each.
+    """
+    # Isolates have degree 0. log(k) is undefined there, so every fit uses k >= 1.
+    positive = [degree for _node, degree in G.degree() if degree > 0]
+    names = ("power_law", "lognormal", "exponential")
+    blank = {"best_fit": None, **{name: _blank_fit() for name in names}}
+    # Two occupied bins are the minimum for a slope.
+    if len(positive) < 2:
+        return blank
+    values, counts = np.unique(positive, return_counts=True)
+    values = values.astype(float)
+    counts = counts.astype(float)
+    if len(values) < 2:
+        return blank
+    # Each distinct degree is one point. A hub and a leaf weigh the same on the log-log line.
+    log_counts = np.log(counts)
+    log_degrees = np.log(values)
+    slope, intercept = (float(item) for item in np.polyfit(log_degrees, log_counts, 1))
+    power_law = {
+        # alpha is the positive exponent in k^{-alpha}. xmin is the smallest degree in the fit.
+        "params": {"alpha": -slope, "xmin": float(values.min())},
+        "r_squared": _r_squared(log_counts, intercept + slope * log_degrees),
+    }
+    exp_slope, exp_intercept = (float(item) for item in np.polyfit(values, log_counts, 1))
+    exponential = {
+        # rate is the positive decay in exp(-rate * k) when the semi-log line falls.
+        "params": {"rate": -exp_slope},
+        "r_squared": _r_squared(log_counts, exp_intercept + exp_slope * values),
+    }
+    lognormal = _blank_fit()
+    try:
+        # floc=0 keeps the support on positive degrees. sigma is the shape; mu is log(scale).
+        sigma, _loc, scale = stats.lognorm.fit(np.asarray(positive, dtype=float), floc=0)
+        if scale > 0 and sigma > 0:
+            dist = stats.lognorm(sigma, loc=0, scale=scale)
+            # Integer degrees sit in [k - 0.5, k + 0.5) so the cdf difference matches the histogram.
+            expected = len(positive) * (dist.cdf(values + 0.5) - dist.cdf(values - 0.5))
+            # A bin the model gives no mass still has to be a finite log. Clip only those zeros.
+            expected = np.clip(expected, 1e-12, None)
+            lognormal = {
+                "params": {"sigma": float(sigma), "mu": float(np.log(scale))},
+                "r_squared": _r_squared(log_counts, np.log(expected)),
+            }
+    except (ValueError, RuntimeError, FloatingPointError):
+        lognormal = _blank_fit()
+    fits = {"power_law": power_law, "lognormal": lognormal, "exponential": exponential}
+    best_fit = None
+    best_score = None
+    for name in names:
+        score = fits[name]["r_squared"]
+        if score is None:
+            continue
+        # Strictly greater, so a tie stays with the earlier name: power_law, then lognormal.
+        if best_score is None or score > best_score:
+            best_fit = name
+            best_score = score
+    return {"best_fit": best_fit, **fits}
+
+
+def rich_club(G: nx.Graph, k_values: list[int] | None = None) -> dict[int, float | None]:
+    """Return dict {k: rich_club_coefficient} for each k."""
+    if k_values is None:
+        k_values = [10, 20, 50, 100]
+    # normalized=True rewires every edge Q times. That is a null model, not the coefficient.
+    try:
+        coefficients = nx.rich_club_coefficient(G, normalized=False)
+    except Exception:
+        # NetworkX raises Exception, not NetworkXError, when the graph has a self-loop.
+        return {k: None for k in k_values}
+    found: dict[int, float | None] = {}
+    for k in k_values:
+        # Degrees past the last node with a neighbor are absent from the coefficient dict.
+        if k not in coefficients:
+            found[k] = None
+            continue
+        found[k] = _finite(float(coefficients[k]))
+    return found

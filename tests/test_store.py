@@ -18,6 +18,9 @@ from osi.store import (
     save_communities,
     save_graph,
     save_metrics,
+    save_result,
+    load_result,
+    list_results,
 )
 
 
@@ -67,7 +70,12 @@ def test_list_get_and_delete_run(tmp_path):
     assert meta["notes"] == "first"
     assert meta["config"]["layer"] == "reddit_user"
     save_graph("first", "reddit_user", _weighted_graph(), path=path)
+    save_result("first", "health", {"network": {"assortativity": None, "max_degree": 3}}, path=path)
+    assert load_result("first", "health", path=path)["network"]["max_degree"] == 3
+    assert load_result("first", "missing", path=path) is None
+    assert list_results("health", path=path)[0][0] == "first"
     delete_run("first", path=path)
     assert get_run("first", path=path) is None
     assert load_graph("first", "reddit_user", path=path) is None
+    assert load_result("first", "health", path=path) is None
     assert [item[0] for item in list_runs(path=path)] == ["second"]

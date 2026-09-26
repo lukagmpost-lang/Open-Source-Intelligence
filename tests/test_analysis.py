@@ -1,14 +1,19 @@
 import networkx as nx
 
+import pytest
+
 from osi.analysis import (
     betweenness_centrality,
     compare_centralities,
     compare_communities,
     cross_reference,
     degree_centrality,
+    degree_distribution,
     leiden_communities,
     louvain_communities,
+    network_health,
     pagerank,
+    rich_club,
 )
 
 
@@ -156,3 +161,42 @@ def test_leiden_falls_back_to_louvain(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", broken_import)
     graph = _barbell()
     assert leiden_communities(graph) == louvain_communities(graph)
+
+
+def test_health_assortativity_uses_the_largest_component():
+    graph = nx.star_graph(5)
+    # A separate triangle would change the coefficient if the whole graph were used.
+    graph.add_edges_from([(10, 11), (11, 12), (12, 10)])
+    health = network_health(graph)
+    largest = graph.subgraph(max(nx.connected_components(graph), key=len))
+    assert health["assortativity"] == pytest.approx(nx.degree_assortativity_coefficient(largest))
+    assert health["assortativity"] != pytest.approx(nx.degree_assortativity_coefficient(graph))
+    assert health["num_components"] == 2
+    assert health["max_degree"] == 5
+    assert health["avg_degree"] == pytest.approx(sum(degree for _node, degree in graph.degree()) / graph.number_of_nodes())
+    assert health["avg_clustering"] == pytest.approx(nx.average_clustering(graph))
+    assert health["transitivity"] == pytest.approx(nx.transitivity(graph))
+
+
+def test_degree_distribution_prefers_a_power_law_histogram():
+    degrees = []
+    for k in range(1, 12):
+        degrees.extend([k] * max(1, round(400 / k**2)))
+    if sum(degrees) % 2:
+        degrees.append(1)
+    graph = nx.configuration_model(degrees, seed=0)
+    fit = degree_distribution(graph)
+    assert set(fit) == {"best_fit", "power_law", "lognormal", "exponential"}
+    assert fit["power_law"]["params"]["alpha"] > 0
+    assert fit["power_law"]["r_squared"] > 0.95
+    assert fit["power_law"]["r_squared"] > fit["exponential"]["r_squared"]
+    assert fit["best_fit"] in {"power_law", "lognormal", "exponential"}
+
+
+def test_rich_club_matches_networkx_below_the_default_thresholds():
+    graph = nx.Graph([(0, 1), (0, 2), (1, 2), (1, 3), (1, 4), (4, 5)])
+    expected = nx.rich_club_coefficient(graph, normalized=False)
+    assert rich_club(graph, [0])[0] == pytest.approx(expected[0])
+    assert rich_club(graph) == {10: None, 20: None, 50: None, 100: None}
+    graph.add_edge(0, 0)
+    assert rich_club(graph) == {10: None, 20: None, 50: None, 100: None}

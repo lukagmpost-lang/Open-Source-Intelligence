@@ -13,3 +13,6 @@ pandas
 pyarrow
 # Standalone force-directed HTML. in_line resources need no extra download at view time.
 pyvis
+# Degree-distribution fits for --health.
+numpy
+scipy
