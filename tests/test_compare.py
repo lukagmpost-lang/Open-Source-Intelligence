@@ -116,6 +116,22 @@ def test_percentile_mode_uses_stored_ranks(tmp_path, monkeypatch, capsys):
     assert "y" in degree.split("FALLERS", 1)[1].split("ONLY_A", 1)[0]
 
 
+def test_cohort_tracks_the_head_of_each_run(tmp_path, monkeypatch, capsys):
+    _runs(tmp_path, monkeypatch)
+    assert compare.main(["--a", "a", "--b", "b", "--metric", "pagerank", "--mode", "cohort", "--top", "2"]) == 0
+    text = capsys.readouterr().out
+    cohort_a, cohort_b = text.split("COHORT_B", 1)
+    assert "COHORT_A 2" in cohort_a
+    assert "present 1  gone 1  still_top 0" in cohort_a
+    assert "gone" in cohort_a and "down" in cohort_a
+    assert "new" not in cohort_a
+    assert cohort_b.startswith(" 2")
+    assert "from_a 1  new 1  were_top 0" in cohort_b
+    assert "new" in cohort_b and "up" in cohort_b
+    assert compare.main(["--a", "a", "--b", "b", "--metric", "closeness", "--mode", "cohort"]) == 1
+    assert "has no closeness" in capsys.readouterr().out
+
+
 def test_missing_run_lists_what_is_stored(tmp_path, monkeypatch, capsys):
     _runs(tmp_path, monkeypatch)
     assert compare.main(["--a", "missing", "--b", "b", "--metric", "pagerank"]) == 1

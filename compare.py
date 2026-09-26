@@ -1,4 +1,4 @@
-"""Compare two stored runs on one metric, on percentile rank, or on community containment."""
+"""Compare two stored runs on one metric, on percentile rank, on a top-rank cohort, or on community containment."""
 
 from __future__ import annotations
 
@@ -133,6 +133,74 @@ def _percentile_tables(run_a: str, run_b: str, metric: str, top_n: int) -> int:
     return 0
 
 
+def _median(values: list[float]) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    # Even counts take the mean of the two central values so the median stays inside the range.
+    if len(ordered) % 2:
+        return ordered[mid]
+    return (ordered[mid - 1] + ordered[mid]) / 2
+
+
+def _top_nodes(ranks: dict, top_n: int) -> list:
+    # Rank 1 is the highest stored score. A run smaller than --top keeps every node.
+    chosen = [node for node, (_pct, rank) in ranks.items() if rank <= top_n]
+    chosen.sort(key=lambda node: (ranks[node][1], str(node)))
+    return chosen
+
+
+def _cohort_tables(run_a: str, run_b: str, metric: str, top_n: int) -> int:
+    left = load_metrics(run_a, metric)
+    right = load_metrics(run_b, metric)
+    # An empty load means the metric was never stored. Do not recompute it here.
+    if not left or not right:
+        missing = run_a if not left else run_b
+        print(f"{missing} has no {metric}")
+        return 1
+    rank_a = _percentiles(left)
+    rank_b = _percentiles(right)
+    cohort_a = _top_nodes(rank_a, top_n)
+    # Gone nodes have no later percentile, so the median is only over accounts still present.
+    present = [node for node in cohort_a if node in right]
+    still_top = [node for node in present if rank_b[node][1] <= top_n]
+    median_a = _median([rank_b[node][0] - rank_a[node][0] for node in present])
+    print(f"COHORT_A {len(cohort_a)}")
+    print(f"present {len(present)}  gone {len(cohort_a) - len(present)}  still_top {len(still_top)}")
+    # Same percentage-point units as the delta column, with a sign so a fall reads as positive.
+    shown = "n/a" if median_a is None else f"{median_a * 100:+.4f}%"
+    print(f"median_delta {shown}")
+    rows_a = []
+    for node in cohort_a:
+        pct_a, rank = rank_a[node]
+        if node not in right:
+            rows_a.append((node, rank, _percent(pct_a), _score(left[node]), "", "", "", "gone"))
+            continue
+        pct_b, other = rank_b[node]
+        delta = pct_b - pct_a
+        rows_a.append((node, rank, _percent(pct_a), _score(left[node]), other, _percent(pct_b), _score(right[node]), f"{delta * 100:+.4f}%"))
+    _print_table(("node", "rank_a", "pct_a", f"{metric}_a", "rank_b", "pct_b", f"{metric}_b", "delta"), rows_a)
+
+    cohort_b = _top_nodes(rank_b, top_n)
+    from_a = [node for node in cohort_b if node in left]
+    # were_top uses the same absolute rank cutoff, so it is the overlap of the two head cohorts.
+    were_top = [node for node in from_a if rank_a[node][1] <= top_n]
+    print(f"COHORT_B {len(cohort_b)}")
+    print(f"from_a {len(from_a)}  new {len(cohort_b) - len(from_a)}  were_top {len(were_top)}")
+    rows_b = []
+    for node in cohort_b:
+        pct_b, rank = rank_b[node]
+        if node not in left:
+            rows_b.append((node, rank, _percent(pct_b), _score(right[node]), "", "", "", "new"))
+            continue
+        pct_a, other = rank_a[node]
+        delta = pct_b - pct_a
+        rows_b.append((node, rank, _percent(pct_b), _score(right[node]), other, _percent(pct_a), _score(left[node]), f"{delta * 100:+.4f}%"))
+    _print_table(("node", "rank_b", "pct_b", f"{metric}_b", "rank_a", "pct_a", f"{metric}_a", "delta"), rows_b)
+    return 0
+
+
 def _groups(membership: dict) -> dict[int, set]:
     groups: dict[int, set] = {}
     for node, community_id in membership.items():
@@ -243,23 +311,26 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--metric")
     parser.add_argument("--top", type=int, default=20)
     parser.add_argument("--algorithm", choices=("louvain", "leiden"))
-    parser.add_argument("--mode", choices=("communities", "percentile"))
+    parser.add_argument("--mode", choices=("communities", "percentile", "cohort"))
     args = parser.parse_args(argv)
     if args.top < 1:
         parser.error("--top must be at least 1")
-    if args.mode == "percentile" and not args.metric:
-        parser.error("--metric is required with --mode percentile")
+    if args.mode in ("percentile", "cohort") and not args.metric:
+        parser.error("--metric is required with --mode percentile or cohort")
     if args.mode == "communities" and args.metric:
         parser.error("pass --metric, or --mode communities with --algorithm")
     metric_mode = args.metric is not None and args.mode is None
     percentile_mode = args.mode == "percentile"
+    cohort_mode = args.mode == "cohort"
     community_mode = args.mode == "communities"
-    if not metric_mode and not percentile_mode and not community_mode:
+    if not metric_mode and not percentile_mode and not cohort_mode and not community_mode:
         parser.error("pass --metric, or --mode communities with --algorithm")
     if community_mode and not args.algorithm:
         parser.error("--algorithm is required with --mode communities")
     if not _require_run(args.a) or not _require_run(args.b):
         return 1
+    if cohort_mode:
+        return _cohort_tables(args.a, args.b, args.metric, args.top)
     if percentile_mode:
         return _percentile_tables(args.a, args.b, args.metric, args.top)
     if community_mode:
