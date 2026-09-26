@@ -41,6 +41,37 @@ def test_robustness_flag_prints_removal_table(monkeypatch, tmp_path, capsys):
     assert "degree" in output and "betweenness" in output and "random" in output
 
 
+def test_identity_flag_prints_layer_membership(monkeypatch, tmp_path, capsys):
+    path = tmp_path / "identity.json"
+    path.write_text(json.dumps({"person_a": {"github": "ada", "reddit": "ada_r"}}), encoding="utf-8")
+    github = nx.Graph()
+    github.add_edge("github:ada", "github:grace", weight=2.0)
+    reddit = nx.Graph()
+    reddit.add_edge("reddit:ada_r", "reddit:linus", weight=1.0)
+
+    def fake_layer(name, _args):
+        return {"github": github, "reddit": reddit}.get(name)
+
+    monkeypatch.setattr(main, "_load_named_layer", fake_layer)
+    code = main.main(
+        [
+            "--identity",
+            str(path),
+            "--layers",
+            "github,reddit,missing",
+            "--analyze",
+            "centrality",
+            "--out",
+            str(tmp_path / "g.json"),
+        ]
+    )
+    output = capsys.readouterr().out
+    assert code == 0
+    assert "PageRank top 20 layer membership:" in output
+    assert "person_a|github" in output and "layer github" in output
+    assert "person_a|reddit" in output and "layer reddit" in output
+
+
 def test_communities_mode_skips_pagerank(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(main, "fetch_github_graph", lambda username: _tiny_graph())
     called = {"pagerank": False}

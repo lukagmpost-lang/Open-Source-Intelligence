@@ -34,6 +34,7 @@ from viz.interactive import to_interactive_html  # noqa: E402
 from layers.reddit_archive import load_reddit_layers  # noqa: E402
 from osi.datasets import load_snap_facebook  # noqa: E402
 from osi.graph import fetch_github_graph  # noqa: E402
+from osi.identity import load_identity_map, merge_identity_layers  # noqa: E402
 from osi.store import (  # noqa: E402
     create_run,
     get_run,
@@ -102,15 +103,72 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Remove nodes at random, by degree, and by betweenness, and print what remains.",
     )
+    parser.add_argument("--identity", metavar="path.json", help="JSON map from person id to platform handles.")
+    parser.add_argument("--layers", help="Comma-separated layer names. Used only with --identity.")
     args = parser.parse_args(argv)
     # Listing or loading does not build a GitHub graph, so a login is not required yet.
     if args.list_runs or (args.load_run and not args.no_cache):
+        return args
+    # Identity loads each named layer on its own, so a GitHub login is not required up front.
+    if args.identity:
+        if args.max_nodes < 1:
+            parser.error("--max-nodes must be at least 1")
         return args
     if args.source == "github" and not args.username:
         parser.error("--username is required when --source is github")
     if args.max_nodes < 1:
         parser.error("--max-nodes must be at least 1")
     return args
+
+
+def _requested_layers(args: argparse.Namespace) -> list[str]:
+    if args.layers:
+        return [part.strip() for part in args.layers.split(",") if part.strip()]
+    # The flag is documented with these two layers when the caller does not list any.
+    return ["github", "reddit"]
+
+
+def _load_named_layer(name: str, args: argparse.Namespace) -> nx.Graph | None:
+    """Load one layer. Any failure returns None so the rest of the merge can continue."""
+    try:
+        if name == "github":
+            if not args.username:
+                return None
+            return fetch_github_graph(args.username)
+        if name == "reddit":
+            return load_reddit_layers()["reddit_user"]
+        if name == "reddit_2012":
+            return load_reddit_layers(
+                "2012-08",
+                user_layer="reddit_2012_user",
+                subreddit_layer="reddit_2012_subreddit",
+            )["reddit_2012_user"]
+        if name == "snap_facebook":
+            return load_snap_facebook()
+    except Exception as error:  # noqa: BLE001 - a bad layer must not abort the merge
+        print(f"warning: layer {name} not loaded: {error}", file=sys.stderr)
+        return None
+    return None
+
+
+def _graph_from_identity(args: argparse.Namespace) -> nx.Graph:
+    identity_map = load_identity_map(args.identity)
+    layers: dict[str, nx.Graph | None] = {}
+    for name in _requested_layers(args):
+        graph = _load_named_layer(name, args)
+        if graph is None:
+            print(f"warning: layer {name} not loaded", file=sys.stderr)
+            continue
+        layers[name] = graph
+    return merge_identity_layers(layers, identity_map)
+
+
+def print_identity_membership(graph: nx.Graph, ranks: dict) -> None:
+    """Print which layer each top PageRank node came from."""
+    print("PageRank top 20 layer membership:")
+    for index, (node, score) in enumerate(list(ranks.items())[:20], start=1):
+        data = graph.nodes[node] if node in graph else {}
+        print(f"{index}. {node} {score:.6f} layer {data.get('layer')} person {data.get('person')}")
 
 
 def build_graph(args: argparse.Namespace) -> nx.Graph:
@@ -446,6 +504,8 @@ def main(argv: list[str] | None = None) -> int:
             if args.source == "github" and not args.username:
                 raise SystemExit("--username is required when --source is github") from error
             graph = build_graph(args)
+    elif args.identity:
+        graph = _graph_from_identity(args)
     else:
         graph = build_graph(args)
     centralities = None
@@ -457,6 +517,10 @@ def main(argv: list[str] | None = None) -> int:
             centralities = print_pagerank(graph)
         if args.analyze in ("all", "communities"):
             communities = print_communities(graph)
+    if args.identity:
+        # Communities-only runs have not ranked nodes yet. PageRank is computed here for the membership list.
+        scores = (centralities or {}).get("pagerank") if centralities else None
+        print_identity_membership(graph, scores or pagerank(graph))
     if args.compare:
         print_comparison(graph, args.compare)
     if args.save_run and not args.no_cache and not loaded:
