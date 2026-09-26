@@ -297,6 +297,47 @@ def test_robustness_without_source_or_saved_runs_explains_why(monkeypatch, tmp_p
     assert "store is empty" in capsys.readouterr().err
 
 
+def test_run_overrides_source(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("OSI_STORE", str(tmp_path / "store.db"))
+    from osi.store import create_run, save_graph
+
+    older = nx.Graph()
+    older.add_node("old-node")
+    path = tmp_path / "store.db"
+    create_run("reddit", {"layer": "old"}, "old", run_id="older", path=path)
+    save_graph("older", "old", older, path=path)
+
+    def fetch(_username):
+        raise AssertionError("source should not be built when --run is set")
+
+    monkeypatch.setattr(main, "fetch_github_graph", fetch)
+    code = main.main(
+        [
+            "--run",
+            "older",
+            "--source",
+            "github",
+            "--username",
+            "octocat",
+            "--analyze",
+            "communities",
+            "--out",
+            str(tmp_path / "g.json"),
+        ]
+    )
+    assert code == 0
+    capsys.readouterr()
+    payload = json.loads((tmp_path / "g.json").read_text())
+    assert {node["id"] for node in payload["nodes"]} == {"old-node"}
+
+
+def test_missing_run_does_not_rebuild(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("OSI_STORE", str(tmp_path / "empty.db"))
+    code = main.main(["--run", "missing", "--source", "github", "--username", "octocat", "--out", str(tmp_path / "g.json")])
+    assert code == 1
+    assert "run missing was not found" in capsys.readouterr().err
+
+
 def test_github_requires_username():
     try:
         main.main(["--source", "github", "--analyze", "communities"])

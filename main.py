@@ -95,13 +95,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     # The store is optional. Omitting these flags keeps the old one-shot run.
     parser.add_argument("--save-run", metavar="NAME", help="Save results under this run id.")
+    parser.add_argument("--run", metavar="NAME", help="Saved run to analyze. Takes precedence over --source.")
     parser.add_argument("--load-run", metavar="NAME", help="Load a previous run instead of recomputing.")
     parser.add_argument("--list-runs", action="store_true", help="Print saved runs and exit.")
     parser.add_argument("--no-cache", action="store_true", help="Bypass the store and compute fresh.")
     parser.add_argument(
         "--robustness",
         action="store_true",
-        help="Remove nodes at random, by degree, and by betweenness, and print what remains. With no --source and no --load-run, the newest saved run is used.",
+        help="Remove nodes at random, by degree, and by betweenness, and print what remains. With no --source and no --run, the newest saved run is used.",
     )
     parser.add_argument("--identity", metavar="path.json", help="JSON map from person id to platform handles.")
     parser.add_argument("--layers", help="Comma-separated layer names. Used only with --identity.")
@@ -109,6 +110,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     args.robustness_loaded_latest = False
     if args.list_runs:
         return args
+    # A named run is the graph to analyze, even when --source is also present.
+    if args.run:
+        args.load_run = args.run
     # --robustness with no source and no named run uses the store. GitHub is not assumed.
     if args.robustness and args.source is None and not args.load_run and not args.identity:
         if args.no_cache:
@@ -516,7 +520,11 @@ def main(argv: list[str] | None = None) -> int:
             graph = _load_saved_graph(args.load_run)
             loaded = True
         except (LookupError, json.JSONDecodeError, OSError, ValueError) as error:
-            # A bad or missing run must not stop the command. Rebuild from the source.
+            # --run names one saved graph. Do not silently rebuild a different source.
+            if args.run:
+                print(f"run {args.run} was not found", file=sys.stderr)
+                return 1
+            # A bad or missing --load-run must not stop the command. Rebuild from the source.
             print(f"warning: could not load run {args.load_run}: {error}; computing fresh", file=sys.stderr)
             if args.source == "github" and not args.username:
                 raise SystemExit("--username is required when --source is github") from error
