@@ -352,6 +352,193 @@ def cpm_communities(G: nx.Graph, k: int = 3) -> dict[Any, list[int]]:
     return membership
 
 
+# Below this size, starting a process pool costs more than the removals themselves.
+_ROBUSTNESS_PARALLEL_NODES = 2500
+_WORKER_GRAPH = None
+_WORKER_ORIGINAL = 0
+
+
+def _component_stats(graph, original_count: int) -> dict[str, float]:
+    remaining = graph.vcount()
+    if remaining == 0 or original_count == 0:
+        return {"remaining": 0, "largest": 0.0, "components": 0.0, "efficiency": 0.0}
+    sizes = graph.connected_components().sizes()
+    # Fraction of the original node set, so a removed node counts as lost structure.
+    largest = max(sizes) / original_count
+    if remaining < 2:
+        efficiency = 0.0
+    else:
+        # Sum of inverse distances, divided by ordered pairs. Same value as networkx.global_efficiency.
+        harmonic = graph.harmonic_centrality(normalized=False)
+        efficiency = float(sum(harmonic)) / (remaining * (remaining - 1))
+    return {
+        "remaining": float(remaining),
+        "largest": float(largest),
+        "components": float(len(sizes)),
+        "efficiency": float(efficiency),
+    }
+
+
+def _stats_after_removal(graph, remove_idx: list[int], original_count: int) -> dict[str, float]:
+    attacked = graph.copy()
+    if remove_idx:
+        # One call keeps the indexes on the intact graph. Deleting one by one would shift them.
+        attacked.delete_vertices(list(remove_idx))
+    return _component_stats(attacked, original_count)
+
+
+def _init_robustness_worker(edges: list[tuple[int, int]], node_count: int) -> None:
+    global _WORKER_GRAPH, _WORKER_ORIGINAL
+    import igraph as ig
+
+    _WORKER_ORIGINAL = node_count
+    _WORKER_GRAPH = ig.Graph(n=node_count, edges=edges, directed=False)
+
+
+def _robustness_worker(remove_idx: list[int]) -> dict[str, float]:
+    return _stats_after_removal(_WORKER_GRAPH, remove_idx, _WORKER_ORIGINAL)
+
+
+def _removal_count(node_count: int, ratio: float) -> int:
+    # Integer part of the fraction, capped so a ratio of 1 clears the graph and a tiny graph can remove nothing.
+    return max(0, min(node_count, int(ratio * node_count)))
+
+
+def _average_stats(rows: list[dict[str, float]]) -> dict[str, float]:
+    count = len(rows)
+    averaged = {
+        "remaining": rows[0]["remaining"],
+        "largest": sum(row["largest"] for row in rows) / count,
+        "components": sum(row["components"] for row in rows) / count,
+        "efficiency": sum(row["efficiency"] for row in rows) / count,
+    }
+    return averaged
+
+
+def robustness(
+    G: nx.Graph,
+    strategies: list[str] | None = None,
+    remove_ratio: list[float] | None = None,
+    runs: int = 20,
+) -> dict[str, Any]:
+    """For each strategy, remove that fraction of nodes and compute:
+    - largest connected component size (as fraction of original)
+    - number of components
+    - global efficiency
+
+    'random' averages over `runs` trials.
+    'degree' removes highest-degree first.
+    'betweenness' removes highest-betweenness first.
+    """
+    if strategies is None:
+        strategies = ["random", "degree", "betweenness"]
+    else:
+        strategies = list(strategies)
+    if remove_ratio is None:
+        remove_ratio = [0.01, 0.02, 0.05, 0.10, 0.20, 0.30]
+    else:
+        remove_ratio = list(remove_ratio)
+    if runs < 1:
+        raise ValueError("runs must be at least 1")
+    unknown = [name for name in strategies if name not in {"random", "degree", "betweenness"}]
+    if unknown:
+        raise ValueError(f"unknown strategy: {unknown[0]}")
+
+    node_count = G.number_of_nodes()
+    empty = {"remaining": 0.0, "largest": 0.0, "components": 0.0, "efficiency": 0.0}
+    if node_count == 0:
+        return {"baseline": empty, **{name: {ratio: dict(empty) for ratio in remove_ratio} for name in strategies}}
+
+    names, base = _as_igraph(G, None)
+    index = {node: position for position, node in enumerate(names)}
+    edges = base.get_edgelist()
+    # Rank once on the intact graph, then delete a prefix. Centrality is not recomputed after each deletion.
+    degree_order = [index[node] for node, _degree in sorted(G.degree, key=lambda item: (-item[1], str(item[0])))]
+    between_order: list[int] = []
+    if "betweenness" in strategies:
+        # Same weighted betweenness the rest of the tool stores.
+        between_order = [index[node] for node in betweenness_centrality(G)]
+
+    import random
+
+    # Fixed seed so the random average does not change between calls.
+    rng = random.Random(0)
+    tasks: list[tuple[tuple, list[int]]] = [(("baseline", 0.0, 0), [])]
+    for name in strategies:
+        for ratio in remove_ratio:
+            count = _removal_count(node_count, ratio)
+            if name == "degree":
+                tasks.append(((name, ratio, 0), degree_order[:count]))
+            elif name == "betweenness":
+                tasks.append(((name, ratio, 0), between_order[:count]))
+            else:
+                for trial in range(runs):
+                    chosen = rng.sample(range(node_count), count) if count else []
+                    tasks.append(((name, ratio, trial), chosen))
+
+    measured = _measure_removals(edges, node_count, [remove for _key, remove in tasks])
+    grouped: dict[tuple, list[dict[str, float]]] = {}
+    for (key, _remove), stats in zip(tasks, measured):
+        grouped.setdefault(key[:2], []).append(stats)
+
+    results: dict[str, Any] = {"baseline": _average_stats(grouped[("baseline", 0.0)])}
+    for name in strategies:
+        results[name] = {ratio: _average_stats(grouped[(name, ratio)]) for ratio in remove_ratio}
+    return results
+
+
+def _measure_removals(edges: list[tuple[int, int]], node_count: int, removals: list[list[int]]) -> list[dict[str, float]]:
+    # Process startup dominates on small graphs. Large graphs spend minutes in all-pairs distances.
+    if node_count < _ROBUSTNESS_PARALLEL_NODES or len(removals) <= 1:
+        import igraph as ig
+
+        base = ig.Graph(n=node_count, edges=edges, directed=False)
+        return [_stats_after_removal(base, remove, node_count) for remove in removals]
+
+    import multiprocessing as mp
+    from concurrent.futures import ProcessPoolExecutor
+
+    # Two copies of the 2012 graph fit in memory. More workers start swapping and the distances slow down.
+    workers = min(2, os_cpu_count(), len(removals))
+    # Fork, not spawn: spawn re-imports the parent script, which fails for python -c and for stdin.
+    context = mp.get_context("fork")
+    import sys
+
+    with ProcessPoolExecutor(
+        max_workers=workers,
+        mp_context=context,
+        initializer=_init_robustness_worker,
+        initargs=(edges, node_count),
+    ) as pool:
+        futures = [pool.submit(_robustness_worker, remove) for remove in removals]
+        measured = []
+        for index, future in enumerate(futures, start=1):
+            measured.append(future.result())
+            print(f"robustness {index}/{len(futures)}", file=sys.stderr, flush=True)
+        return measured
+
+
+def os_cpu_count() -> int:
+    import os
+
+    return os.cpu_count() or 1
+
+
+def giant_halved_at(results: dict[str, Any]) -> dict[str, float | None]:
+    """Smallest simulated ratio whose largest component is at most half the intact one."""
+    half = results["baseline"]["largest"] / 2
+    found: dict[str, float | None] = {}
+    for name, rows in results.items():
+        if name == "baseline":
+            continue
+        found[name] = None
+        for ratio, stats in rows.items():
+            if stats["largest"] <= half:
+                found[name] = ratio
+                break
+    return found
+
+
 def print_cpm_summary(membership: dict[Any, list[int]]) -> None:
     """Count nodes by how many communities they belong to, then list the most overlapped."""
     buckets = {1: 0, 2: 0, "3+": 0}

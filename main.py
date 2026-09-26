@@ -28,6 +28,7 @@ from osi.analysis import (  # noqa: E402
     pagerank,
     preferential_attachment,
     print_cpm_summary,
+    robustness,
 )
 from viz.interactive import to_interactive_html  # noqa: E402
 from layers.reddit_archive import load_reddit_layers  # noqa: E402
@@ -96,6 +97,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--load-run", metavar="NAME", help="Load a previous run instead of recomputing.")
     parser.add_argument("--list-runs", action="store_true", help="Print saved runs and exit.")
     parser.add_argument("--no-cache", action="store_true", help="Bypass the store and compute fresh.")
+    parser.add_argument(
+        "--robustness",
+        action="store_true",
+        help="Remove nodes at random, by degree, and by betweenness, and print what remains.",
+    )
     args = parser.parse_args(argv)
     # Listing or loading does not build a GitHub graph, so a login is not required yet.
     if args.list_runs or (args.load_run and not args.no_cache):
@@ -285,6 +291,50 @@ def print_link_predictions(graph: nx.Graph, top_n: int) -> None:
     print(f"link-predict after: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges")
 
 
+def _robust_cell(value: float, digits: int) -> str:
+    return f"{value:.{digits}f}"
+
+
+def _component_cell(value: float) -> str:
+    if abs(value - round(value)) < 1e-9:
+        return str(int(round(value)))
+    return f"{value:.2f}"
+
+
+def _robust_rows(results: dict):
+    yield ("intact", 0.0, results["baseline"])
+    for strategy, rows in results.items():
+        if strategy == "baseline":
+            continue
+        for ratio, stats in rows.items():
+            yield (strategy, ratio, stats)
+
+
+def print_robustness(results: dict) -> None:
+    print("strategy  ratio  remaining  largest  components  efficiency")
+    for strategy, ratio, stats in _robust_rows(results):
+        print(
+            f"{strategy}  {ratio:.2f}  {int(stats['remaining'])}  "
+            f"{_robust_cell(stats['largest'], 6)}  {_component_cell(stats['components'])}  "
+            f"{_robust_cell(stats['efficiency'], 6)}"
+        )
+
+
+def print_robustness_pair(label_a: str, left: dict, label_b: str, right: dict) -> None:
+    print(f"a {label_a}")
+    print(f"b {label_b}")
+    print("strategy  ratio  rem_a  lcc_a  comp_a  eff_a  rem_b  lcc_b  comp_b  eff_b")
+    rows_b = {(strategy, ratio): stats for strategy, ratio, stats in _robust_rows(right)}
+    for strategy, ratio, stats in _robust_rows(left):
+        other = rows_b[(strategy, ratio)]
+        print(
+            f"{strategy}  {ratio:.2f}  {int(stats['remaining'])}  {_robust_cell(stats['largest'], 6)}  "
+            f"{_component_cell(stats['components'])}  {_robust_cell(stats['efficiency'], 6)}  "
+            f"{int(other['remaining'])}  {_robust_cell(other['largest'], 6)}  "
+            f"{_component_cell(other['components'])}  {_robust_cell(other['efficiency'], 6)}"
+        )
+
+
 def write_graph(graph: nx.Graph, path: str) -> None:
     payload = nx.node_link_data(graph, edges="links")
     Path(path).write_text(json.dumps(payload), encoding="utf-8")
@@ -427,6 +477,8 @@ def main(argv: list[str] | None = None) -> int:
             max_nodes=args.max_nodes,
             min_edge_weight=args.min_edge_weight,
         )
+    if args.robustness:
+        print_robustness(robustness(graph))
     return 0
 
 

@@ -32,6 +32,30 @@ def test_betweenness_and_closeness_match_networkx():
         assert abs(scored[node] - closeness[node]) < 1e-8
 
 
+def test_robustness_degree_removes_the_hub_first():
+    from osi.analysis import giant_halved_at, robustness
+
+    graph = nx.star_graph(10)
+    nx.set_edge_attributes(graph, 1.0, "weight")
+    intact = nx.global_efficiency(graph)
+    results = robustness(graph, strategies=["degree", "betweenness", "random"], remove_ratio=[0.1], runs=5)
+    assert abs(results["baseline"]["efficiency"] - intact) < 1e-9
+    assert results["baseline"]["largest"] == 1.0
+    # 10% of 11 nodes removes one node: the center. The leaves are then isolated.
+    for name in ("degree", "betweenness"):
+        stats = results[name][0.1]
+        assert stats["remaining"] == 10
+        assert abs(stats["largest"] - 1 / 11) < 1e-9
+        assert stats["components"] == 10
+        assert stats["efficiency"] == 0.0
+    assert results["random"][0.1]["remaining"] == 10
+    again = robustness(graph, strategies=["random"], remove_ratio=[0.1], runs=5)
+    assert again["random"] == results["random"]
+    halved = giant_halved_at(results)
+    assert halved["degree"] == 0.1
+    assert halved["betweenness"] == 0.1
+
+
 def test_centralities_are_sorted_dicts_without_printing(capsys):
     graph = _barbell()
     degree = degree_centrality(graph)

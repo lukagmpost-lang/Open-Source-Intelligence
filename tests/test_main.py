@@ -30,6 +30,17 @@ def test_github_all_prints_pagerank_and_communities(monkeypatch, tmp_path, capsy
     assert len(payload["nodes"]) == 6
 
 
+def test_robustness_flag_prints_removal_table(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(main, "fetch_github_graph", lambda username: _tiny_graph())
+    code = main.main(
+        ["--username", "octocat", "--analyze", "communities", "--robustness", "--out", str(tmp_path / "g.json")]
+    )
+    output = capsys.readouterr().out
+    assert code == 0
+    assert "strategy  ratio  remaining  largest  components  efficiency" in output
+    assert "degree" in output and "betweenness" in output and "random" in output
+
+
 def test_communities_mode_skips_pagerank(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(main, "fetch_github_graph", lambda username: _tiny_graph())
     called = {"pagerank": False}
