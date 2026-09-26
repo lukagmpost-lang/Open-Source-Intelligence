@@ -39,6 +39,49 @@ def test_queries_print_a_table(tmp_path, monkeypatch, capsys):
     assert "akdas" in text and "sjs" not in text
 
 
+def _path_store(tmp_path, monkeypatch):
+    monkeypatch.setenv("OSI_STORE", str(tmp_path / "store.db"))
+    graph = nx.Graph()
+    # The direct tie is stronger than the two-hop chain, and it is the one-hop path.
+    graph.add_edge("akdas", "yellowking", weight=3)
+    graph.add_edge("akdas", "sjs", weight=1)
+    graph.add_edge("sjs", "yellowking", weight=1)
+    graph.add_edge("akdas", "malcontent", weight=2)
+    graph.add_node("solo")
+    create_run("reddit", {"layer": "reddit_user"}, "paths", run_id="paths", path=tmp_path / "store.db")
+    save_graph("paths", "reddit_user", graph, path=tmp_path / "store.db")
+
+
+def test_path_queries(tmp_path, monkeypatch, capsys):
+    _path_store(tmp_path, monkeypatch)
+    assert query.main(["--run", "paths", "path from akdas to yellowking"]) == 0
+    assert capsys.readouterr().out.splitlines() == ["akdas  yellowking  3.000000"]
+    assert query.main(["--run", "paths", "paths from akdas to yellowking limit 2"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0] == "akdas yellowking"
+    assert len(lines) == 2
+    assert "sjs" in lines[1]
+    assert query.main(["--run", "paths", "distance between akdas and yellowking"]) == 0
+    assert capsys.readouterr().out.strip() == "1"
+    assert query.main(["--run", "paths", "neighborhood of akdas radius 1"]) == 0
+    text = capsys.readouterr().out.splitlines()
+    assert text[0] == "4"
+    assert text[1:] == ["akdas  0", "malcontent  1", "sjs  1", "yellowking  1"]
+
+
+def test_path_edges(tmp_path, monkeypatch, capsys):
+    _path_store(tmp_path, monkeypatch)
+    assert query.main(["--run", "paths", "path from akdas to solo"]) == 1
+    assert capsys.readouterr().out.strip() == "no path (disconnected)"
+    assert query.main(["--run", "paths", "distance between akdas and solo"]) == 1
+    assert capsys.readouterr().out.strip() == "inf"
+    assert query.main(["--run", "paths", "path from akdat to yellowking"]) == 1
+    missing = capsys.readouterr().out
+    assert "similar names:" in missing and "akdas" in missing
+    assert query.main(["--run", "paths", "neighborhood of akdas radius 6"]) == 0
+    assert "warning: radius above 5 may be slow" in capsys.readouterr().err
+
+
 def test_bad_query_and_missing_run(tmp_path, monkeypatch, capsys):
     _store(tmp_path, monkeypatch)
     assert query.main(["--run", "tiny", "show everything"]) == 1

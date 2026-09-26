@@ -6,6 +6,7 @@ import argparse
 import operator
 import re
 import sys
+from itertools import islice
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -31,6 +32,11 @@ _PATTERNS = (
     ("neighbors", re.compile(r"^neighbors of (.+)$")),
     ("community", re.compile(r"^community of (.+)$")),
     ("sizes", re.compile(r"^communities by size$")),
+    # "paths" is its own pattern. "path from" does not match it.
+    ("paths", re.compile(r"^paths from (.+?) to (.+) limit (\d+)$")),
+    ("path", re.compile(r"^path from (.+?) to (.+)$")),
+    ("distance", re.compile(r"^distance between (.+?) and (.+)$")),
+    ("neighborhood", re.compile(r"^neighborhood of (.+) radius (\d+)$")),
     # >= and <= are listed first so the shorter operators do not take the "=".
     ("where", re.compile(rf"^nodes where ({_METRIC}) (>=|<=|>|<) ([+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)$")),
 )
@@ -41,6 +47,10 @@ _SUPPORTED = (
     "community of NODE",
     "communities by size",
     "nodes where METRIC OP VALUE",
+    "path from NODE to NODE",
+    "paths from NODE to NODE limit K",
+    "distance between NODE and NODE",
+    "neighborhood of NODE radius R",
 )
 _OPS = {">": operator.gt, "<": operator.lt, ">=": operator.ge, "<=": operator.le}
 
@@ -85,42 +95,154 @@ def _score_cell(value: float) -> str:
     return f"{value:.6f}"
 
 
-def _run_query(kind: str, groups: re.Match[str], run_id: str, graph: nx.Graph) -> None:
+def _edge_weight(graph: nx.Graph, left, right) -> float:
+    data = graph.get_edge_data(left, right) or {}
+    # Same default as the neighbor table: an edge with no stored weight counts as 1.
+    return float(data.get("weight", 1.0))
+
+
+def _edit_distance(left: str, right: str) -> int:
+    """Levenshtein distance. Kept local so a missing name does not import the report tool."""
+    previous = list(range(len(right) + 1))
+    for index, left_char in enumerate(left, start=1):
+        current = [index]
+        for column, right_char in enumerate(right, start=1):
+            current.append(
+                min(
+                    current[-1] + 1,
+                    previous[column] + 1,
+                    previous[column - 1] + (left_char != right_char),
+                )
+            )
+        previous = current
+    return previous[-1]
+
+
+def _closest_names(graph: nx.Graph, name: str, limit: int = 10) -> list[str]:
+    # Full edit distance, not a cutoff of 2, so the list is the ten nearest names even when all are farther.
+    ranked = sorted((_edit_distance(name, str(node)), str(node)) for node in graph.nodes if str(node) != name)
+    return [other for _distance, other in ranked[:limit]]
+
+
+def _print_missing(graph: nx.Graph, *names: str) -> bool:
+    missing = [name for name in names if name not in graph]
+    if not missing:
+        return False
+    for name in missing:
+        print(name)
+        print("similar names:")
+        for other in _closest_names(graph, name):
+            print(f"  {other}")
+    return True
+
+
+def _print_path(graph: nx.Graph, source: str, target: str) -> int:
+    if _print_missing(graph, source, target):
+        return 1
+    try:
+        # Weight is tie strength. Passing it as length would walk around a strong tie through weaker ones.
+        nodes = nx.shortest_path(graph, source, target)
+    except nx.NetworkXNoPath:
+        print("no path (disconnected)")
+        return 1
+    cumulative = 0.0
+    if len(nodes) == 1:
+        print(f"{nodes[0]}  {_score_cell(cumulative)}")
+        return 0
+    for left, right in zip(nodes, nodes[1:]):
+        cumulative += _edge_weight(graph, left, right)
+        print(f"{left}  {right}  {_score_cell(cumulative)}")
+    return 0
+
+
+def _print_paths(graph: nx.Graph, source: str, target: str, limit: int) -> int:
+    if _print_missing(graph, source, target):
+        return 1
+    try:
+        # Yen's algorithm. Stop at K so a dense community does not enumerate every simple path.
+        found = list(islice(nx.shortest_simple_paths(graph, source, target), limit))
+    except nx.NetworkXNoPath:
+        found = []
+    if not found:
+        print("no path (disconnected)")
+        return 1
+    for nodes in found:
+        print(" ".join(str(node) for node in nodes))
+    return 0
+
+
+def _print_distance(graph: nx.Graph, source: str, target: str) -> int:
+    if _print_missing(graph, source, target):
+        return 1
+    try:
+        nodes = nx.shortest_path(graph, source, target)
+    except nx.NetworkXNoPath:
+        print("inf")
+        return 1
+    # Hop count. The same path the single-path query walks.
+    print(len(nodes) - 1)
+    return 0
+
+
+def _print_neighborhood(graph: nx.Graph, node: str, radius: int) -> int:
+    if _print_missing(graph, node):
+        return 1
+    if radius > 5:
+        print("warning: radius above 5 may be slow", file=sys.stderr)
+    lengths = nx.single_source_shortest_path_length(graph, node, cutoff=radius)
+    # The source is included at distance 0, so the count is everyone the radius reaches.
+    ordered = sorted(lengths.items(), key=lambda item: (item[1], str(item[0])))
+    print(len(ordered))
+    for other, dist in ordered:
+        print(f"{other}  {dist}")
+    return 0
+
+
+def _run_query(kind: str, groups: re.Match[str], run_id: str, graph: nx.Graph) -> int:
     if kind == "top":
         count, metric = int(groups.group(1)), groups.group(2)
         rows = list(_metric_scores(run_id, graph, metric).items())[:count]
         _print_table(("rank", "node", metric), [(index, node, _score_cell(score)) for index, (node, score) in enumerate(rows, start=1)])
-        return
+        return 0
     if kind == "top_in":
         count, community_id, metric = int(groups.group(1)), int(groups.group(2)), groups.group(3)
         membership = _communities(run_id, graph)
         # The stored scores are already strongest-first, so filtering keeps that order.
         chosen = [(node, score) for node, score in _metric_scores(run_id, graph, metric).items() if membership.get(node) == community_id]
         _print_table(("rank", "node", metric), [(index, node, _score_cell(score)) for index, (node, score) in enumerate(chosen[:count], start=1)])
-        return
+        return 0
     if kind == "neighbors":
         node = groups.group(1)
         # Stronger shared-thread ties first. Missing weight is the same default as the archive loader.
         linked = sorted(graph.edges(node, data=True), key=lambda item: (-float(item[2].get("weight", 1.0)), str(item[1])))
         _print_table(("neighbor", "weight"), [(other, _score_cell(float(data.get("weight", 1.0)))) for _left, other, data in linked])
-        return
+        return 0
     if kind == "community":
         node = groups.group(1)
         membership = _communities(run_id, graph)
         rows = [(node, membership[node])] if node in membership else []
         _print_table(("node", "community"), rows)
-        return
+        return 0
     if kind == "sizes":
         counts: dict[int, int] = {}
         for community_id in _communities(run_id, graph).values():
             counts[int(community_id)] = counts.get(int(community_id), 0) + 1
         ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
         _print_table(("community", "size"), ordered)
-        return
+        return 0
+    if kind == "path":
+        return _print_path(graph, groups.group(1).strip(), groups.group(2).strip())
+    if kind == "paths":
+        return _print_paths(graph, groups.group(1).strip(), groups.group(2).strip(), int(groups.group(3)))
+    if kind == "distance":
+        return _print_distance(graph, groups.group(1).strip(), groups.group(2).strip())
+    if kind == "neighborhood":
+        return _print_neighborhood(graph, groups.group(1).strip(), int(groups.group(2)))
     metric, symbol, raw_value = groups.group(1), groups.group(2), float(groups.group(3))
     compare = _OPS[symbol]
     matched = [(node, score) for node, score in _metric_scores(run_id, graph, metric).items() if compare(score, raw_value)]
     _print_table(("node", metric), [(node, _score_cell(score)) for node, score in matched])
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -149,8 +271,7 @@ def main(argv: list[str] | None = None) -> int:
         for run_id, source, _created_at, _notes in list_runs():
             print(f"{run_id} {source}")
         return 1
-    _run_query(matched[0], matched[1], args.run, graph)
-    return 0
+    return _run_query(matched[0], matched[1], args.run, graph)
 
 
 if __name__ == "__main__":
