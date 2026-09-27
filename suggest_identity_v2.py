@@ -2,6 +2,7 @@
 
 Usage:
   python3 suggest_identity_v2.py --reddit-run r2008-v2 --github-user rtomayko [--top 100]
+  python3 suggest_identity_v2.py --reddit-run r2008-v2 --github-graph github_multi_ego.graphml [--top 100]
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
 from osi.analysis import betweenness_centrality, closeness_centrality, louvain_communities, pagerank
-from osi.github_graph import fetch_github_graph
+from osi.github_graph import MULTI_EGO_LAYER, MULTI_EGO_RUN, fetch_github_graph
 from osi.identity_structural import match_by_structure
 from osi.store import get_run, list_runs, load_communities, load_graph, load_metrics
 
@@ -96,13 +97,15 @@ def load_github_graph(logins: list[str]) -> nx.Graph:
 def _metric_bundle(graph: nx.Graph, run_id: str | None) -> dict:
     """Stored scores when the run has them. Otherwise measure this graph."""
     metrics: dict = {}
+    nodes = set(graph.nodes)
     if run_id:
         for name in ("pagerank", "betweenness", "closeness"):
             loaded = load_metrics(run_id, name)
-            if loaded:
+            # A score dict from an older, smaller graph cannot fingerprint these nodes.
+            if loaded and nodes <= set(loaded):
                 metrics[name] = loaded
         community = load_communities(run_id, "louvain")
-        if community:
+        if community and nodes <= set(community):
             metrics["community"] = community
     if "pagerank" not in metrics:
         metrics["pagerank"] = pagerank(graph)
@@ -163,7 +166,29 @@ def _write(confirmed: list[dict], structural: list[dict], name_only: list[dict])
     _OUTPUT.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
-def suggest(reddit_run: str, github_users: list[str], top: int) -> int:
+def load_github_graphml(path: Path) -> nx.Graph:
+    """Read a saved multi-ego layer. GraphML stores every attribute as text."""
+    graph = nx.read_graphml(path)
+    for _left, _right, data in graph.edges(data=True):
+        if "weight" in data:
+            data["weight"] = float(data["weight"])
+    return graph
+
+
+def _metrics_for_github_graph(graph: nx.Graph) -> dict:
+    """Use the cached multi-ego scores when this file is that same node set."""
+    stored = load_graph(MULTI_EGO_RUN, MULTI_EGO_LAYER)
+    if stored is not None and {str(node) for node in stored.nodes} == {str(node) for node in graph.nodes}:
+        return _metric_bundle(graph, MULTI_EGO_RUN)
+    return _metric_bundle(graph, None)
+
+
+def suggest(
+    reddit_run: str,
+    github_users: list[str] | None,
+    top: int,
+    github_graph: str | None = None,
+) -> int:
     meta = get_run(reddit_run)
     if meta is None:
         for saved_id, source, _created_at, _notes in list_runs():
@@ -175,16 +200,25 @@ def suggest(reddit_run: str, github_users: list[str], top: int) -> int:
         for saved_id, source, _created_at, _notes in list_runs():
             print(f"{saved_id} {source}")
         return 1
-    github = load_github_graph(github_users)
-    if len(github_users) == 1:
-        # One fetched neighborhood has no edges except the center's. Scores cannot see the rest of GitHub.
-        print(
-            f"note: GitHub graph is one ego network around {github_users[0]} "
-            f"({github.number_of_nodes()} nodes). Fingerprints only see that local structure.",
-            file=sys.stderr,
-        )
+    if github_graph:
+        path = Path(github_graph)
+        if not path.is_file():
+            print(f"missing GitHub graph {path}", file=sys.stderr)
+            return 1
+        github = load_github_graphml(path)
+        # A multi-ego file already has edges between neighborhoods. Do not warn about a star.
+        github_metrics = _metrics_for_github_graph(github)
+    else:
+        github = load_github_graph(github_users or [])
+        if len(github_users or []) == 1:
+            # One fetched neighborhood has no edges except the center's. Scores cannot see the rest of GitHub.
+            print(
+                f"note: GitHub graph is one ego network around {github_users[0]} "
+                f"({github.number_of_nodes()} nodes). Fingerprints only see that local structure.",
+                file=sys.stderr,
+            )
+        github_metrics = _metric_bundle(github, None)
     reddit_metrics = _metric_bundle(reddit, reddit_run)
-    github_metrics = _metric_bundle(github, None)
     # Stored PageRank is already strongest-first, which is the order --top cuts.
     ranked = [node for node in reddit_metrics["pagerank"] if node in reddit][:top]
     candidates = _name_candidates(ranked, github)
@@ -206,12 +240,16 @@ def suggest(reddit_run: str, github_users: list[str], top: int) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Match Reddit users to a GitHub ego graph by structure.")
     parser.add_argument("--reddit-run", required=True)
-    parser.add_argument("--github-user", action="append", required=True)
+    parser.add_argument("--github-user", action="append")
+    parser.add_argument("--github-graph")
     parser.add_argument("--top", type=int, default=100)
     args = parser.parse_args(argv)
     if args.top < 1:
         parser.error("--top must be at least 1")
-    return suggest(args.reddit_run, args.github_user, args.top)
+    # One source for the GitHub layer. The file is the multi-ego graph; the flag is a single login.
+    if bool(args.github_user) == bool(args.github_graph):
+        parser.error("pass exactly one of --github-user or --github-graph")
+    return suggest(args.reddit_run, args.github_user, args.top, args.github_graph)
 
 
 if __name__ == "__main__":
