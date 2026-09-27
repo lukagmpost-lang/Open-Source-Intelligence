@@ -42,6 +42,7 @@ from osi.identity import (  # noqa: E402
     fetch_github_identities,
     load_identity_map,
     merge_identity_layers,
+    normalize_layers,
     warn_missing_handles,
 )
 from osi.store import (  # noqa: E402
@@ -123,6 +124,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--identity", metavar="path.json", help="JSON map from person id to platform handles.")
     parser.add_argument("--layers", help="Comma-separated layer names. Used only with --identity.")
+    parser.add_argument(
+        "--normalize-layers",
+        action="store_true",
+        help="Scale each layer's edge weights to the same total before the supra-graph is built.",
+    )
     args = parser.parse_args(argv)
     args.robustness_loaded_latest = False
     if args.list_runs:
@@ -205,6 +211,9 @@ def _graph_from_identity(args: argparse.Namespace) -> nx.Graph:
             continue
         layers[name] = graph
     warn_missing_handles(layers, identity_map)
+    if args.normalize_layers:
+        # Scale the layers first. merge_identity_layers then calls the existing supra-graph builder.
+        layers = normalize_layers(layers)
     merged = merge_identity_layers(layers, identity_map)
     annotate_coverage(merged)
     return merged
@@ -623,6 +632,7 @@ def _persist_run(args: argparse.Namespace, graph: nx.Graph, centralities: dict |
         "layer": layer,
         "identity": args.identity,
         "layers": args.layers,
+        "normalize_layers": bool(args.normalize_layers),
     }
     # The flag value is the primary key, so a second save with the same name replaces it.
     run_id = create_run(source, config, args.save_run, run_id=args.save_run)

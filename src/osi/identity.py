@@ -195,6 +195,53 @@ def annotate_coverage(graph: nx.Graph) -> dict[str, list[str]]:
     return listed
 
 
+# Every layer is scaled to this same sum before the layers are coupled.
+_LAYER_WEIGHT_TARGET = 1.0
+
+
+def _total_edge_weight(graph: nx.Graph) -> float:
+    # An edge with no weight counts as 1, matching the loaders and the neighbor table.
+    return sum(float(data.get("weight", 1.0)) for _left, _right, data in graph.edges(data=True))
+
+
+def normalize_layers(
+    layers: dict[str, nx.Graph | None],
+    target_total: float = _LAYER_WEIGHT_TARGET,
+) -> dict[str, nx.Graph]:
+    """Scale each layer so its edge weights sum to the same target.
+
+    The copy leaves the caller's graph alone, so a saved run used as a layer is not rewritten.
+    """
+    present = {str(name): graph for name, graph in layers.items() if graph is not None and name is not None}
+    print("before normalization")
+    totals: dict[str, float] = {}
+    for name, graph in present.items():
+        totals[name] = _total_edge_weight(graph)
+        print(
+            f"{name} nodes {graph.number_of_nodes()} edges {graph.number_of_edges()} "
+            f"total_weight {totals[name]:.6f}"
+        )
+    scaled: dict[str, nx.Graph] = {}
+    print("after normalization")
+    for name, graph in present.items():
+        # copy() so the factor below does not change the graph that was loaded from the store.
+        copy = graph.copy()
+        total = totals[name]
+        if total > 0:
+            factor = target_total / total
+            for _left, _right, data in copy.edges(data=True):
+                data["weight"] = float(data.get("weight", 1.0)) * factor
+        else:
+            # No edges to scale. Dividing by zero would invent a weight.
+            print(f"warning: layer {name} has no edge weight to scale", file=sys.stderr)
+        scaled[name] = copy
+        print(
+            f"{name} nodes {copy.number_of_nodes()} edges {copy.number_of_edges()} "
+            f"total_weight {_total_edge_weight(copy):.6f}"
+        )
+    return scaled
+
+
 def merge_identity_layers(
     layers: dict[str, nx.Graph | None],
     identity_map: dict[str, dict[str, str]],

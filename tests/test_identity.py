@@ -1,8 +1,16 @@
 import json
 
 import networkx as nx
+import pytest
 
-from osi.identity import annotate_coverage, apply_identity_map, fetch_github_identities, load_identity_map, merge_identity_layers
+from osi.identity import (
+    annotate_coverage,
+    apply_identity_map,
+    fetch_github_identities,
+    load_identity_map,
+    merge_identity_layers,
+    normalize_layers,
+)
 
 
 def test_identity_merges_one_person_across_github_and_reddit(tmp_path):
@@ -55,6 +63,29 @@ def test_coverage_marks_a_person_github_only_when_reddit_is_missing():
     assert "linus_torvalds|reddit" not in merged
     # A follower who is not in the identity map stays github-only.
     assert merged.nodes["github:grace"]["coverage"] == "github-only"
+
+
+def test_normalize_layers_makes_each_total_weight_equal():
+    github = nx.Graph()
+    github.add_edge("ada", "grace", weight=3)
+    github.add_edge("ada", "linus", weight=1)
+    reddit = nx.Graph()
+    reddit.add_edge("ada_r", "linus", weight=10)
+    original = github.edges["ada", "grace"]["weight"]
+    scaled = normalize_layers({"github": github, "reddit": reddit, "steam": None})
+    # The saved layer object is not the one that was scaled.
+    assert github.edges["ada", "grace"]["weight"] == original
+    github_total = sum(data["weight"] for _left, _right, data in scaled["github"].edges(data=True))
+    reddit_total = sum(data["weight"] for _left, _right, data in scaled["reddit"].edges(data=True))
+    assert github_total == pytest.approx(1.0)
+    assert reddit_total == pytest.approx(1.0)
+    assert scaled["github"].number_of_nodes() == 3
+    assert scaled["reddit"].number_of_edges() == 1
+    merged = merge_identity_layers(
+        scaled,
+        {"ada": {"github": "ada", "reddit": "ada_r"}},
+    )
+    assert merged.edges["ada|github", "ada|reddit"]["kind"] == "interlayer"
 
 
 def test_missing_github_account_is_skipped(monkeypatch, capsys):

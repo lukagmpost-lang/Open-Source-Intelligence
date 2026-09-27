@@ -82,6 +82,25 @@ def test_identity_flag_prints_layer_membership(monkeypatch, tmp_path, capsys):
     assert "person_a|reddit" in output and "layer reddit" in output
     assert "cross-platform persons 1" in output
     assert "interlayer edges 1" in output
+    code = main.main(
+        [
+            "--identity",
+            str(path),
+            "--layers",
+            "github,reddit",
+            "--normalize-layers",
+            "--analyze",
+            "centrality",
+            "--out",
+            str(tmp_path / "norm.json"),
+        ]
+    )
+    normalized = capsys.readouterr().out
+    assert code == 0
+    assert "before normalization" in normalized
+    assert "after normalization" in normalized
+    after = normalized.split("after normalization", 1)[1]
+    assert after.count("total_weight 1.000000") == 2
 
 
 def test_communities_mode_skips_pagerank(monkeypatch, tmp_path, capsys):
