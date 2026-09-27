@@ -1,4 +1,4 @@
-"""Structural fingerprints for one node, scaled so each feature has unit variance."""
+"""Structural fingerprints. Scaling happens across both graphs, not inside one."""
 
 from __future__ import annotations
 
@@ -8,24 +8,11 @@ from typing import Any
 import networkx as nx
 import numpy as np
 
-# First call for a graph fits every node. Later calls reuse that scale.
-_FITTED: dict[tuple[int, int], dict[Any, np.ndarray]] = {}
+# First call for a graph builds every raw vector. Later calls reuse that table.
+_RAW: dict[tuple[int, int], dict[Any, np.ndarray]] = {}
 
-_FEATURE_COUNT = 7
 # numpy.std of a constant column is a rounding residue (about 1e-15), not spread.
 _STD_FLOOR = 1e-8
-
-
-def _zscore(values: dict[Any, float]) -> dict[Any, float]:
-    """Map each value to a z-score. A constant group stays at 0."""
-    if not values:
-        return {}
-    series = np.array(list(values.values()), dtype=float)
-    std = float(series.std())
-    if std == 0.0:
-        return {node: 0.0 for node in values}
-    mean = float(series.mean())
-    return {node: (float(value) - mean) / std for node, value in values.items()}
 
 
 def _gini(degrees: list[float]) -> float:
@@ -43,20 +30,14 @@ def _gini(degrees: list[float]) -> float:
 
 
 def _raw_features(G: nx.Graph, metrics: dict) -> dict[Any, np.ndarray]:
+    """Seven absolute features. Nothing here is scaled to this graph."""
     pagerank = metrics.get("pagerank") or {}
     betweenness = metrics.get("betweenness") or {}
     closeness = metrics.get("closeness") or {}
     community = metrics.get("community") or {}
-    # PageRank is compared inside the community. The other two scores are graph-wide.
-    pagerank_z: dict[Any, float] = {}
     members: dict[Any, list] = {}
     for node in G.nodes:
         members.setdefault(community.get(node, node), []).append(node)
-    for group in members.values():
-        local = {node: float(pagerank.get(node, 0.0)) for node in group}
-        pagerank_z.update(_zscore(local))
-    between_z = _zscore({node: float(betweenness.get(node, 0.0)) for node in G.nodes})
-    close_z = _zscore({node: float(closeness.get(node, 0.0)) for node in G.nodes})
     sizes = {community_id: len(group) for community_id, group in members.items()}
     degree = dict(G.degree())
     rows: dict[Any, np.ndarray] = {}
@@ -68,9 +49,9 @@ def _raw_features(G: nx.Graph, metrics: dict) -> dict[Any, np.ndarray]:
         rows[node] = np.array(
             [
                 math.log(degree[node] + 1),
-                pagerank_z.get(node, 0.0),
-                between_z.get(node, 0.0),
-                close_z.get(node, 0.0),
+                float(pagerank.get(node, 0.0)),
+                float(betweenness.get(node, 0.0)),
+                float(closeness.get(node, 0.0)),
                 math.log(sizes.get(community_id, 1)),
                 mean_neighbor,
                 _gini(neighbor_degrees),
@@ -80,35 +61,50 @@ def _raw_features(G: nx.Graph, metrics: dict) -> dict[Any, np.ndarray]:
     return rows
 
 
-def _fit(G: nx.Graph, metrics: dict) -> dict[Any, np.ndarray]:
-    raw = _raw_features(G, metrics)
-    if not raw:
-        return {}
-    matrix = np.vstack([raw[node] for node in G.nodes])
-    # Unit variance, not a z-score: the mean stays. A constant column cannot set the scale.
-    spread = matrix.std(axis=0)
-    constant = spread <= _STD_FLOOR
-    scale = spread.copy()
-    scale[constant] = 1.0
-    scaled = matrix / scale
-    # Zero the dead column. Dividing by the residue would make it the largest feature.
-    scaled[:, constant] = 0.0
-    return {node: scaled[index] for index, node in enumerate(G.nodes)}
-
-
 def compute_fingerprint(G: nx.Graph, node, metrics: dict) -> np.ndarray:
-    """Feature vector for one node, with each feature at unit variance across the graph."""
+    """Raw feature vector for one node. No z-score and no per-graph scale."""
     if node not in G:
         raise KeyError(node)
     key = (id(G), id(metrics))
-    fitted = _FITTED.get(key)
-    if fitted is None:
-        fitted = _fit(G, metrics)
-        _FITTED[key] = fitted
-    vector = fitted.get(node)
+    raw = _RAW.get(key)
+    if raw is None:
+        raw = _raw_features(G, metrics)
+        _RAW[key] = raw
+    vector = raw.get(node)
     if vector is None:
         raise KeyError(node)
-    return vector
+    # Callers compare and scale copies. The cache must keep the unscaled numbers.
+    return vector.copy()
+
+
+def normalize_fingerprints(fps_a, fps_b):
+    """Z-score both sets with the mean and std of the two sets pooled.
+
+    A hub's z-score is then "high among these nodes", not "high inside its own graph".
+    Returns the two sets in the same order, with the same keys.
+    """
+    keys_a = list(fps_a)
+    keys_b = list(fps_b)
+    rows_a = [np.asarray(fps_a[key], dtype=float) for key in keys_a]
+    rows_b = [np.asarray(fps_b[key], dtype=float) for key in keys_b]
+    if not rows_a and not rows_b:
+        return {}, {}
+    pooled = np.vstack(rows_a + rows_b)
+    mean = pooled.mean(axis=0)
+    spread = pooled.std(axis=0)
+    # No cross-graph spread: the column carries nothing, so it must not dominate cosine.
+    dead = spread <= _STD_FLOOR
+    scale = spread.copy()
+    scale[dead] = 1.0
+
+    def _apply(rows: list[np.ndarray], keys: list) -> dict[Any, np.ndarray]:
+        if not rows:
+            return {}
+        scaled = (np.vstack(rows) - mean) / scale
+        scaled[:, dead] = 0.0
+        return {key: scaled[index] for index, key in enumerate(keys)}
+
+    return _apply(rows_a, keys_a), _apply(rows_b, keys_b)
 
 
 def fingerprint_similarity(fp1, fp2) -> float:
