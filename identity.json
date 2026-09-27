@@ -29,5 +29,20 @@
   "max_goodman": {
     "github": "chromakode",
     "reddit": "chromakode"
+  },
+  "jay_graber": {
+    "bluesky": "jay.bsky.team"
+  },
+  "bluesky_app": {
+    "bluesky": "bsky.app"
+  },
+  "paul_frazee": {
+    "bluesky": "pfrazee.com"
+  },
+  "emily_liu": {
+    "bluesky": "emilyliu.me"
+  },
+  "dan_abramov": {
+    "bluesky": "danabra.mov"
   }
 }
