@@ -19,6 +19,16 @@ After 30% betweenness-targeted removal, the 2012 graph fragments into 15,989 com
 
 This is the signature of a scale-free network: random removal is tolerated, targeted hub removal causes catastrophic collapse. It matches the health metrics in Finding 6 (collapsed rich club, power-law degree distribution, high max degree).
 
+## Steam layer: verification failure
+
+Attempted to add Steam as a third layer using SteamGPT (steamgpt.net), a third-party scraper that does not require a Valve API key.
+
+Verification: opened steamcommunity.com/id/gabelogannewell in a browser. Steam reports "This profile is private." SteamGPT returned 79 friends for the same profile.
+
+Conclusion: the SteamGPT data is either stale (cached before the profile went private) or fabricated. It is not usable. The Steam layer was removed.
+
+This is why official APIs and verified research archives are preferable to third-party scrapers: provenance cannot be verified.
+
 ## Status
 
 - [x] Modularity comparison

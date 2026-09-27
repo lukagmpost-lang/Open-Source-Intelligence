@@ -37,7 +37,6 @@ from viz.interactive import to_interactive_html  # noqa: E402
 from layers.reddit_archive import load_reddit_layers  # noqa: E402
 from osi.datasets import load_snap_facebook  # noqa: E402
 from osi.graph import fetch_github_graph  # noqa: E402
-from osi.layers.steam import build_steam_layer  # noqa: E402
 from osi.identity import (  # noqa: E402
     annotate_coverage,
     fetch_github_identities,
@@ -196,11 +195,6 @@ def _load_named_layer(name: str, args: argparse.Namespace) -> nx.Graph | None:
             )["reddit_2012_user"]
         if name == "snap_facebook":
             return load_snap_facebook()
-        if name == "steam":
-            # Friends come from SteamGPT. Only the people with a steam handle are fetched.
-            if not args.identity:
-                return None
-            return build_steam_layer(load_identity_map(args.identity))
     except Exception as error:  # noqa: BLE001 - a bad layer must not abort the merge
         print(f"warning: layer {name} not loaded: {error}", file=sys.stderr)
         return None
