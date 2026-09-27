@@ -21,7 +21,7 @@ from typing import Any, Callable
 import networkx as nx
 
 from osi.github_graph import _headers
-from osi.layers.co_participation import co_participation_graph
+from osi.layers.co_participation import GROUP_CAP, co_participation_graph
 from osi.limits import get_json
 
 # The seven GitHub logins already used as ego seeds.
@@ -264,6 +264,9 @@ def build_github_organic(
             truncated += 1
             over_names.append(f"{owner}/{name}")
             continue
+        # A short page can still hold more humans than the cap. Name it with the full pages.
+        if len(humans) > GROUP_CAP:
+            over_names.append(f"{owner}/{name}")
         groups.append(humans)
     graph, over, under = co_participation_graph(groups, LAYER)
     # Groups that became edges. Over-cap and under-2 lists are not used.
