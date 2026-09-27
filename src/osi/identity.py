@@ -151,7 +151,8 @@ def warn_missing_handles(layers: dict[str, nx.Graph | None], identity_map: dict[
             if graph is None:
                 continue
             # Archive layers store the bare handle. A built layer may use "reddit:handle".
-            if handle in graph or f"{layer_name}:{handle}" in graph:
+            # build_steam_layer already names the center person|steam, so the raw vanity is not the node id.
+            if handle in graph or f"{layer_name}:{handle}" in graph or f"{person}|{layer_name}" in graph:
                 continue
             print(f"warning: {layer_name} handle {handle} for {person} was not in the layer", file=sys.stderr)
 
@@ -167,7 +168,7 @@ def annotate_coverage(graph: nx.Graph) -> dict[str, list[str]]:
         person = data.get("person")
         if person:
             by_person.setdefault(str(person), []).append(node)
-    buckets: dict[str, list[str]] = {"both": [], "github-only": [], "reddit-only": []}
+    buckets: dict[str, list[str]] = {"both": [], "github-only": [], "reddit-only": [], "steam-only": []}
     for person, nodes in by_person.items():
         layers = {graph.nodes[node].get("layer") for node in nodes}
         if "github" in layers and "reddit" in layers:
@@ -176,6 +177,8 @@ def annotate_coverage(graph: nx.Graph) -> dict[str, list[str]]:
             label = "github-only"
         elif "reddit" in layers:
             label = "reddit-only"
+        elif "steam" in layers:
+            label = "steam-only"
         else:
             continue
         buckets[label].append(person)
@@ -189,6 +192,8 @@ def annotate_coverage(graph: nx.Graph) -> dict[str, list[str]]:
             data["coverage"] = "github-only"
         elif layer == "reddit":
             data["coverage"] = "reddit-only"
+        elif layer == "steam":
+            data["coverage"] = "steam-only"
     listed = {label: sorted(people) for label, people in buckets.items()}
     # Saved with the graph so a later load can see who was linked without recomputing.
     graph.graph["coverage"] = listed
