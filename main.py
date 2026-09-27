@@ -39,6 +39,8 @@ from osi.datasets import load_snap_facebook  # noqa: E402
 from osi.github_graph import MULTI_EGO_LAYER, MULTI_EGO_RUN  # noqa: E402
 from osi.graph import fetch_github_graph  # noqa: E402
 from osi.layers.bluesky import build_bluesky_layer  # noqa: E402
+from osi.layers.bluesky_organic import build_bluesky_organic  # noqa: E402
+from osi.layers.github_organic import build_github_organic  # noqa: E402
 from osi.identity import (  # noqa: E402
     annotate_coverage,
     fetch_github_identities,
@@ -78,7 +80,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build a public social graph and analyze it.")
     parser.add_argument(
         "--source",
-        choices=("github", "snap_facebook", "reddit", "reddit_2012", "bluesky", "github_multi_ego"),
+        choices=(
+            "github",
+            "snap_facebook",
+            "reddit",
+            "reddit_2012",
+            "bluesky",
+            "github_multi_ego",
+            "github_organic",
+            "bluesky_organic",
+        ),
         default=None,
     )
     parser.add_argument("--username", help="Public GitHub login. Required when --source is github.")
@@ -307,6 +318,10 @@ def _github_multi_ego_graph() -> nx.Graph:
 
 
 def build_graph(args: argparse.Namespace) -> nx.Graph:
+    if args.source == "github_organic":
+        return build_github_organic()
+    if args.source == "bluesky_organic":
+        return build_bluesky_organic()
     if args.source == "github_multi_ego":
         return _github_multi_ego_graph()
     if args.source == "bluesky":
@@ -646,6 +661,10 @@ def graph_layer(args: argparse.Namespace) -> str:
         return "bluesky"
     if args.source == "github_multi_ego":
         return "github_multi_ego"
+    if args.source == "github_organic":
+        return "github_organic"
+    if args.source == "bluesky_organic":
+        return "bluesky_organic"
     return "github"
 
 

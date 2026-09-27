@@ -425,6 +425,23 @@ def test_github_multi_ego_source_reads_the_saved_layer(monkeypatch, tmp_path, ca
     assert len(payload["nodes"]) == saved.number_of_nodes()
 
 
+def test_organic_sources_use_their_builders(monkeypatch, tmp_path, capsys):
+    saved = _tiny_graph()
+
+    def _github():
+        return saved
+
+    def _bluesky():
+        return saved
+
+    monkeypatch.setattr(main, "build_github_organic", _github)
+    monkeypatch.setattr(main, "build_bluesky_organic", _bluesky)
+    out = tmp_path / "graph.json"
+    assert main.main(["--source", "github_organic", "--analyze", "communities", "--out", str(out)]) == 0
+    assert main.main(["--source", "bluesky_organic", "--analyze", "communities", "--out", str(out)]) == 0
+    assert "Louvain communities:" in capsys.readouterr().out
+
+
 def test_github_requires_username():
     try:
         main.main(["--source", "github", "--analyze", "communities"])
