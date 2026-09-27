@@ -74,6 +74,49 @@ def filter_graph(G: nx.Graph, max_nodes: int = 1000, min_edge_weight: float = 2)
     return pruned.subgraph(keep).copy()
 
 
+def populate_pyvis(
+    net: Network,
+    G: nx.Graph,
+    scores: dict,
+    communities: dict,
+    size_for=None,
+    label_for=None,
+    title_for=None,
+    fields_for=None,
+) -> None:
+    """Add nodes and edges the way the single-graph writer does.
+
+    PageRank sets the size and Louvain sets the color. ``size_for``,
+    ``label_for``, ``title_for``, and ``fields_for`` override one piece
+    when a page needs a different scale or extra color fields. The
+    defaults match ``write_pyvis`` so a single graph looks the same.
+    """
+    for node in G.nodes:
+        community = int(communities.get(node, 0))
+        score = float(scores.get(node, 0.0))
+        label = str(node) if label_for is None else str(label_for(node))
+        if size_for is None:
+            # Same size scale as the static plot: PageRank times 20000.
+            size = max(score * 20000, 1)
+        else:
+            size = size_for(node, score)
+        if title_for is None:
+            title = f"user: {node} | community: {community} | pagerank: {score:.6f}"
+        else:
+            title = title_for(node, score, community)
+        extra = {} if fields_for is None else fields_for(node, score, community)
+        net.add_node(
+            str(node),
+            label=label,
+            size=size,
+            color=_community_color(community),
+            title=title,
+            **extra,
+        )
+    for left, right in G.edges:
+        net.add_edge(str(left), str(right))
+
+
 def write_pyvis(G: nx.Graph, output: str, scores: dict, communities: dict) -> str:
     """Write one graph with PageRank sizes, Louvain colors, and the PyVis search menu."""
     # in_line embeds the scripts so the file works without a network connection.
@@ -89,19 +132,7 @@ def write_pyvis(G: nx.Graph, output: str, scores: dict, communities: dict) -> st
     # Barnes-Hut is PyVis's force-directed layout.
     net.barnes_hut()
     net.toggle_physics(True)
-    for node in G.nodes:
-        community = communities.get(node, 0)
-        score = float(scores.get(node, 0.0))
-        net.add_node(
-            str(node),
-            label=str(node),
-            # Same size scale as the static plot: PageRank times 20000.
-            size=max(score * 20000, 1),
-            color=_community_color(int(community)),
-            title=f"user: {node} | community: {community} | pagerank: {score:.6f}",
-        )
-    for left, right in G.edges:
-        net.add_edge(str(left), str(right))
+    populate_pyvis(net, G, scores, communities)
     net.write_html(output, notebook=False, open_browser=False)
     return output
 
