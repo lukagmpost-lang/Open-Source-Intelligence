@@ -77,7 +77,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build a public social graph and analyze it.")
     parser.add_argument(
         "--source",
-        choices=("github", "snap_facebook", "reddit", "reddit_2012"),
+        choices=("github", "snap_facebook", "reddit", "reddit_2012", "bluesky"),
         default=None,
     )
     parser.add_argument("--username", help="Public GitHub login. Required when --source is github.")
@@ -248,7 +248,50 @@ def print_identity_membership(graph: nx.Graph, ranks: dict) -> None:
         print(f"{index}. {node} {score:.6f} layer {data.get('layer')} person {data.get('person')}")
 
 
+def _saved_bluesky_layer() -> nx.Graph | None:
+    """Read a Bluesky follow graph that is already stored. Does not write any run."""
+    runs = list(reversed(list_runs()))
+    for run_id, _source, _created_at, _notes in runs:
+        # A run saved with --source bluesky keeps the layer under this name.
+        graph = load_graph(run_id, "bluesky")
+        if graph is not None and graph.number_of_nodes():
+            return graph
+    for run_id, _source, _created_at, _notes in runs:
+        meta = get_run(run_id)
+        layer = (meta.get("config") or {}).get("layer") if meta else None
+        if layer != "supra":
+            continue
+        graph = load_graph(run_id, "supra")
+        if graph is None:
+            continue
+        # The supra-graph rewrites mapped accounts to person|layer. Neighbors stay bluesky:handle.
+        nodes = [node for node, data in graph.nodes(data=True) if data.get("layer") == "bluesky"]
+        if not nodes:
+            continue
+        # Copy. The induced subgraph has no interlayer edges, and the stored supra-graph stays as it was.
+        return graph.subgraph(nodes).copy()
+    return None
+
+
+def _bluesky_graph() -> nx.Graph:
+    """Saved Bluesky layer when one exists. Otherwise fetch the identity.json handles."""
+    saved = _saved_bluesky_layer()
+    if saved is not None:
+        return saved
+    identity_path = ROOT / "identity.json"
+    handles: list[str] = []
+    if identity_path.is_file():
+        handles = [
+            str(accounts["bluesky"])
+            for accounts in load_identity_map(identity_path).values()
+            if isinstance(accounts, dict) and accounts.get("bluesky")
+        ]
+    return build_bluesky_layer(handles)
+
+
 def build_graph(args: argparse.Namespace) -> nx.Graph:
+    if args.source == "bluesky":
+        return _bluesky_graph()
     if args.source == "snap_facebook":
         return load_snap_facebook()
     if args.source == "reddit":
@@ -580,6 +623,8 @@ def graph_layer(args: argparse.Namespace) -> str:
         return "reddit_2012_user"
     if args.source == "snap_facebook":
         return "snap_facebook"
+    if args.source == "bluesky":
+        return "bluesky"
     return "github"
 
 
