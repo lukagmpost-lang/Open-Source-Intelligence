@@ -409,6 +409,22 @@ def test_bluesky_source_reads_the_saved_layer(monkeypatch, tmp_path, capsys):
     assert len(payload["nodes"]) == saved.number_of_nodes()
 
 
+def test_github_multi_ego_source_reads_the_saved_layer(monkeypatch, tmp_path, capsys):
+    saved = _tiny_graph()
+
+    def _refuse(*_args, **_kwargs):
+        raise AssertionError("github_multi_ego should not fetch")
+
+    monkeypatch.setattr(main, "load_graph", lambda run_id, layer: saved)
+    monkeypatch.setattr(main, "fetch_github_graph", _refuse)
+    out = tmp_path / "graph.json"
+    code = main.main(["--source", "github_multi_ego", "--analyze", "communities", "--out", str(out)])
+    assert code == 0
+    assert "Louvain communities:" in capsys.readouterr().out
+    payload = json.loads(out.read_text())
+    assert len(payload["nodes"]) == saved.number_of_nodes()
+
+
 def test_github_requires_username():
     try:
         main.main(["--source", "github", "--analyze", "communities"])

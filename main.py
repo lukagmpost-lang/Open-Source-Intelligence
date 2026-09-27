@@ -36,6 +36,7 @@ from osi.analysis import (  # noqa: E402
 from viz.interactive import to_interactive_html  # noqa: E402
 from layers.reddit_archive import load_reddit_layers  # noqa: E402
 from osi.datasets import load_snap_facebook  # noqa: E402
+from osi.github_graph import MULTI_EGO_LAYER, MULTI_EGO_RUN  # noqa: E402
 from osi.graph import fetch_github_graph  # noqa: E402
 from osi.layers.bluesky import build_bluesky_layer  # noqa: E402
 from osi.identity import (  # noqa: E402
@@ -77,7 +78,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build a public social graph and analyze it.")
     parser.add_argument(
         "--source",
-        choices=("github", "snap_facebook", "reddit", "reddit_2012", "bluesky"),
+        choices=("github", "snap_facebook", "reddit", "reddit_2012", "bluesky", "github_multi_ego"),
         default=None,
     )
     parser.add_argument("--username", help="Public GitHub login. Required when --source is github.")
@@ -289,7 +290,25 @@ def _bluesky_graph() -> nx.Graph:
     return build_bluesky_layer(handles)
 
 
+def _github_multi_ego_graph() -> nx.Graph:
+    """The stored multi-ego layer. This does not call the GitHub API or rewrite that run."""
+    graph = load_graph(MULTI_EGO_RUN, MULTI_EGO_LAYER)
+    if graph is not None and graph.number_of_nodes():
+        return graph
+    path = ROOT / "github_multi_ego.graphml"
+    if not path.is_file():
+        raise SystemExit("github multi-ego graph is not in the store and github_multi_ego.graphml is missing")
+    loaded = nx.read_graphml(path)
+    # GraphML stores weight as text. Centrality expects a number.
+    for _left, _right, data in loaded.edges(data=True):
+        if "weight" in data:
+            data["weight"] = float(data["weight"])
+    return loaded
+
+
 def build_graph(args: argparse.Namespace) -> nx.Graph:
+    if args.source == "github_multi_ego":
+        return _github_multi_ego_graph()
     if args.source == "bluesky":
         return _bluesky_graph()
     if args.source == "snap_facebook":
@@ -625,6 +644,8 @@ def graph_layer(args: argparse.Namespace) -> str:
         return "snap_facebook"
     if args.source == "bluesky":
         return "bluesky"
+    if args.source == "github_multi_ego":
+        return "github_multi_ego"
     return "github"
 
 
