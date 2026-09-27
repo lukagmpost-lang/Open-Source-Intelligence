@@ -6,7 +6,7 @@ from typing import Any
 
 import networkx as nx
 
-from osi.fingerprint import compute_fingerprint, fingerprint_similarity, normalize_fingerprints
+from osi.fingerprint import compute_fingerprint, fingerprint_similarity
 
 # Name agreement is the smaller share. Structure has to carry the match.
 _STRUCTURE_WEIGHT = 0.7
@@ -51,10 +51,9 @@ def match_by_structure(
         reddit_nodes = list(G_reddit.nodes)
     github_by_fold = {str(node).casefold(): node for node in G_github.nodes}
     reddit_by_fold = {str(node).casefold(): node for node in G_reddit.nodes}
-    # Full graphs, not the shortlist. Scaling only the hubs would line the hubs up again.
-    reddit_raw = {node: compute_fingerprint(G_reddit, node, reddit_metrics) for node in G_reddit.nodes}
-    github_raw = {node: compute_fingerprint(G_github, node, github_metrics) for node in G_github.nodes}
-    reddit_fp, github_fp = normalize_fingerprints(reddit_raw, github_raw)
+    # Percentiles are already on one scale. A second z-score would stretch the two graphs apart again.
+    reddit_fp = {node: compute_fingerprint(G_reddit, node, reddit_metrics) for node in G_reddit.nodes}
+    github_fp = {node: compute_fingerprint(G_github, node, github_metrics) for node in G_github.nodes}
 
     confirmed: list[dict] = []
     name_only: list[dict] = []

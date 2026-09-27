@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
-from osi.fingerprint import compute_fingerprint, fingerprint_similarity, normalize_fingerprints
+from osi.fingerprint import compute_fingerprint, fingerprint_similarity
 from osi.github_graph import MULTI_EGO_LAYER, MULTI_EGO_RUN
 from osi.store import get_run, load_communities, load_graph, load_metrics
 
@@ -141,12 +141,12 @@ def report(people: tuple[str, ...] = PEOPLE) -> int:
     # One line so the class is read off PageRank, not off raw scores from graphs of different sizes.
     print("class uses PageRank rank; above the 90th percentile means rank/nodes <= 0.10")
     print()
-    github_raw = {node: compute_fingerprint(github, node, github_metrics) for node in github.nodes}
-    reddit_raw = {node: compute_fingerprint(reddit, node, reddit_metrics) for node in reddit.nodes}
-    # Same pooled scale as match_by_structure. Per-graph z-scores are not comparable.
-    github_norm, reddit_norm = normalize_fingerprints(github_raw, reddit_raw)
     for user in people:
-        similarity = fingerprint_similarity(github_norm[user], reddit_norm[user])
+        # Both vectors are within-graph rank percentiles, so cosine compares profiles, not raw scores.
+        similarity = fingerprint_similarity(
+            compute_fingerprint(github, user, github_metrics),
+            compute_fingerprint(reddit, user, reddit_metrics),
+        )
         github_rank, github_total, _value = _placement(github_scores["pagerank"], user)
         reddit_rank, reddit_total, _value = _placement(reddit_scores["pagerank"], user)
         kind = classify(github_rank, github_total, reddit_rank, reddit_total)

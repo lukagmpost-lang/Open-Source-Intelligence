@@ -1,18 +1,14 @@
-"""Structural fingerprints. Scaling happens across both graphs, not inside one."""
+"""Structural fingerprints as rank percentiles inside the node's own graph."""
 
 from __future__ import annotations
 
-import math
 from typing import Any
 
 import networkx as nx
 import numpy as np
 
-# First call for a graph builds every raw vector. Later calls reuse that table.
-_RAW: dict[tuple[int, int], dict[Any, np.ndarray]] = {}
-
-# numpy.std of a constant column is a rounding residue (about 1e-15), not spread.
-_STD_FLOOR = 1e-8
+# First call for a graph ranks every node. Later calls reuse that table.
+_RANKED: dict[tuple[int, int], dict[Any, np.ndarray]] = {}
 
 
 def _gini(degrees: list[float]) -> float:
@@ -29,8 +25,34 @@ def _gini(degrees: list[float]) -> float:
     return float((2.0 * np.sum(index * ordered) / (count * total)) - (count + 1) / count)
 
 
-def _raw_features(G: nx.Graph, metrics: dict) -> dict[Any, np.ndarray]:
-    """Seven absolute features. Nothing here is scaled to this graph."""
+def _rank_percentile(scores: dict[Any, float]) -> dict[Any, float]:
+    """Mid-rank divided by n - 1. A lone minimum is 0 and a lone maximum is 1.
+
+    Ties share one value, the average of the positions they occupy, so two nodes
+    with the same score stay the same distance apart in every graph.
+    """
+    count = len(scores)
+    # One observation has nobody below it. The feature stays 0 instead of dividing by zero.
+    if count <= 1:
+        return {key: 0.0 for key in scores}
+    # Lowest score first. The name only orders a tie; the mid-rank does not use it.
+    ordered = sorted(scores.items(), key=lambda item: (item[1], str(item[0])))
+    percentile: dict[Any, float] = {}
+    start = 0
+    while start < count:
+        end = start + 1
+        while end < count and ordered[end][1] == ordered[start][1]:
+            end += 1
+        mid = (start + end - 1) / 2.0
+        share = mid / (count - 1)
+        for index in range(start, end):
+            percentile[ordered[index][0]] = share
+        start = end
+    return percentile
+
+
+def _rank_features(G: nx.Graph, metrics: dict) -> dict[Any, np.ndarray]:
+    """Seven features, each already on [0, 1] inside this graph."""
     pagerank = metrics.get("pagerank") or {}
     betweenness = metrics.get("betweenness") or {}
     closeness = metrics.get("closeness") or {}
@@ -39,22 +61,34 @@ def _raw_features(G: nx.Graph, metrics: dict) -> dict[Any, np.ndarray]:
     for node in G.nodes:
         members.setdefault(community.get(node, node), []).append(node)
     sizes = {community_id: len(group) for community_id, group in members.items()}
+    # Community size is ranked across communities, not across nodes.
+    community_percentile = _rank_percentile({community_id: float(size) for community_id, size in sizes.items()})
     degree = dict(G.degree())
-    rows: dict[Any, np.ndarray] = {}
+    degree_percentile = _rank_percentile({node: float(degree[node]) for node in G.nodes})
+    pagerank_percentile = _rank_percentile({node: float(pagerank.get(node, 0.0)) for node in G.nodes})
+    between_percentile = _rank_percentile({node: float(betweenness.get(node, 0.0)) for node in G.nodes})
+    close_percentile = _rank_percentile({node: float(closeness.get(node, 0.0)) for node in G.nodes})
+    mean_degree: dict[Any, float] = {}
+    gini: dict[Any, float] = {}
     for node in G.nodes:
         neighbors = list(G.neighbors(node))
         neighbor_degrees = [float(degree[other]) for other in neighbors]
-        mean_neighbor = float(np.mean(neighbor_degrees)) if neighbor_degrees else 0.0
+        # No neighbors: mean degree 0, ranked with everyone else, not dropped from the denominator.
+        mean_degree[node] = float(np.mean(neighbor_degrees)) if neighbor_degrees else 0.0
+        gini[node] = _gini(neighbor_degrees)
+    neighbor_percentile = _rank_percentile(mean_degree)
+    rows: dict[Any, np.ndarray] = {}
+    for node in G.nodes:
         community_id = community.get(node, node)
         rows[node] = np.array(
             [
-                math.log(degree[node] + 1),
-                float(pagerank.get(node, 0.0)),
-                float(betweenness.get(node, 0.0)),
-                float(closeness.get(node, 0.0)),
-                math.log(sizes.get(community_id, 1)),
-                mean_neighbor,
-                _gini(neighbor_degrees),
+                degree_percentile[node],
+                pagerank_percentile[node],
+                between_percentile[node],
+                close_percentile[node],
+                community_percentile[community_id],
+                neighbor_percentile[node],
+                gini[node],
             ],
             dtype=float,
         )
@@ -62,49 +96,19 @@ def _raw_features(G: nx.Graph, metrics: dict) -> dict[Any, np.ndarray]:
 
 
 def compute_fingerprint(G: nx.Graph, node, metrics: dict) -> np.ndarray:
-    """Raw feature vector for one node. No z-score and no per-graph scale."""
+    """Rank-percentile feature vector. No z-score: every feature is already in [0, 1]."""
     if node not in G:
         raise KeyError(node)
     key = (id(G), id(metrics))
-    raw = _RAW.get(key)
-    if raw is None:
-        raw = _raw_features(G, metrics)
-        _RAW[key] = raw
-    vector = raw.get(node)
+    ranked = _RANKED.get(key)
+    if ranked is None:
+        ranked = _rank_features(G, metrics)
+        _RANKED[key] = ranked
+    vector = ranked.get(node)
     if vector is None:
         raise KeyError(node)
-    # Callers compare and scale copies. The cache must keep the unscaled numbers.
+    # Callers compare copies. The cache must keep the ranked numbers.
     return vector.copy()
-
-
-def normalize_fingerprints(fps_a, fps_b):
-    """Z-score both sets with the mean and std of the two sets pooled.
-
-    A hub's z-score is then "high among these nodes", not "high inside its own graph".
-    Returns the two sets in the same order, with the same keys.
-    """
-    keys_a = list(fps_a)
-    keys_b = list(fps_b)
-    rows_a = [np.asarray(fps_a[key], dtype=float) for key in keys_a]
-    rows_b = [np.asarray(fps_b[key], dtype=float) for key in keys_b]
-    if not rows_a and not rows_b:
-        return {}, {}
-    pooled = np.vstack(rows_a + rows_b)
-    mean = pooled.mean(axis=0)
-    spread = pooled.std(axis=0)
-    # No cross-graph spread: the column carries nothing, so it must not dominate cosine.
-    dead = spread <= _STD_FLOOR
-    scale = spread.copy()
-    scale[dead] = 1.0
-
-    def _apply(rows: list[np.ndarray], keys: list) -> dict[Any, np.ndarray]:
-        if not rows:
-            return {}
-        scaled = (np.vstack(rows) - mean) / scale
-        scaled[:, dead] = 0.0
-        return {key: scaled[index] for index, key in enumerate(keys)}
-
-    return _apply(rows_a, keys_a), _apply(rows_b, keys_b)
 
 
 def fingerprint_similarity(fp1, fp2) -> float:
