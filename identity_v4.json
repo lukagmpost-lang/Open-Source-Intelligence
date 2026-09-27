@@ -1,0 +1,68 @@
+{
+  "Poromenos::rtomayko": {
+    "github": "rtomayko",
+    "reddit": "Poromenos",
+    "confidence": "medium",
+    "struct_sim": 0.8151
+  },
+  "sn0re::rtomayko": {
+    "github": "rtomayko",
+    "reddit": "sn0re",
+    "confidence": "medium",
+    "struct_sim": 0.813
+  },
+  "diogames::rtomayko": {
+    "github": "rtomayko",
+    "reddit": "diogames",
+    "confidence": "medium",
+    "struct_sim": 0.8063
+  },
+  "711was_a_retail_job::rtomayko": {
+    "github": "rtomayko",
+    "reddit": "711was_a_retail_job",
+    "confidence": "medium",
+    "struct_sim": 0.8054
+  },
+  "RugerRedhawk::rtomayko": {
+    "github": "rtomayko",
+    "reddit": "RugerRedhawk",
+    "confidence": "medium",
+    "struct_sim": 0.8044
+  },
+  "turkourjurbs::rtomayko": {
+    "github": "rtomayko",
+    "reddit": "turkourjurbs",
+    "confidence": "medium",
+    "struct_sim": 0.8034
+  },
+  "ithika::rtomayko": {
+    "github": "rtomayko",
+    "reddit": "ithika",
+    "confidence": "medium",
+    "struct_sim": 0.8026
+  },
+  "wat::rtomayko": {
+    "github": "rtomayko",
+    "reddit": "wat",
+    "confidence": "medium",
+    "struct_sim": 0.8016
+  },
+  "Tommah::rtomayko": {
+    "github": "rtomayko",
+    "reddit": "Tommah",
+    "confidence": "medium",
+    "struct_sim": 0.8016
+  },
+  "Figs::rtomayko": {
+    "github": "rtomayko",
+    "reddit": "Figs",
+    "confidence": "medium",
+    "struct_sim": 0.8006
+  },
+  "yellowking::rtomayko": {
+    "github": "rtomayko",
+    "reddit": "yellowking",
+    "confidence": "medium",
+    "struct_sim": 0.8003
+  }
+}
