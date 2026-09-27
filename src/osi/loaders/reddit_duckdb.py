@@ -15,26 +15,55 @@ import pandas as pd
 _SPILL = "/tmp/duckdb_spill"
 
 
+# Names read back after the session is configured. Order matches the SET calls.
+_SETTING_NAMES = (
+    "memory_limit",
+    "temp_directory",
+    "threads",
+    "preserve_insertion_order",
+)
+
+
+def _connect() -> duckdb.DuckDBPyConnection:
+    """In-memory session with the scan limits. Caller closes it."""
+    # An empty path is an in-memory database. There is no file to reopen later.
+    connection = duckdb.connect()
+    # hf:// is an HTTP read. httpfs is the extension that speaks it.
+    connection.execute("INSTALL httpfs")
+    connection.execute("LOAD httpfs")
+    # A full month is a few gigabytes. Cap the process and spill the rest.
+    connection.execute("SET memory_limit = '4GB'")
+    # DuckDB does not create the spill folder. Make it before the scan.
+    Path(_SPILL).mkdir(parents=True, exist_ok=True)
+    connection.execute(f"SET temp_directory = '{_SPILL}'")
+    connection.execute("SET threads = 4")
+    # Row order is not part of the result. Skipping it lets the scan stay parallel.
+    connection.execute("SET preserve_insertion_order = false")
+    return connection
+
+
+def get_duckdb_settings() -> dict[str, object]:
+    """The four scan settings as DuckDB reports them on a fresh session."""
+    connection = _connect()
+    try:
+        values = {}
+        for name in _SETTING_NAMES:
+            # current_setting is the live value, which may not match the SET text.
+            row = connection.execute(f"SELECT current_setting('{name}')").fetchone()
+            values[name] = row[0]
+        return values
+    finally:
+        connection.close()
+
+
 def load_month(year: int, month: int, subreddits: list[str]) -> pd.DataFrame:
     """Comments from one calendar month, limited to the given subreddits.
 
     Columns are author, subreddit, and thread_id. Arctic stores the thread
     on link_id, so that column is renamed here.
     """
-    # An empty path is an in-memory database. There is no file to reopen later.
-    connection = duckdb.connect()
+    connection = _connect()
     try:
-        # hf:// is an HTTP read. httpfs is the extension that speaks it.
-        connection.execute("INSTALL httpfs")
-        connection.execute("LOAD httpfs")
-        # A full month is a few gigabytes. Cap the process and spill the rest.
-        connection.execute("SET memory_limit = '4GB'")
-        # DuckDB does not create the spill folder. Make it before the scan.
-        Path(_SPILL).mkdir(parents=True, exist_ok=True)
-        connection.execute(f"SET temp_directory = '{_SPILL}'")
-        connection.execute("SET threads = 4")
-        # Row order is not part of the result. Skipping it lets the scan stay parallel.
-        connection.execute("SET preserve_insertion_order = false")
         # month:02d matches the dataset layout, for example 2012/08.
         path = (
             "hf://datasets/open-index/arctic/data/comments/"
