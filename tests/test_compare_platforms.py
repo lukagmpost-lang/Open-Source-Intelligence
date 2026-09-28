@@ -1,3 +1,5 @@
+import json
+
 import networkx as nx
 
 from viz.compare_platforms import (
@@ -10,6 +12,19 @@ from viz.compare_platforms import (
 )
 from viz.interactive import populate_pyvis, write_pyvis
 from pyvis.network import Network
+
+
+def test_graph_json_breaks_long_lines():
+    from viz.compare_platforms import _break_long_lines, _script_json
+
+    payload = [{"id": index, "label": "node"} for index in range(800)]
+    text = _script_json(payload)
+    assert max(len(line) for line in text.splitlines()) <= 2100
+    assert json.loads(text) == payload
+    quoted = 'var label="' + ("x," * 1500) + '";var done=1;'
+    wrapped = _break_long_lines(quoted, limit=80)
+    assert "\n" not in wrapped.split('"')[1]
+    assert wrapped.replace("\n", "") == quoted
 
 
 def test_caption_uses_the_full_graph_counts():

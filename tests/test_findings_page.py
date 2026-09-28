@@ -118,3 +118,4 @@ def test_page_embeds_the_six_networks(tmp_path):
     assert "<h2>Co-participation</h2>" in page
     assert "colorCommunity" in page
     assert page.count("<script>") == 3
+    assert max(len(line) for line in scripts.splitlines()) <= 2100

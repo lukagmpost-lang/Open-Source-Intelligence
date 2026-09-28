@@ -175,9 +175,73 @@ def _vis_source() -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _break_long_lines(source: str, limit: int = 2000) -> str:
+    """Break after a comma or semicolon so no line is millions of characters long.
+
+    A single multi-megabyte line is why a downloaded HTML file fails to open in
+    an editor or in some browsers. Breaks stay outside strings and comments.
+    """
+    out: list[str] = []
+    line_len = 0
+    in_string = ""
+    escape = False
+    i = 0
+    length = len(source)
+    while i < length:
+        ch = source[i]
+        if in_string:
+            out.append(ch)
+            line_len += 1
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == in_string:
+                in_string = ""
+            i += 1
+            continue
+        if ch == "/" and i + 1 < length and source[i + 1] == "/":
+            while i < length and source[i] != "\n":
+                out.append(source[i])
+                i += 1
+            line_len = 0
+            continue
+        if ch == "/" and i + 1 < length and source[i + 1] == "*":
+            out.append(ch)
+            out.append(source[i + 1])
+            i += 2
+            while i < length and not (source[i - 1] == "*" and source[i] == "/"):
+                out.append(source[i])
+                if source[i] == "\n":
+                    line_len = 0
+                i += 1
+            if i < length:
+                out.append(source[i])
+                i += 1
+            continue
+        if ch in "\"'`":
+            in_string = ch
+            out.append(ch)
+            line_len += 1
+            i += 1
+            continue
+        out.append(ch)
+        if ch == "\n":
+            line_len = 0
+        else:
+            line_len += 1
+        if ch in ",;" and line_len >= limit:
+            out.append("\n")
+            line_len = 0
+        i += 1
+    return "".join(out)
+
+
 def _script_json(payload) -> str:
     # A label containing "<" must not close the script tag.
-    return json.dumps(payload, separators=(",", ":")).replace("<", "\\u003c")
+    # Newlines keep the file openable after download. One line of graph data is several MB.
+    compact = json.dumps(payload, separators=(",", ":")).replace("<", "\\u003c")
+    return _break_long_lines(compact)
 
 
 def render_html(panels: list[dict], vis_js: str) -> str:
@@ -409,6 +473,8 @@ def network_options() -> dict:
             "stabilization": {"enabled": True, "iterations": STABILIZATION_ITERATIONS, "fit": True},
         },
         "interaction": {"hover": True},
+        # The improved layout pass walks every edge before physics starts. On these graphs it stalls the tab.
+        "layout": {"improvedLayout": False},
         "edges": {"smooth": False, "color": "#d6d3d1", "width": 0.4},
         "nodes": {"font": {"size": 11, "color": "#44403c"}},
     }
@@ -467,6 +533,12 @@ function draw(panel) {
   const network = new vis.Network(container, data, OPTIONS);
   network.dataset = data.nodes;
   networks.push(network);
+  // Stop the simulation once the short layout pass finishes, so opening the file does not pin the tab.
+  network.once("stabilizationIterationsDone", () => {
+    network.setOptions({ physics: false });
+    const toggle = document.getElementById("physics-toggle");
+    if (toggle) toggle.textContent = "Unfreeze physics";
+  });
 }
 
 // Six Barnes-Hut starts at once stall the first paint. Stagger them by a frame.
