@@ -1,0 +1,743 @@
+"""One HTML page of the stored findings, in the same style as the platform comparison.
+
+Run:
+    python3 viz/findings_page.py
+
+Numbers are the ones written in FINDINGS.md. The omega section is read from
+results/reddit_halfyear_omega_sweep.json. Nothing is written back to the store.
+"""
+
+from __future__ import annotations
+
+import html
+import json
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+OUTPUT = ROOT / "findings.html"
+SWEEP_PATH = ROOT / "results" / "reddit_halfyear_omega_sweep.json"
+
+# Louvain modularity of the stored partition. The rise is (2012 - 2008) / 2008.
+MODULARITY = (
+    {"run": "r2008-v2", "layer": "reddit_user", "nodes": 5110, "edges": 86268, "communities": 96, "modularity": 0.3246767820},
+    {"run": "r2012-v2", "layer": "reddit_2012_user", "nodes": 54817, "edges": 556415, "communities": 1141, "modularity": 0.5582584329},
+)
+MODULARITY_RISE = (MODULARITY[1]["modularity"] - MODULARITY[0]["modularity"]) / MODULARITY[0]["modularity"]
+
+# Communities that are not DISSOLVED. The other 78 have containment 0.
+DISSOLUTION = (
+    (0, 1210, 3, 0.095041, 108.44, 2, "SPLIT"),
+    (1, 761, 4, 0.018397, 20.99, 4, "SPLIT"),
+    (2, 665, 1, 0.024060, 27.45, 4, "SPLIT"),
+    (3, 495, 4, 0.030303, 34.58, 4, "SPLIT"),
+    (4, 318, 3, 0.047170, 53.82, 4, "SPLIT"),
+    (5, 307, 4, 0.045603, 52.03, 3, "SPLIT"),
+    (6, 302, 4, 0.029801, 34.00, 3, "SPLIT"),
+    (7, 224, 4, 0.022321, 25.47, 4, "SPLIT"),
+    (8, 146, 3, 0.041096, 46.89, 3, "SPLIT"),
+    (9, 133, 3, 0.075188, 85.79, 2, "SPLIT"),
+    (10, 106, 3, 0.056604, 64.58, 2, "SPLIT"),
+    (11, 74, 1, 0.040541, 46.26, 2, "SPLIT"),
+    (12, 70, 3, 0.042857, 48.90, 3, "SPLIT"),
+    (13, 40, 0, 0.050000, 57.05, 2, "SPLIT"),
+    (23, 3, 5, 0.333333, 380.33, 1, "MERGED"),
+    (46, 2, 4, 0.500000, 570.50, 1, "MERGED"),
+    (54, 2, 35, 0.500000, 570.50, 1, "STABLE"),
+    (92, 2, 5, 0.500000, 570.50, 1, "MERGED"),
+)
+DISSOLUTION_COUNTS = (("DISSOLVED", 78), ("SPLIT", 14), ("MERGED", 3), ("STABLE", 1))
+
+# Giant-component fraction after node removal.
+REMOVAL_RATIOS = (0.01, 0.02, 0.05, 0.10, 0.20, 0.30)
+ROBUSTNESS = (
+    {"name": "2008 random", "color": "#78716c", "dash": "", "values": (0.948, 0.938, 0.907, 0.854, 0.751, 0.649)},
+    {"name": "2008 degree", "color": "#b45309", "dash": "", "values": (0.942, 0.926, 0.879, 0.807, 0.632, 0.300)},
+    {"name": "2008 betweenness", "color": "#1d4ed8", "dash": "", "values": (0.937, 0.917, 0.863, 0.768, 0.598, 0.280)},
+    {"name": "2012 random", "color": "#a8a29e", "dash": "5 4", "values": (0.938, 0.928, 0.896, 0.843, 0.738, 0.633)},
+    {"name": "2012 degree", "color": "#c2410c", "dash": "5 4", "values": (0.905, 0.877, 0.817, 0.703, 0.300, 0.022)},
+    {"name": "2012 betweenness", "color": "#be123c", "dash": "5 4", "values": (0.900, 0.870, 0.791, 0.647, 0.132, 0.001)},
+)
+
+RICH_CLUB_K = (10, 20, 50, 100)
+RICH_CLUB = (
+    {"name": "2008", "color": "#1d4ed8", "values": (0.014804127170539385, 0.026138681710970866, 0.08923894763697328, 0.21477572559366753)},
+    {"name": "2012", "color": "#be123c", "values": (0.0011088400418329738, 0.002226628821753049, 0.01125501295596993, 0.038446553565701834)},
+)
+
+CLOSENESS = (
+    {"run": "r2008-v2", "n": 5110, "min": 0.0001957330, "median": 0.3361043755, "mean": 0.3222961113, "max": 0.4857467911, "who": "akdas"},
+    {"run": "r2012-v2", "n": 54817, "min": 0.0000182428, "median": 0.2563272273, "mean": 0.2428832907, "max": 0.3966320935, "who": "incredible-ninja"},
+)
+
+FINGERPRINTS = (
+    {"name": "antirez", "score": 0.9251, "klass": "UNIVERSAL", "github_rank": "5 / 1247", "reddit_rank": "377 / 5110"},
+    {"name": "hadley", "score": 0.8497, "klass": "GITHUB-DOMINANT", "github_rank": "3 / 1247", "reddit_rank": "1637 / 5110"},
+    {"name": "rtomayko", "score": 0.8109, "klass": "GITHUB-DOMINANT", "github_rank": "4 / 1247", "reddit_rank": "1615 / 5110"},
+    {"name": "spez", "score": 0.7326, "klass": "GITHUB-DOMINANT", "github_rank": "7 / 1247", "reddit_rank": "516 / 5110"},
+    {"name": "chromakode", "score": 0.6873, "klass": "GITHUB-DOMINANT", "github_rank": "2 / 1247", "reddit_rank": "3790 / 5110"},
+)
+
+PLATFORMS = (
+    {"name": "GitHub follows", "nodes": 1247, "edges": 1542, "modularity": 0.6489554893, "assortativity": -0.8647454014896636, "clustering": 0.13118320762376973, "power": 0.7041682971997252, "halving": 0.01},
+    {"name": "Bluesky follows", "nodes": 833, "edges": 915, "modularity": 0.6987064409, "assortativity": -0.95334050812306, "clustering": 0.02101115093398593, "power": 0.5409539362800933, "halving": 0.01},
+    {"name": "SNAP Facebook", "nodes": 4039, "edges": 88234, "modularity": 0.8349209912, "assortativity": 0.06357722918564943, "clustering": 0.6055467186200862, "power": 0.8091782885710821, "halving": 0.30},
+    {"name": "Reddit 2008", "nodes": 5110, "edges": 86268, "modularity": 0.3246767820, "assortativity": -0.016717553605958634, "clustering": 0.6401807425046512, "power": 0.863577291676034, "halving": 0.30},
+    {"name": "GitHub co-contribution", "nodes": 733, "edges": 5400, "modularity": 0.7839194696, "assortativity": -0.10246224195867357, "clustering": 0.8794333679156484, "power": 0.592321643542107, "halving": 0.02},
+    {"name": "Bluesky replies", "nodes": 1218, "edges": 12735, "modularity": 0.7379022935, "assortativity": -0.059616652774097334, "clustering": 0.9213323257263784, "power": 0.5263247371505854, "halving": 0.10},
+)
+
+
+def esc(value) -> str:
+    return html.escape(str(value), quote=True)
+
+
+def load_sweep(path: Path = SWEEP_PATH) -> list[dict]:
+    """Persistence and modularity for each omega. Per-community rows are dropped."""
+    rows = json.loads(path.read_text(encoding="utf-8"))
+    summary = []
+    for row in rows:
+        transitions = row["transitions"]
+        summary.append(
+            {
+                "omega": float(row["omega"]),
+                "modularity": float(row["modularity"]),
+                "persistence": [float(item["mean_persistence"]) for item in transitions],
+                "shared": [int(item["shared_members"]) for item in transitions],
+                "labels": [f"{item['earlier']}→{item['later']}" for item in transitions],
+                "communities": [int(item["communities"]) for item in row["snapshots"]],
+                "months": list(row["months"]),
+            }
+        )
+    return summary
+
+
+def _chart_frame(width: int, height: int, y_max: float, y_ticks: int, x_labels: list[str], pad: tuple[int, int, int, int]) -> str:
+    left, right, top, bottom = pad
+    plot_w = width - left - right
+    plot_h = height - top - bottom
+    parts = [f'<svg viewBox="0 0 {width} {height}" role="img">']
+    for step in range(y_ticks + 1):
+        value = y_max * step / y_ticks
+        y = top + plot_h * (1 - step / y_ticks)
+        parts.append(f'<line x1="{left}" y1="{y:.1f}" x2="{width - right}" y2="{y:.1f}" class="grid"/>')
+        parts.append(f'<text x="{left - 8}" y="{y + 4:.1f}" class="tick" text-anchor="end">{value:.2f}</text>')
+    slot = plot_w / max(len(x_labels) - 1, 1)
+    for index, label in enumerate(x_labels):
+        x = left + index * slot
+        parts.append(f'<text x="{x:.1f}" y="{height - 8}" class="tick" text-anchor="middle">{esc(label)}</text>')
+    return "".join(parts), left, top, plot_w, plot_h
+
+
+def line_chart(series: tuple[dict, ...], x_labels: list[str], y_max: float, title: str) -> str:
+    """A line chart. Dashed series are the later graph when both years are drawn."""
+    width, height = 720, 280
+    body, left, top, plot_w, plot_h = _chart_frame(width, height, y_max, 4, x_labels, (52, 16, 16, 32))
+    slot = plot_w / max(len(x_labels) - 1, 1)
+    lines = [body]
+    for item in series:
+        points = []
+        for index, value in enumerate(item["values"]):
+            x = left + index * slot
+            y = top + plot_h * (1 - float(value) / y_max)
+            points.append(f"{x:.1f},{y:.1f}")
+        dash = f' stroke-dasharray="{item["dash"]}"' if item.get("dash") else ""
+        lines.append(
+            f'<polyline points="{" ".join(points)}" fill="none" stroke="{item["color"]}" stroke-width="2.4"{dash}/>'
+        )
+    lines.append("</svg>")
+    legend = "".join(
+        f'<span class="legend"><i style="background:{item["color"]}"></i>{esc(item["name"])}</span>'
+        for item in series
+    )
+    return f'<figure class="chart"><figcaption>{esc(title)}</figcaption>{"".join(lines)}<div class="legend-row">{legend}</div></figure>'
+
+
+def bar_chart(labels: list[str], values: list[float], captions: list[str], y_max: float, title: str, colors: list[str] | None = None) -> str:
+    width, height = 720, 260
+    left, right, top, bottom = 52, 16, 16, 48
+    plot_w = width - left - right
+    plot_h = height - top - bottom
+    parts = [f'<svg viewBox="0 0 {width} {height}" role="img">']
+    for step in range(5):
+        value = y_max * step / 4
+        y = top + plot_h * (1 - step / 4)
+        parts.append(f'<line x1="{left}" y1="{y:.1f}" x2="{width - right}" y2="{y:.1f}" class="grid"/>')
+        parts.append(f'<text x="{left - 8}" y="{y + 4:.1f}" class="tick" text-anchor="end">{value:.2f}</text>')
+    slot = plot_w / max(len(labels), 1)
+    bar_w = min(72, slot * 0.55)
+    palette = colors or ["#44403c"] * len(labels)
+    for index, (label, value, caption) in enumerate(zip(labels, values, captions)):
+        x = left + index * slot + (slot - bar_w) / 2
+        h = plot_h * (float(value) / y_max) if y_max else 0
+        y = top + plot_h - h
+        parts.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{h:.1f}" fill="{palette[index % len(palette)]}"/>')
+        parts.append(f'<text x="{x + bar_w / 2:.1f}" y="{y - 6:.1f}" class="tick" text-anchor="middle">{esc(caption)}</text>')
+        parts.append(f'<text x="{x + bar_w / 2:.1f}" y="{height - 18}" class="tick" text-anchor="middle">{esc(label)}</text>')
+    parts.append("</svg>")
+    return f'<figure class="chart"><figcaption>{esc(title)}</figcaption>{"".join(parts)}</figure>'
+
+
+def stacked_bar(pairs: tuple[tuple[str, int], ...], title: str) -> str:
+    total = sum(count for _name, count in pairs)
+    colors = {"DISSOLVED": "#a8a29e", "SPLIT": "#b45309", "MERGED": "#1d4ed8", "STABLE": "#15803d"}
+    spans = []
+    for name, count in pairs:
+        width = 100 * count / total
+        label = str(count) if width >= 8 else ""
+        spans.append(
+            f'<span style="width:{width:.4f}%;background:{colors[name]}" title="{esc(name)} {count}">{label}</span>'
+        )
+    legend = "".join(
+        f'<span class="legend"><i style="background:{colors[name]}"></i>{esc(name)} {count}</span>'
+        for name, count in pairs
+    )
+    return (
+        f'<figure class="chart"><figcaption>{esc(title)}</figcaption>'
+        f'<div class="stack" role="img">{"".join(spans)}</div>'
+        f'<div class="legend-row">{legend}</div></figure>'
+    )
+
+
+def table(headers: list[tuple[str, str]], rows: list[list[tuple[str, str]]]) -> str:
+    """A sortable table. Each cell is (sort value, visible text)."""
+    head = "".join(f'<th data-type="{kind}">{esc(label)}</th>' for label, kind in headers)
+    body = []
+    for row in rows:
+        cells = "".join(f'<td data-value="{esc(value)}">{esc(text)}</td>' for value, text in row)
+        body.append(f"<tr>{cells}</tr>")
+    return (
+        '<div class="table-wrap"><table class="sortable"><thead><tr>'
+        + head
+        + "</tr></thead><tbody>"
+        + "".join(body)
+        + "</tbody></table></div>"
+    )
+
+
+def section(anchor: str, number: str, title: str, claim: str, body: str) -> str:
+    return (
+        f'<section id="{anchor}">'
+        f'<p class="eyebrow">{esc(number)}</p>'
+        f"<h2>{esc(title)}</h2>"
+        f'<p class="claim">{esc(claim)}</p>'
+        f"{body}</section>"
+    )
+
+
+def _finding_modularity() -> str:
+    earlier, later = MODULARITY
+    chart = bar_chart(
+        [earlier["run"], later["run"]],
+        [earlier["modularity"], later["modularity"]],
+        [f'{earlier["modularity"]:.3f}', f'{later["modularity"]:.3f}'],
+        y_max=0.70,
+        title="Louvain modularity",
+        colors=["#1d4ed8", "#be123c"],
+    )
+    rows = [
+        [
+            (item["run"], item["run"]),
+            (item["layer"], item["layer"]),
+            (str(item["nodes"]), f'{item["nodes"]:,}'),
+            (str(item["edges"]), f'{item["edges"]:,}'),
+            (str(item["communities"]), f'{item["communities"]:,}'),
+            (f'{item["modularity"]:.10f}', f'{item["modularity"]:.10f}'),
+        ]
+        for item in MODULARITY
+    ]
+    body = chart + table(
+        [("run", "text"), ("layer", "text"), ("nodes", "num"), ("edges", "num"), ("communities", "num"), ("modularity", "num")],
+        rows,
+    )
+    body += f'<p class="note">Rise = (0.5582584329 − 0.3246767820) / 0.3246767820 = {MODULARITY_RISE:.10f}.</p>'
+    return section("finding-1", "Finding 1", "Modularity rose 72%", "Reddit co-participation in 2012 is more modular than the 2008 graph.", body)
+
+
+def _finding_elites() -> str:
+    body = (
+        '<div class="stats">'
+        '<p><strong>99</strong><span>of the 100 highest-PageRank accounts in 2012 are absent from 2008</span></p>'
+        '<p><strong>1</strong><span>of the 2008 top 100 is still in the 2012 top 100: grauenwolf, rank 31 to rank 62</span></p>'
+        '<p><strong>64</strong><span>of the 2008 top 100 are gone. 36 are still in the 2012 graph, and 1 is still in the top 100.</span></p>'
+        "</div>"
+        '<p class="note">compare.py --a r2008-v2 --b r2012-v2 --mode cohort --metric pagerank --top 100. '
+        "grauenwolf PageRank share moved from 0.6067% to 0.1131%.</p>"
+    )
+    return section("finding-2", "Finding 2", "Elite turnover 99%", "The 2012 hub list is almost a new set of accounts.", body)
+
+
+def _finding_dissolution() -> str:
+    chart = stacked_bar(DISSOLUTION_COUNTS, "96 communities from 2008, classified inside 2012")
+    rows = [
+        [
+            (str(community), str(community)),
+            (str(size), str(size)),
+            (str(destination), str(destination)),
+            (f"{containment:.6f}", f"{containment:.6f}"),
+            (f"{lift:.2f}", f"{lift:.2f}"),
+            (str(destinations), str(destinations)),
+            (kind, kind),
+        ]
+        for community, size, destination, containment, lift, destinations, kind in DISSOLUTION
+    ]
+    body = chart + table(
+        [
+            ("2008 community", "num"),
+            ("size", "num"),
+            ("2012 community", "num"),
+            ("containment", "num"),
+            ("lift", "num"),
+            ("destinations", "num"),
+            ("class", "text"),
+        ],
+        rows,
+    )
+    body += (
+        "<p class=\"note\">Null containment is 0.000876 (1/1141). "
+        "The other 78 communities have containment 0, lift 0, and classification DISSOLVED.</p>"
+    )
+    return section(
+        "finding-3",
+        "Finding 3",
+        "Community dissolution",
+        "78 of 96 communities from 2008 have no members left together in 2012.",
+        body,
+    )
+
+
+def _finding_people() -> str:
+    body = """
+<div class="people">
+<article>
+<h3>akdas</h3>
+<p class="tag">2008 only</p>
+<ul>
+<li>PageRank 0.004217, rank 1 / 5110</li>
+<li>Degree 0.148561, rank 1</li>
+<li>Betweenness 0.028257, rank 1</li>
+<li>Closeness 0.485747, rank 1</li>
+<li>Louvain 0, Leiden 1</li>
+</ul>
+</article>
+<article>
+<h3>grauenwolf</h3>
+<p class="tag">both years</p>
+<ul>
+<li>PageRank 0.001665 rank 31 in 2008, 0.000370 rank 62 in 2012</li>
+<li>Degree 0.063026 rank 33, then 0.008903 rank 54</li>
+<li>Betweenness 0.003498 rank 106, then 0.003769 rank 81</li>
+<li>Closeness 0.433624 rank 57, then 0.289038 rank 5443</li>
+</ul>
+</article>
+<article>
+<h3>incredible-ninja</h3>
+<p class="tag">2012 only</p>
+<ul>
+<li>PageRank 0.001657, rank 1 / 54817</li>
+<li>Degree 0.033913, rank 2</li>
+<li>Betweenness 0.034073, rank 1</li>
+<li>Closeness 0.396632, rank 1</li>
+<li>Louvain 0, Leiden 0</li>
+</ul>
+</article>
+</div>
+"""
+    return section(
+        "finding-4",
+        "Finding 4",
+        "Individual trajectories",
+        "The 2008 top account is gone. The one elite who remains has fallen. The 2012 top account is new.",
+        body,
+    )
+
+
+def _finding_robustness() -> str:
+    labels = [f"{int(ratio * 100)}%" for ratio in REMOVAL_RATIOS]
+    chart = line_chart(ROBUSTNESS, labels, 1.0, "Largest component, as a fraction of the intact graph")
+    headers = [("ratio", "num")] + [(item["name"], "num") for item in ROBUSTNESS]
+    rows = []
+    for index, ratio in enumerate(REMOVAL_RATIOS):
+        cells = [(f"{ratio:.2f}", labels[index])]
+        for item in ROBUSTNESS:
+            value = item["values"][index]
+            cells.append((f"{value:.3f}", f"{value:.3f}"))
+        rows.append(cells)
+    note = (
+        "<p class=\"note\">At 30% random removal the giant component is 0.649 in 2008 and 0.633 in 2012. "
+        "At 30% degree removal it is 0.300 and 0.022. At 30% betweenness removal it is 0.280 and 0.001. "
+        "That last cut leaves 15,989 components in 2012 and 1,029 in 2008.</p>"
+    )
+    return section(
+        "finding-5",
+        "Finding 5",
+        "Robustness to node removal",
+        "2012 survives random removal about as well as 2008, and collapses when hubs are removed.",
+        chart + table(headers, rows) + note,
+    )
+
+
+def _finding_structure() -> str:
+    labels = [str(k) for k in RICH_CLUB_K]
+    chart = line_chart(RICH_CLUB, labels, 0.25, "Rich-club coefficient")
+    rows = [
+        [("assortativity", "assortativity"), ("-0.0167175536", "-0.016718"), ("0.0006093685", "0.000609")],
+        [("avg clustering", "avg clustering"), ("0.6401807425", "0.640181"), ("0.7401053405", "0.740105")],
+        [("transitivity", "transitivity"), ("0.2000506008", "0.200051"), ("0.1692050724", "0.169205")],
+        [("components", "components"), ("77", "77"), ("1082", "1,082")],
+        [("avg degree", "avg degree"), ("33.7643835616", "33.764"), ("20.3008190890", "20.301")],
+        [("max degree", "max degree"), ("759", "759"), ("1890", "1,890")],
+        [("power-law alpha", "power-law alpha"), ("1.3470966438", "1.347"), ("1.8664661262", "1.866")],
+        [("power-law R²", "power-law R²"), ("0.8635772917", "0.864"), ("0.8917107624", "0.892")],
+    ]
+    body = chart + table(
+        [("metric", "text"), ("r2008-v2", "num"), ("r2012-v2", "num")],
+        rows,
+    )
+    body += "<p class=\"note\">Both years fit a power law better than a lognormal or an exponential. The 2012 rich club is much thinner.</p>"
+    return section(
+        "finding-6",
+        "Finding 6",
+        "Structural phase transition",
+        "The 2012 graph has a higher max degree, more components, and a collapsed rich club.",
+        body,
+    )
+
+
+def _finding_reach() -> str:
+    labels = ["min", "median", "mean", "max"]
+    # Two grouped readings drawn as two bar charts stacked in one figure via a line chart of the four summaries.
+    series = tuple(
+        {
+            "name": item["run"],
+            "color": "#1d4ed8" if item["run"] == "r2008-v2" else "#be123c",
+            "dash": "" if item["run"] == "r2008-v2" else "5 4",
+            "values": (item["min"], item["median"], item["mean"], item["max"]),
+        }
+        for item in CLOSENESS
+    )
+    chart = line_chart(series, labels, 0.50, "Closeness")
+    rows = [
+        [
+            (item["run"], item["run"]),
+            (str(item["n"]), f'{item["n"]:,}'),
+            (f'{item["min"]:.10f}', f'{item["min"]:.6f}'),
+            (f'{item["median"]:.10f}', f'{item["median"]:.6f}'),
+            (f'{item["mean"]:.10f}', f'{item["mean"]:.6f}'),
+            (f'{item["max"]:.10f}', f'{item["max"]:.6f}'),
+            (item["who"], item["who"]),
+        ]
+        for item in CLOSENESS
+    ]
+    return section(
+        "finding-7",
+        "Finding 7",
+        "Reach is flat",
+        "Every node has a closeness score, and the 2012 maximum is lower than the 2008 maximum.",
+        chart
+        + table(
+            [("run", "text"), ("n", "num"), ("min", "num"), ("median", "num"), ("mean", "num"), ("max", "num"), ("maximum account", "text")],
+            rows,
+        ),
+    )
+
+
+def _finding_roles() -> str:
+    ordered = sorted(FINGERPRINTS, key=lambda item: -item["score"])
+    chart = bar_chart(
+        [item["name"] for item in ordered],
+        [item["score"] for item in ordered],
+        [f'{item["score"]:.3f}' for item in ordered],
+        y_max=1.0,
+        title="Structural fingerprint",
+        colors=["#15803d" if item["klass"] == "UNIVERSAL" else "#b45309" for item in ordered],
+    )
+    rows = [
+        [
+            (item["name"], item["name"]),
+            (f'{item["score"]:.4f}', f'{item["score"]:.4f}'),
+            (item["klass"], item["klass"]),
+            (item["github_rank"].split()[0], item["github_rank"]),
+            (item["reddit_rank"].split()[0], item["reddit_rank"]),
+        ]
+        for item in ordered
+    ]
+    note = (
+        "<p class=\"note\">Class uses PageRank rank. Above the 90th percentile means rank/nodes ≤ 0.10. "
+        "GitHub is github-multi-ego (1,247 nodes). Reddit is r2008-v2 (5,110 nodes). "
+        "antirez is the only UNIVERSAL account. The other four are GITHUB-DOMINANT.</p>"
+    )
+    return section(
+        "finding-8",
+        "Finding 8",
+        "Platform role divergence",
+        "The same person can be central on GitHub and ordinary on Reddit.",
+        chart
+        + table(
+            [("person", "text"), ("fingerprint", "num"), ("class", "text"), ("GitHub PageRank rank", "num"), ("Reddit PageRank rank", "num")],
+            rows,
+        )
+        + note,
+    )
+
+
+def _finding_identity() -> str:
+    body = """
+<div class="people">
+<article>
+<h3>Within-graph z-score</h3>
+<p>495 STRUCTURAL_ONLY rows, similarity 0.8014–0.988, covering all 100 Reddit hubs. 494 of them were the seven GitHub ego centers.</p>
+</article>
+<article>
+<h3>Pooled z-score</h3>
+<p>Still degenerate. Cosine among the seven GitHub centers was 0.966–1.000. No cross-platform pair cleared 0.8.</p>
+</article>
+<article>
+<h3>Rank percentiles</h3>
+<p>116,574 of 124,700 pairs (93.5%) scored above 0.8. Same-name ranks: antirez 266, hadley 898, chromakode 1115, rtomayko 1179, spez 1183. The best GitHub match for antirez on Reddit was marcel at 0.9839, not antirez at 0.9251.</p>
+</article>
+</div>
+<p class="note">Seven features: degree, PageRank, betweenness, closeness, community size, mean neighbor degree, and neighbor-degree Gini. The structural cutoff stayed at 0.8. A shared name only adjusted confidence afterward.</p>
+"""
+    return section(
+        "finding-9",
+        "Finding 9",
+        "Fingerprinting fails across platforms",
+        "Structure does not resolve identity when the edges mean different things.",
+        body,
+    )
+
+
+def _finding_platforms() -> str:
+    rows = [
+        [
+            (item["name"], item["name"]),
+            (str(item["nodes"]), f'{item["nodes"]:,}'),
+            (str(item["edges"]), f'{item["edges"]:,}'),
+            (f'{item["modularity"]:.10f}', f'{item["modularity"]:.6f}'),
+            (f'{item["assortativity"]:.10f}', f'{item["assortativity"]:.6f}'),
+            (f'{item["clustering"]:.10f}', f'{item["clustering"]:.6f}'),
+            (f'{item["power"]:.10f}', f'{item["power"]:.6f}'),
+            (f'{item["halving"]:.2f}', f'{item["halving"]:.2f}'),
+        ]
+        for item in PLATFORMS
+    ]
+    short = ["GH follow", "Bsky follow", "SNAP", "Reddit 08", "GH co-contrib", "Bsky reply"]
+    chart = bar_chart(
+        short,
+        [item["halving"] for item in PLATFORMS],
+        [f'{item["halving"]:.2f}' for item in PLATFORMS],
+        y_max=0.35,
+        title="Degree-removal ratio where the largest component falls to half",
+        colors=["#b45309", "#b45309", "#1d4ed8", "#1d4ed8", "#44403c", "#44403c"],
+    )
+    body = (
+        chart
+        + table(
+            [
+                ("platform", "text"),
+                ("nodes", "num"),
+                ("edges", "num"),
+                ("modularity", "num"),
+                ("assortativity", "num"),
+                ("clustering", "num"),
+                ("power-law R²", "num"),
+                ("halving point", "num"),
+            ],
+            rows,
+        )
+        + '<p class="note">The interactive drawings of these six graphs are in <a href="compare_platforms.html">compare_platforms.html</a>. '
+        "Follow graphs halve after removing 1% of high-degree nodes. Friendship and Reddit 2008 last until 30%.</p>"
+    )
+    return section(
+        "finding-10",
+        "Finding 10",
+        "Edge semantics determines network structure",
+        "Follow graphs are fragile and disassortative. Co-participation graphs cluster. Friendship sits with Reddit on robustness.",
+        body,
+    )
+
+
+def _finding_sweep(sweep: list[dict]) -> str:
+    series = (
+        {
+            "name": "modularity",
+            "color": "#1d4ed8",
+            "dash": "",
+            "values": tuple(item["modularity"] for item in sweep),
+        },
+        {
+            "name": "mean persistence",
+            "color": "#be123c",
+            "dash": "",
+            "values": tuple(sum(item["persistence"]) / len(item["persistence"]) for item in sweep),
+        },
+    )
+    labels = [f'{item["omega"]:.1f}' for item in sweep]
+    chart = line_chart(series, labels, 1.0, "Multislice modularity and mean persistence")
+    headers = [("omega", "num"), ("modularity", "num")] + [(label, "num") for label in sweep[0]["labels"]]
+    rows = []
+    for item in sweep:
+        cells = [(f'{item["omega"]:.1f}', f'{item["omega"]:.1f}'), (f'{item["modularity"]:.10f}', f'{item["modularity"]:.6f}')]
+        for value in item["persistence"]:
+            cells.append((f"{value:.6f}", f"{value:.0f}" if value in (0.0, 1.0) else f"{value:.6f}"))
+        rows.append(cells)
+    shared = sweep[0]["shared"]
+    shared_text = ", ".join(f"{count:,}" for count in shared)
+    note = (
+        f"<p class=\"note\">Shared people on the five pairs: {shared_text}. "
+        "Omega 0.1, 0.5, 1.0, and 2.0 find the same communities. "
+        "Community counts at those couplings are "
+        + ", ".join(str(count) for count in sweep[1]["communities"])
+        + " across "
+        + ", ".join(sweep[0]["months"])
+        + ". At omega 0 the counts are "
+        + ", ".join(str(count) for count in sweep[0]["communities"])
+        + ".</p>"
+    )
+    return section(
+        "multislice",
+        "Half-year multislice",
+        "Persistence is 0 at omega 0 and 1 from 0.1 up",
+        "On six Reddit months, any coupling at or above 0.1 keeps every shared person in the same community.",
+        chart + table(headers, rows) + note,
+    )
+
+
+def _steam() -> str:
+    return section(
+        "steam",
+        "Verification",
+        "Steam layer removed",
+        "SteamGPT returned 79 friends for a profile Steam itself marks private.",
+        "<p class=\"note\">steamcommunity.com/id/gabelogannewell reports “This profile is private.” "
+        "The scraped layer was not usable, so it was removed.</p>",
+    )
+
+
+def render_page(sweep: list[dict]) -> str:
+    """Full document. ``sweep`` is the omega summary from load_sweep."""
+    nav = (
+        ("finding-1", "1 Modularity"),
+        ("finding-2", "2 Elites"),
+        ("finding-3", "3 Dissolution"),
+        ("finding-4", "4 People"),
+        ("finding-5", "5 Robustness"),
+        ("finding-6", "6 Structure"),
+        ("finding-7", "7 Reach"),
+        ("finding-8", "8 Roles"),
+        ("finding-9", "9 Identity"),
+        ("finding-10", "10 Platforms"),
+        ("multislice", "Multislice"),
+    )
+    links = "".join(f'<a href="#{anchor}">{esc(label)}</a>' for anchor, label in nav)
+    parts = [
+        _finding_modularity(),
+        _finding_elites(),
+        _finding_dissolution(),
+        _finding_people(),
+        _finding_robustness(),
+        _finding_structure(),
+        _finding_reach(),
+        _finding_roles(),
+        _finding_identity(),
+        _finding_platforms(),
+        _finding_sweep(sweep),
+        _steam(),
+    ]
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Findings</title>
+<style>
+body {{ margin: 0; font-family: "Iowan Old Style", Palatino, Georgia, serif; color: #1c1917; background: #fafaf9; }}
+header, main {{ max-width: 880px; margin: 0 auto; padding: 20px 24px 8px; }}
+h1 {{ font-size: 32px; margin: 0 0 8px; }}
+h2 {{ font-size: 24px; margin: 0 0 8px; }}
+h3 {{ margin: 0 0 6px; font-size: 18px; }}
+a {{ color: #1d4ed8; }}
+nav {{ display: flex; flex-wrap: wrap; gap: 8px 14px; position: sticky; top: 0; background: #fafaf9; padding: 10px 0; z-index: 2; border-bottom: 1px solid #e7e5e4; }}
+nav a {{ color: #44403c; text-decoration: none; font-size: 14px; }}
+.lede, .claim, .note {{ line-height: 1.45; }}
+.lede {{ margin-top: 0; }}
+.eyebrow {{ margin: 28px 0 0; letter-spacing: 0.04em; text-transform: uppercase; font-size: 12px; color: #78716c; }}
+.claim {{ margin-top: 0; }}
+.note {{ color: #44403c; font-size: 15px; }}
+table {{ border-collapse: collapse; background: #fff; width: 100%; }}
+th, td {{ border: 1px solid #e7e5e4; padding: 6px 10px; text-align: right; font-variant-numeric: tabular-nums; }}
+th {{ cursor: pointer; background: #f5f5f4; }}
+th:first-child, td:first-child {{ text-align: left; }}
+.table-wrap {{ overflow-x: auto; }}
+.chart {{ margin: 12px 0 16px; }}
+.chart figcaption {{ font-size: 14px; margin-bottom: 6px; }}
+svg {{ width: 100%; height: auto; background: #fff; border: 1px solid #e7e5e4; }}
+.grid {{ stroke: none; }}
+.tick {{ font-size: 12px; fill: #44403c; font-family: "Iowan Old Style", Palatino, Georgia, serif; }}
+line.grid {{ stroke: #e7e5e4; stroke-width: 1; }}
+.legend-row {{ display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 8px; font-size: 14px; }}
+.legend {{ display: inline-flex; align-items: center; gap: 6px; }}
+.legend i {{ width: 14px; height: 8px; display: inline-block; }}
+.stack {{ display: flex; height: 36px; background: #fff; border: 1px solid #e7e5e4; color: #fff; font: 14px system-ui, sans-serif; }}
+.stack span {{ display: flex; align-items: center; justify-content: center; overflow: hidden; }}
+.stats {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }}
+.stats p, .people article {{ background: #fff; border: 1px solid #e7e5e4; margin: 0; padding: 12px; }}
+.stats strong {{ display: block; font-size: 36px; line-height: 1; }}
+.people {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }}
+.people ul {{ margin: 0; padding-left: 18px; }}
+.tag {{ margin: 0 0 8px; color: #78716c; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; }}
+@media (max-width: 720px) {{
+  .stats, .people {{ grid-template-columns: 1fr; }}
+}}
+</style>
+</head>
+<body>
+<header>
+<h1>Findings</h1>
+<p class="lede">Stored results for the Reddit years, the six platform graphs, and the half-year multislice. Click a column heading to sort a table. The network drawings are on <a href="compare_platforms.html">the platform comparison page</a>.</p>
+<nav>{links}</nav>
+</header>
+<main>
+{"".join(parts)}
+</main>
+<script>
+document.querySelectorAll("table.sortable th").forEach((header) => {{
+  header.addEventListener("click", () => {{
+    const table = header.closest("table");
+    const body = table.tBodies[0];
+    const index = header.cellIndex;
+    const numeric = header.dataset.type === "num";
+    const descending = header.dataset.dir !== "desc";
+    const rows = Array.from(body.rows);
+    rows.sort((left, right) => {{
+      const a = left.cells[index].dataset.value;
+      const b = right.cells[index].dataset.value;
+      if (numeric) {{
+        return descending ? Number(b) - Number(a) : Number(a) - Number(b);
+      }}
+      return descending ? b.localeCompare(a) : a.localeCompare(b);
+    }});
+    rows.forEach((row) => body.appendChild(row));
+    table.querySelectorAll("th").forEach((other) => {{ other.dataset.dir = ""; }});
+    header.dataset.dir = descending ? "desc" : "asc";
+  }});
+}});
+</script>
+</body>
+</html>
+"""
+
+
+def write_page(path: Path = OUTPUT, sweep_path: Path = SWEEP_PATH) -> Path:
+    html_text = render_page(load_sweep(sweep_path))
+    path.write_text(html_text, encoding="utf-8")
+    print(f"wrote {path} ({path.stat().st_size} bytes)")
+    return path
+
+
+def main() -> None:
+    write_page()
+
+
+if __name__ == "__main__":
+    main()
