@@ -1,7 +1,7 @@
-"""Analyze a graph that is already in the store.
+"""Analyze a graph from a file or from a run already in the store.
 
-Platform fetchers are gone. ``--source file`` is accepted and filled in next.
-``--load-run`` and ``--run`` read a saved graph.
+``--source file`` reads CSV, TSV, JSON, or GraphML. ``--load-run`` and ``--run``
+read a saved graph.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
+from osi.loader import load_edge_list, load_graphml  # noqa: E402
 from osi.analysis import (  # noqa: E402
     adamic_adar,
     betweenness_centrality,
@@ -65,7 +66,7 @@ def _parse_top(value: str) -> int:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Analyze a saved graph, or a file in the next step.")
+    parser = argparse.ArgumentParser(description="Analyze a graph from a file or from a saved run.")
     parser.add_argument("--source", choices=("file",), default=None)
     parser.add_argument("--path", help="Edge list or GraphML. Used with --source file.")
     parser.add_argument("--analyze", choices=("all", "centrality", "communities"), default="all")
@@ -110,8 +111,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     if args.load_run and not args.no_cache:
         return args
     if args.source == "file":
-        # The reader lands in the next step. The flag is here so the command stays stable.
-        parser.error("--source file is not wired yet")
+        if not args.path:
+            parser.error("--source file requires --path")
+        return args
     parser.error("pass --load-run, or --run")
     return args
 
@@ -503,6 +505,26 @@ def _persist_run(args: argparse.Namespace, graph: nx.Graph, centralities: dict |
         save_communities(run_id, algorithm, membership)
 
 
+def _load_source_file(path: str) -> nx.Graph:
+    suffix = Path(path).suffix.lower()
+    if suffix in {".csv", ".tsv", ".json"}:
+        return load_edge_list(path)
+    if suffix == ".graphml":
+        return load_graphml(path)
+    raise ValueError(f"unsupported graph file {suffix or '(no extension)'}; use .csv, .tsv, .json, or .graphml")
+
+
+def _analyze_fresh(args: argparse.Namespace, graph: nx.Graph) -> None:
+    """Print the requested report, then store the graph when --save-run is set."""
+    centralities = print_pagerank(graph) if args.analyze in ("all", "centrality") else None
+    communities = print_communities(graph) if args.analyze in ("all", "communities") else None
+    if not args.save_run:
+        return
+    _persist_run(args, graph, centralities, communities)
+    args.load_run = args.save_run
+    print(f"saved run {args.save_run}")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     if args.robustness_loaded_latest:
@@ -510,15 +532,26 @@ def main(argv: list[str] | None = None) -> int:
     if args.list_runs:
         _print_saved_runs()
         return 0
-    try:
-        graph = _load_saved_graph(args.load_run)
-    except (LookupError, json.JSONDecodeError, OSError, ValueError) as error:
-        print(f"run {args.load_run} was not found", file=sys.stderr)
-        print(error, file=sys.stderr)
-        return 1
+    # --run and --load-run win unless --no-cache asked for a fresh file read.
+    reading_file = args.source == "file" and not (args.load_run and not args.no_cache)
+    if reading_file:
+        try:
+            graph = _load_source_file(args.path)
+        except (OSError, ValueError, json.JSONDecodeError, nx.NetworkXError) as error:
+            print(error, file=sys.stderr)
+            return 1
+        _analyze_fresh(args, graph)
+    else:
+        try:
+            graph = _load_saved_graph(args.load_run)
+        except (LookupError, json.JSONDecodeError, OSError, ValueError) as error:
+            print(f"run {args.load_run} was not found", file=sys.stderr)
+            print(error, file=sys.stderr)
+            return 1
+        _report_from_store(args, graph)
     if args.robustness:
-        degree_scores = load_metrics(args.load_run, "degree")
-        between_scores = load_metrics(args.load_run, "betweenness")
+        degree_scores = load_metrics(args.load_run, "degree") if args.load_run else None
+        between_scores = load_metrics(args.load_run, "betweenness") if args.load_run else None
         print_robustness(
             robustness(
                 graph,
@@ -526,7 +559,6 @@ def main(argv: list[str] | None = None) -> int:
                 betweenness_scores=between_scores or None,
             )
         )
-    _report_from_store(args, graph)
     if args.health:
         _emit_health(args.load_run or args.save_run, graph)
     if args.compare:

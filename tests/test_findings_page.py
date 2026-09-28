@@ -131,3 +131,12 @@ def test_page_embeds_the_six_networks(tmp_path):
     assert markup.count('<g class="node"') == 6
     assert markup.count("<text ") == 6
     assert max(len(line) for line in page.splitlines()) <= 500
+
+
+def test_missing_sweep_warns_and_still_renders(tmp_path, capsys):
+    rows = load_sweep(tmp_path / "missing.json")
+    assert rows == []
+    assert "warning: omega sweep file is missing" in capsys.readouterr().err
+    page = render_page(rows)
+    assert 'id="multislice"' in page
+    assert "That file is missing" in page

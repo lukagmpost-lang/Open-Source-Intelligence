@@ -1,4 +1,4 @@
-"""Local viewer for a multi-layer public graph."""
+"""Local viewer. The sample is a NetworkX graph. Platform fetch is gone."""
 
 from __future__ import annotations
 
@@ -8,10 +8,59 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from osi.analysis import louvain_communities
+from osi.sample import sample_graph
+
 STATIC = Path(__file__).with_name("static")
 MAX_BODY = 1_000_000
-# Platform fetch and the multi-layer model were removed with the loaders.
+# Platform fetch left with the connectors. Import of the old multi-layer JSON left too.
 _REMOVED = "platform fetch was removed"
+
+
+def graph_view(graph) -> dict[str, Any]:
+    """Shape a NetworkX graph the way the static page draws it."""
+    membership = louvain_communities(graph)
+    grouped: dict[int, list[Any]] = {}
+    for node, community in membership.items():
+        grouped.setdefault(int(community), []).append(node)
+    communities = []
+    for community_id, members in sorted(grouped.items(), key=lambda item: (-len(item[1]), item[0])):
+        ordered = sorted(members, key=str)
+        communities.append(
+            {
+                "id": community_id,
+                "size": len(ordered),
+                "members": [{"id": str(member), "label": str(member)} for member in ordered],
+            }
+        )
+    member_of = {member["id"]: community["id"] for community in communities for member in community["members"]}
+    bridges = []
+    for node in graph.nodes:
+        touched = {member_of.get(str(node))}
+        for neighbor in graph.neighbors(node):
+            touched.add(member_of.get(str(neighbor)))
+        touched.discard(None)
+        # A bridge is a node whose neighbors are not all in its own community.
+        if len(touched) < 2:
+            continue
+        bridges.append(
+            {
+                "id": str(node),
+                "label": str(node),
+                "communities": sorted(touched),
+                "span": len(touched),
+            }
+        )
+    bridges.sort(key=lambda item: (-item["span"], item["label"].lower()))
+    return {
+        "graph": {
+            "nodes": [{"id": str(node), "label": str(node)} for node in graph.nodes],
+            "edges": [{"source": str(left), "target": str(right)} for left, right in graph.edges],
+        },
+        "layers": ["sample"],
+        "communities": communities,
+        "bridges": bridges,
+    }
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -45,7 +94,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, page, "text/html; charset=utf-8")
             return
         if path == "/api/sample":
-            self._json(410, {"error": _REMOVED})
+            self._json(200, graph_view(sample_graph()))
             return
         self._json(404, {"error": "not found"})
 

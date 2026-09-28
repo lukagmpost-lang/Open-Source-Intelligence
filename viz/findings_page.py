@@ -4,7 +4,8 @@ Run:
     python3 viz/findings_page.py
 
 Numbers are the ones written in FINDINGS.md. The omega section is read from
-results/reddit_halfyear_omega_sweep.json. Nothing is written back to the store.
+results/reddit_halfyear_omega_sweep.json. A missing file prints a warning and
+leaves that section empty. Nothing is written back to the store.
 """
 
 from __future__ import annotations
@@ -124,8 +125,14 @@ def explain(means: str, matters: str) -> str:
 
 
 def load_sweep(path: Path = SWEEP_PATH) -> list[dict]:
-    """Persistence and modularity for each omega. Per-community rows are dropped."""
-    rows = json.loads(path.read_text(encoding="utf-8"))
+    """Persistence and modularity for each omega. Per-community rows are dropped.
+
+    A missing file is not an error. The committed findings page already has the numbers.
+    """
+    if not Path(path).is_file():
+        print(f"warning: omega sweep file is missing: {path}", file=sys.stderr)
+        return []
+    rows = json.loads(Path(path).read_text(encoding="utf-8"))
     summary = []
     for row in rows:
         transitions = row["transitions"]
@@ -673,6 +680,15 @@ def _finding_platforms() -> str:
 
 
 def _finding_sweep(sweep: list[dict]) -> str:
+    if not sweep:
+        # load_sweep already warned. Keep the section so the rest of the page still renders.
+        return section(
+            "multislice",
+            "Half-year multislice",
+            "Omega sweep file was not found",
+            "The persistence table is stored in results/reddit_halfyear_omega_sweep.json.",
+            '<p class="note">That file is missing, so this section has no numbers.</p>\n',
+        )
     series = (
         {
             "name": "modularity",
