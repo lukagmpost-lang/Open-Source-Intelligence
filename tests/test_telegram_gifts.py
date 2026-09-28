@@ -17,7 +17,7 @@ def isolated_username_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(telegram_gifts, "_CACHE_PATH", tmp_path / "cache.json")
     monkeypatch.setattr(telegram_gifts, "_cache", None)
     monkeypatch.setattr(telegram_gifts, "_last_resolution", 0.0)
-    # The live pace is two seconds. Tests should not wait.
+    # The live pace is 2.4 seconds. Tests should not wait.
     monkeypatch.setattr(telegram_gifts, "_PAUSE_SECONDS", 0.0)
 
 
@@ -145,3 +145,88 @@ def test_resolve_sender_returns_none_without_a_public_username():
     assert asyncio.run(resolve_sender(client, 9)) is None
     assert asyncio.run(resolve_sender(client, 9)) is None
     assert client.calls == 1
+
+
+class _CrawlClient:
+    def __init__(self, profiles, names):
+        self.profiles = profiles
+        self.names = names
+        self.fetches = []
+
+    async def __call__(self, request):
+        self.fetches.append(request.peer)
+        sender_ids = self.profiles.get(request.peer, [])
+        gifts = [
+            SimpleNamespace(
+                from_id=PeerUser(user_id=sender_id),
+                gift=SimpleNamespace(title=None),
+                convert_stars=None,
+                date=None,
+            )
+            for sender_id in sender_ids
+        ]
+        return SimpleNamespace(gifts=gifts)
+
+    async def get_entity(self, sender_id):
+        if sender_id not in self.names:
+            raise ValueError("missing")
+        return SimpleNamespace(username=self.names[sender_id])
+
+
+def test_crawl_expands_senders_and_resumes_from_cache():
+    client = _CrawlClient(
+        {"durov": [1], "alice": [2], "bob": []},
+        {1: "alice", 2: "bob"},
+    )
+
+    graph = asyncio.run(telegram_gifts.crawl_gift_network(
+        client,
+        ["durov"],
+        max_accounts=10,
+        max_iterations=5,
+    ))
+
+    assert client.fetches == ["durov", "alice", "bob"]
+    assert graph["telegram:alice"]["telegram:durov"]["weight"] == 1
+    assert graph["telegram:bob"]["telegram:alice"]["weight"] == 1
+    assert graph.graph["directed"] is True
+    client.fetches.clear()
+    again = asyncio.run(telegram_gifts.crawl_gift_network(
+        client,
+        ["durov"],
+        max_accounts=10,
+        max_iterations=5,
+    ))
+    # The second pass reads data/telegram_cache and does not call Telegram.
+    assert client.fetches == []
+    assert again.number_of_edges() == graph.number_of_edges()
+
+
+def test_crawl_stops_after_the_account_cap():
+    client = _CrawlClient({"durov": [1], "alice": [2]}, {1: "alice", 2: "bob"})
+
+    asyncio.run(telegram_gifts.crawl_gift_network(
+        client,
+        ["durov"],
+        max_accounts=1,
+        max_iterations=5,
+    ))
+
+    assert client.fetches == ["durov"]
+
+
+def test_crawl_stops_at_iteration_depth():
+    client = _CrawlClient(
+        {"durov": [1], "alice": [2], "bob": [3]},
+        {1: "alice", 2: "bob", 3: "cara"},
+    )
+
+    asyncio.run(telegram_gifts.crawl_gift_network(
+        client,
+        ["durov"],
+        max_accounts=10,
+        max_iterations=2,
+    ))
+
+    # Depth 0 and 1 are fetched. bob is depth 2, which is past the second wave.
+    assert client.fetches == ["durov", "alice"]
