@@ -41,9 +41,11 @@ def test_fetch_user_gifts_uses_saved_star_gifts_request():
 
     request = client.requests[0]
     assert isinstance(request, GetSavedStarGiftsRequest)
+    # peer is the target profile, so the gifts are ones that user received.
     assert request.peer == "alice"
     assert request.offset == ""
     assert request.limit == 100
+    assert request.exclude_unsaved is True
     assert gifts == [
         {
             "sender_id": 42,
@@ -58,6 +60,16 @@ def test_fetch_user_gifts_uses_saved_star_gifts_request():
             "date": None,
         },
     ]
+
+
+def test_fetch_user_gifts_can_include_gifts_not_pinned_to_profile():
+    client = _Client([])
+
+    asyncio.run(fetch_user_gifts(client, "durov", exclude_unsaved=False))
+
+    # False leaves the flag unset, so unsaved gifts are included too.
+    assert client.requests[0].exclude_unsaved is False
+    assert client.requests[0].peer == "durov"
 
 
 def test_build_gift_graph_counts_gifts_and_skips_anonymous_senders():

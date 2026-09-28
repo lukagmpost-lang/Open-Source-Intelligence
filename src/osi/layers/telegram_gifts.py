@@ -8,21 +8,25 @@ from telethon.tl.functions.payments import GetSavedStarGiftsRequest
 from telethon.utils import get_peer_id
 
 
-async def fetch_user_gifts(client, username):
-    """Fetch gifts received by a user.
+async def fetch_user_gifts(client, username, *, exclude_unsaved=True):
+    """Fetch gifts received by a user that are displayed on their profile.
 
-    Uses GetSavedStarGiftsRequest with peer=username.
-    Returns a list of dicts:
-      sender_id, gift_title, gift_value, date
-    Anonymous gifts have sender_id = None.
+    peer=username fetches gifts received by that user, not the logged-in account.
+    exclude_unsaved=True returns only gifts pinned to the profile.
+    from_id on each gift is the sender. None means anonymous.
     """
-    # Telethon 1.45.0 requires offset; "" asks for the first page.
-    # A username is accepted: the request resolves it to an InputPeer.
-    result = await client(GetSavedStarGiftsRequest(peer=username, offset="", limit=100))
+    # Telethon 1.45.0 requires offset; "" is the first page.
+    # The client resolves a username through get_input_entity before sending.
+    result = await client(GetSavedStarGiftsRequest(
+        peer=username,
+        offset="",
+        limit=100,
+        exclude_unsaved=exclude_unsaved,
+    ))
     gifts = []
     for g in result.gifts:
         from_id = getattr(g, "from_id", None)
-        # from_id is a Peer, not an int. Omitted when the sender hid their name.
+        # from_id is a Peer. Hidden senders omit it, so sender_id stays None.
         sender_id = None if from_id is None else get_peer_id(from_id)
         gift_obj = getattr(g, "gift", None)
         gifts.append({
