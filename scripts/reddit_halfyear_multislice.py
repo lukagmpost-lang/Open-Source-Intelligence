@@ -1,7 +1,9 @@
-"""Six evenly spaced Reddit months, then one joint multislice at omega 0.5.
+"""Six evenly spaced Reddit months, then a joint multislice.
 
-The months step 16 months from 2005-12 through 2012-08. Graphs are saved as
+The months step 15 months from 2006-05 through 2012-08. Graphs are saved as
 new runs (reddit-hy-YYYY-MM). Existing runs are not opened for writing.
+
+The default run is omega 0.5. --sweep runs omega 0 first, then 0.1, 0.5, 1.0, and 2.0.
 
 Leiden uses leidenalg.find_partition_temporal. A parent process reads the
 child's VmRSS and kills it above 5.5 GiB. If that peak also passes 5 GiB,
@@ -9,6 +11,7 @@ the same graphs are retried as four slices.
 
 Run:
     python3 scripts/reddit_halfyear_multislice.py
+    python3 scripts/reddit_halfyear_multislice.py --sweep
 """
 
 from __future__ import annotations
@@ -40,6 +43,9 @@ MONTHS = (
     (2012, 8),
 )
 OMEGA = 0.5
+# Baseline first, then the same four couplings used on the two-snapshot check.
+SWEEP_OMEGAS = (0.0, 0.1, 0.5, 1.0, 2.0)
+SWEEP_PATH = ROOT / "results" / "reddit_halfyear_omega_sweep.json"
 LAYER = "reddit_user"
 # VmRSS is KiB. These caps are GiB, matching free -h, not decimal GB.
 KILL_RSS_KIB = int(5.5 * 1024 * 1024)
@@ -222,7 +228,7 @@ def _leiden(graphs, omega: float):
     return _assignments_from_membership(graphs, membership)
 
 
-def _child(months: list[tuple[int, int]], phase: str) -> int:
+def _child(months: list[tuple[int, int]], phase: str, omega: float) -> int:
     graphs = []
     built = []
     for year, month in months:
@@ -253,8 +259,8 @@ def _child(months: list[tuple[int, int]], phase: str) -> int:
             encoding="utf-8",
         )
         return 0
-    assignments = _leiden(graphs, OMEGA)
-    modularity = _mucha_modularity(graphs, assignments, OMEGA)
+    assignments = _leiden(graphs, omega)
+    modularity = _mucha_modularity(graphs, assignments, omega)
     # Assignments are written by the parent after it accepts this slice count.
     # A run that is over the 5 GiB line must not replace a later four-slice save.
     from osi.temporal_communities import community_persistence, mean_persistence
@@ -296,7 +302,7 @@ def _child(months: list[tuple[int, int]], phase: str) -> int:
         json.dumps(
             {
                 "phase": "leiden",
-                "omega": OMEGA,
+                "omega": omega,
                 "modularity": modularity,
                 "months": [month_label(year, month) for year, month in months],
                 "snapshots": snapshots,
@@ -309,7 +315,7 @@ def _child(months: list[tuple[int, int]], phase: str) -> int:
     return 0
 
 
-def _spawn(months: list[tuple[int, int]], phase: str) -> tuple[int, int, dict | None]:
+def _spawn(months: list[tuple[int, int]], phase: str, omega: float = OMEGA) -> tuple[int, int, dict | None]:
     """Run one child. Return exit code, peak RSS in KiB, and the result dict if it finished."""
     if _CHILD_RESULT.exists():
         _CHILD_RESULT.unlink()
@@ -321,6 +327,8 @@ def _spawn(months: list[tuple[int, int]], phase: str) -> tuple[int, int, dict | 
         phase,
         "--months",
         ",".join(month_label(year, month) for year, month in months),
+        "--omega",
+        str(omega),
     ]
     # stderr is inherited so the log shows each month as it finishes. stdout stays empty.
     proc = subprocess.Popen(command, cwd=str(ROOT))
@@ -354,7 +362,7 @@ def _parse_months(text: str) -> list[tuple[int, int]]:
     return found
 
 
-def _store_assignments(payload: dict) -> None:
+def _store_assignments(payload: dict, algorithm: str = "multislice-omega-0.5") -> None:
     """Write the accepted membership onto the new slice runs. No other run id is opened."""
     from osi.store import save_communities
 
@@ -362,7 +370,7 @@ def _store_assignments(payload: dict) -> None:
         year, month = (int(part) for part in label.split("-"))
         # JSON object keys are strings. The graph nodes are the same account names.
         assignment = {node: int(community) for node, community in mapping.items()}
-        save_communities(run_id_for(year, month), "multislice-omega-0.5", assignment)
+        save_communities(run_id_for(year, month), algorithm, assignment)
 
 
 def _print_summary(payload: dict, peak: int) -> None:
@@ -384,19 +392,49 @@ def _print_summary(payload: dict, peak: int) -> None:
         )
 
 
+def _sweep(months: list[tuple[int, int]]) -> int:
+    """Omega 0 first, then 0.1, 0.5, 1.0, and 2.0. Each coupling is its own process."""
+    collected = []
+    for omega in SWEEP_OMEGAS:
+        print(f"sweep omega {omega}", flush=True)
+        code, peak, payload = _spawn(months, "leiden", omega)
+        print(f"sweep_exit {omega} {code} peak_rss_kib {peak}", flush=True)
+        if payload is None:
+            print(f"omega {omega} failed", file=sys.stderr, flush=True)
+            collected.append({"omega": omega, "failed": True, "peak_rss_kib": peak, "exit": code})
+            continue
+        payload["peak_rss_kib"] = peak
+        payload["peak_rss_gib"] = peak / 1024 / 1024
+        # Distinct algorithm names so the omega 0.5 membership stays recoverable.
+        _store_assignments(payload, f"multislice-omega-{omega:.1f}")
+        _print_summary(payload, peak)
+        stored = {key: value for key, value in payload.items() if key != "assignments"}
+        collected.append(stored)
+    SWEEP_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temporary = SWEEP_PATH.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(collected), encoding="utf-8")
+    temporary.replace(SWEEP_PATH)
+    failed = [row["omega"] for row in collected if row.get("failed")]
+    return 1 if failed else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build six Reddit months and run one multislice.")
     parser.add_argument("--child", action="store_true")
     parser.add_argument("--phase", choices=("build", "leiden"), default="leiden")
     parser.add_argument("--months", default="")
+    parser.add_argument("--omega", type=float, default=OMEGA)
+    parser.add_argument("--sweep", action="store_true", help="Run omega 0, then 0.1, 0.5, 1.0, and 2.0.")
     args = parser.parse_args(argv)
     if args.child:
         months = _parse_months(args.months) if args.months else list(MONTHS)
         try:
-            return _child(months, args.phase)
+            return _child(months, args.phase, args.omega)
         except Exception as error:
             print(f"error: {type(error).__name__}: {error}", file=sys.stderr, flush=True)
             return 1
+    if args.sweep:
+        return _sweep(list(MONTHS))
     months = list(MONTHS)
     print(f"months {' '.join(month_label(year, month) for year, month in months)}", flush=True)
     code, build_peak, _built = _spawn(months, "build")
