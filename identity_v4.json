@@ -1,0 +1,3002 @@
+{
+  "haskellist::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "haskellist",
+    "confidence": "medium",
+    "struct_sim": 0.988
+  },
+  "haskellist::jaehess": {
+    "github": "jaehess",
+    "reddit": "haskellist",
+    "confidence": "medium",
+    "struct_sim": 0.988
+  },
+  "haskellist::marcel": {
+    "github": "marcel",
+    "reddit": "haskellist",
+    "confidence": "medium",
+    "struct_sim": 0.988
+  },
+  "Jimmy::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "Jimmy",
+    "confidence": "medium",
+    "struct_sim": 0.9873
+  },
+  "Jimmy::jaehess": {
+    "github": "jaehess",
+    "reddit": "Jimmy",
+    "confidence": "medium",
+    "struct_sim": 0.9873
+  },
+  "Jimmy::marcel": {
+    "github": "marcel",
+    "reddit": "Jimmy",
+    "confidence": "medium",
+    "struct_sim": 0.9873
+  },
+  "Entropy::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "Entropy",
+    "confidence": "medium",
+    "struct_sim": 0.9869
+  },
+  "Entropy::jaehess": {
+    "github": "jaehess",
+    "reddit": "Entropy",
+    "confidence": "medium",
+    "struct_sim": 0.9869
+  },
+  "Entropy::marcel": {
+    "github": "marcel",
+    "reddit": "Entropy",
+    "confidence": "medium",
+    "struct_sim": 0.9869
+  },
+  "gregK::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "gregK",
+    "confidence": "medium",
+    "struct_sim": 0.9865
+  },
+  "gregK::jaehess": {
+    "github": "jaehess",
+    "reddit": "gregK",
+    "confidence": "medium",
+    "struct_sim": 0.9865
+  },
+  "gregK::marcel": {
+    "github": "marcel",
+    "reddit": "gregK",
+    "confidence": "medium",
+    "struct_sim": 0.9865
+  },
+  "dbenhur::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "dbenhur",
+    "confidence": "medium",
+    "struct_sim": 0.9863
+  },
+  "dbenhur::jaehess": {
+    "github": "jaehess",
+    "reddit": "dbenhur",
+    "confidence": "medium",
+    "struct_sim": 0.9863
+  },
+  "dbenhur::marcel": {
+    "github": "marcel",
+    "reddit": "dbenhur",
+    "confidence": "medium",
+    "struct_sim": 0.9863
+  },
+  "mr_chromatic::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "mr_chromatic",
+    "confidence": "medium",
+    "struct_sim": 0.9863
+  },
+  "mr_chromatic::jaehess": {
+    "github": "jaehess",
+    "reddit": "mr_chromatic",
+    "confidence": "medium",
+    "struct_sim": 0.9863
+  },
+  "mr_chromatic::marcel": {
+    "github": "marcel",
+    "reddit": "mr_chromatic",
+    "confidence": "medium",
+    "struct_sim": 0.9863
+  },
+  "LudoA::topfunky": {
+    "github": "topfunky",
+    "reddit": "LudoA",
+    "confidence": "medium",
+    "struct_sim": 0.9862
+  },
+  "sketerpot::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "sketerpot",
+    "confidence": "medium",
+    "struct_sim": 0.9858
+  },
+  "sketerpot::jaehess": {
+    "github": "jaehess",
+    "reddit": "sketerpot",
+    "confidence": "medium",
+    "struct_sim": 0.9858
+  },
+  "sketerpot::marcel": {
+    "github": "marcel",
+    "reddit": "sketerpot",
+    "confidence": "medium",
+    "struct_sim": 0.9858
+  },
+  "sjs::topfunky": {
+    "github": "topfunky",
+    "reddit": "sjs",
+    "confidence": "medium",
+    "struct_sim": 0.9857
+  },
+  "consultant_barbie::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "consultant_barbie",
+    "confidence": "medium",
+    "struct_sim": 0.9857
+  },
+  "consultant_barbie::jaehess": {
+    "github": "jaehess",
+    "reddit": "consultant_barbie",
+    "confidence": "medium",
+    "struct_sim": 0.9857
+  },
+  "consultant_barbie::marcel": {
+    "github": "marcel",
+    "reddit": "consultant_barbie",
+    "confidence": "medium",
+    "struct_sim": 0.9857
+  },
+  "njharman::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "njharman",
+    "confidence": "medium",
+    "struct_sim": 0.9857
+  },
+  "njharman::jaehess": {
+    "github": "jaehess",
+    "reddit": "njharman",
+    "confidence": "medium",
+    "struct_sim": 0.9857
+  },
+  "njharman::marcel": {
+    "github": "marcel",
+    "reddit": "njharman",
+    "confidence": "medium",
+    "struct_sim": 0.9857
+  },
+  "awj::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "awj",
+    "confidence": "medium",
+    "struct_sim": 0.9856
+  },
+  "awj::jaehess": {
+    "github": "jaehess",
+    "reddit": "awj",
+    "confidence": "medium",
+    "struct_sim": 0.9856
+  },
+  "awj::marcel": {
+    "github": "marcel",
+    "reddit": "awj",
+    "confidence": "medium",
+    "struct_sim": 0.9856
+  },
+  "nostrademons::topfunky": {
+    "github": "topfunky",
+    "reddit": "nostrademons",
+    "confidence": "medium",
+    "struct_sim": 0.9856
+  },
+  "LudoA::andrew": {
+    "github": "andrew",
+    "reddit": "LudoA",
+    "confidence": "medium",
+    "struct_sim": 0.9855
+  },
+  "akdas::topfunky": {
+    "github": "topfunky",
+    "reddit": "akdas",
+    "confidence": "medium",
+    "struct_sim": 0.9855
+  },
+  "redditcensoredme::topfunky": {
+    "github": "topfunky",
+    "reddit": "redditcensoredme",
+    "confidence": "medium",
+    "struct_sim": 0.9854
+  },
+  "boredzo::topfunky": {
+    "github": "topfunky",
+    "reddit": "boredzo",
+    "confidence": "medium",
+    "struct_sim": 0.9854
+  },
+  "jaggederest::topfunky": {
+    "github": "topfunky",
+    "reddit": "jaggederest",
+    "confidence": "medium",
+    "struct_sim": 0.9853
+  },
+  "Tommah::topfunky": {
+    "github": "topfunky",
+    "reddit": "Tommah",
+    "confidence": "medium",
+    "struct_sim": 0.9853
+  },
+  "killerstorm::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "killerstorm",
+    "confidence": "medium",
+    "struct_sim": 0.9853
+  },
+  "killerstorm::jaehess": {
+    "github": "jaehess",
+    "reddit": "killerstorm",
+    "confidence": "medium",
+    "struct_sim": 0.9853
+  },
+  "killerstorm::marcel": {
+    "github": "marcel",
+    "reddit": "killerstorm",
+    "confidence": "medium",
+    "struct_sim": 0.9853
+  },
+  "cunningjames::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "cunningjames",
+    "confidence": "medium",
+    "struct_sim": 0.9852
+  },
+  "cunningjames::jaehess": {
+    "github": "jaehess",
+    "reddit": "cunningjames",
+    "confidence": "medium",
+    "struct_sim": 0.9852
+  },
+  "cunningjames::marcel": {
+    "github": "marcel",
+    "reddit": "cunningjames",
+    "confidence": "medium",
+    "struct_sim": 0.9852
+  },
+  "notfancy::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "notfancy",
+    "confidence": "medium",
+    "struct_sim": 0.9852
+  },
+  "notfancy::jaehess": {
+    "github": "jaehess",
+    "reddit": "notfancy",
+    "confidence": "medium",
+    "struct_sim": 0.9852
+  },
+  "notfancy::marcel": {
+    "github": "marcel",
+    "reddit": "notfancy",
+    "confidence": "medium",
+    "struct_sim": 0.9852
+  },
+  "Poromenos::topfunky": {
+    "github": "topfunky",
+    "reddit": "Poromenos",
+    "confidence": "medium",
+    "struct_sim": 0.9852
+  },
+  "mccoyn::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "mccoyn",
+    "confidence": "medium",
+    "struct_sim": 0.9852
+  },
+  "mccoyn::jaehess": {
+    "github": "jaehess",
+    "reddit": "mccoyn",
+    "confidence": "medium",
+    "struct_sim": 0.9852
+  },
+  "mccoyn::marcel": {
+    "github": "marcel",
+    "reddit": "mccoyn",
+    "confidence": "medium",
+    "struct_sim": 0.9852
+  },
+  "sjs::andrew": {
+    "github": "andrew",
+    "reddit": "sjs",
+    "confidence": "medium",
+    "struct_sim": 0.9852
+  },
+  "newton_dave::topfunky": {
+    "github": "topfunky",
+    "reddit": "newton_dave",
+    "confidence": "medium",
+    "struct_sim": 0.9851
+  },
+  "diogames::topfunky": {
+    "github": "topfunky",
+    "reddit": "diogames",
+    "confidence": "medium",
+    "struct_sim": 0.9851
+  },
+  "yellowking::topfunky": {
+    "github": "topfunky",
+    "reddit": "yellowking",
+    "confidence": "medium",
+    "struct_sim": 0.9851
+  },
+  "bluGill::topfunky": {
+    "github": "topfunky",
+    "reddit": "bluGill",
+    "confidence": "medium",
+    "struct_sim": 0.9851
+  },
+  "akdas::andrew": {
+    "github": "andrew",
+    "reddit": "akdas",
+    "confidence": "medium",
+    "struct_sim": 0.985
+  },
+  "haskellist::jeresig": {
+    "github": "jeresig",
+    "reddit": "haskellist",
+    "confidence": "medium",
+    "struct_sim": 0.985
+  },
+  "haskellist::mcarter": {
+    "github": "mcarter",
+    "reddit": "haskellist",
+    "confidence": "medium",
+    "struct_sim": 0.985
+  },
+  "nostrademons::andrew": {
+    "github": "andrew",
+    "reddit": "nostrademons",
+    "confidence": "medium",
+    "struct_sim": 0.9849
+  },
+  "zem::topfunky": {
+    "github": "topfunky",
+    "reddit": "zem",
+    "confidence": "medium",
+    "struct_sim": 0.9849
+  },
+  "redditcensoredme::andrew": {
+    "github": "andrew",
+    "reddit": "redditcensoredme",
+    "confidence": "medium",
+    "struct_sim": 0.9849
+  },
+  "DRMacIver::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "DRMacIver",
+    "confidence": "medium",
+    "struct_sim": 0.9848
+  },
+  "DRMacIver::jaehess": {
+    "github": "jaehess",
+    "reddit": "DRMacIver",
+    "confidence": "medium",
+    "struct_sim": 0.9848
+  },
+  "DRMacIver::marcel": {
+    "github": "marcel",
+    "reddit": "DRMacIver",
+    "confidence": "medium",
+    "struct_sim": 0.9848
+  },
+  "taejo::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "taejo",
+    "confidence": "medium",
+    "struct_sim": 0.9848
+  },
+  "taejo::jaehess": {
+    "github": "jaehess",
+    "reddit": "taejo",
+    "confidence": "medium",
+    "struct_sim": 0.9848
+  },
+  "taejo::marcel": {
+    "github": "marcel",
+    "reddit": "taejo",
+    "confidence": "medium",
+    "struct_sim": 0.9848
+  },
+  "jaggederest::andrew": {
+    "github": "andrew",
+    "reddit": "jaggederest",
+    "confidence": "medium",
+    "struct_sim": 0.9847
+  },
+  "boredzo::andrew": {
+    "github": "andrew",
+    "reddit": "boredzo",
+    "confidence": "medium",
+    "struct_sim": 0.9847
+  },
+  "ithika::topfunky": {
+    "github": "topfunky",
+    "reddit": "ithika",
+    "confidence": "medium",
+    "struct_sim": 0.9847
+  },
+  "Philluminati::topfunky": {
+    "github": "topfunky",
+    "reddit": "Philluminati",
+    "confidence": "medium",
+    "struct_sim": 0.9846
+  },
+  "Tommah::andrew": {
+    "github": "andrew",
+    "reddit": "Tommah",
+    "confidence": "medium",
+    "struct_sim": 0.9846
+  },
+  "diogames::andrew": {
+    "github": "andrew",
+    "reddit": "diogames",
+    "confidence": "medium",
+    "struct_sim": 0.9846
+  },
+  "mclovinsuperpower::antirez": {
+    "github": "antirez",
+    "reddit": "mclovinsuperpower",
+    "confidence": "medium",
+    "struct_sim": 0.9846
+  },
+  "Poromenos::andrew": {
+    "github": "andrew",
+    "reddit": "Poromenos",
+    "confidence": "medium",
+    "struct_sim": 0.9846
+  },
+  "yellowking::andrew": {
+    "github": "andrew",
+    "reddit": "yellowking",
+    "confidence": "medium",
+    "struct_sim": 0.9846
+  },
+  "OMouse::topfunky": {
+    "github": "topfunky",
+    "reddit": "OMouse",
+    "confidence": "medium",
+    "struct_sim": 0.9845
+  },
+  "malcontent::topfunky": {
+    "github": "topfunky",
+    "reddit": "malcontent",
+    "confidence": "medium",
+    "struct_sim": 0.9845
+  },
+  "newton_dave::andrew": {
+    "github": "andrew",
+    "reddit": "newton_dave",
+    "confidence": "medium",
+    "struct_sim": 0.9845
+  },
+  "username223::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "username223",
+    "confidence": "medium",
+    "struct_sim": 0.9845
+  },
+  "username223::jaehess": {
+    "github": "jaehess",
+    "reddit": "username223",
+    "confidence": "medium",
+    "struct_sim": 0.9845
+  },
+  "username223::marcel": {
+    "github": "marcel",
+    "reddit": "username223",
+    "confidence": "medium",
+    "struct_sim": 0.9845
+  },
+  "bluGill::andrew": {
+    "github": "andrew",
+    "reddit": "bluGill",
+    "confidence": "medium",
+    "struct_sim": 0.9844
+  },
+  "IHaveAnIdea::topfunky": {
+    "github": "topfunky",
+    "reddit": "IHaveAnIdea",
+    "confidence": "medium",
+    "struct_sim": 0.9844
+  },
+  "Figs::topfunky": {
+    "github": "topfunky",
+    "reddit": "Figs",
+    "confidence": "medium",
+    "struct_sim": 0.9844
+  },
+  "martoo::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "martoo",
+    "confidence": "medium",
+    "struct_sim": 0.9844
+  },
+  "martoo::jaehess": {
+    "github": "jaehess",
+    "reddit": "martoo",
+    "confidence": "medium",
+    "struct_sim": 0.9844
+  },
+  "martoo::marcel": {
+    "github": "marcel",
+    "reddit": "martoo",
+    "confidence": "medium",
+    "struct_sim": 0.9844
+  },
+  "masklinn::topfunky": {
+    "github": "topfunky",
+    "reddit": "masklinn",
+    "confidence": "medium",
+    "struct_sim": 0.9843
+  },
+  "zem::andrew": {
+    "github": "andrew",
+    "reddit": "zem",
+    "confidence": "medium",
+    "struct_sim": 0.9842
+  },
+  "13ren::topfunky": {
+    "github": "topfunky",
+    "reddit": "13ren",
+    "confidence": "medium",
+    "struct_sim": 0.9842
+  },
+  "711was_a_retail_job::topfunky": {
+    "github": "topfunky",
+    "reddit": "711was_a_retail_job",
+    "confidence": "medium",
+    "struct_sim": 0.9842
+  },
+  "rabidcow::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "rabidcow",
+    "confidence": "medium",
+    "struct_sim": 0.9842
+  },
+  "rabidcow::jaehess": {
+    "github": "jaehess",
+    "reddit": "rabidcow",
+    "confidence": "medium",
+    "struct_sim": 0.9842
+  },
+  "rabidcow::marcel": {
+    "github": "marcel",
+    "reddit": "rabidcow",
+    "confidence": "medium",
+    "struct_sim": 0.9842
+  },
+  "turkourjurbs::topfunky": {
+    "github": "topfunky",
+    "reddit": "turkourjurbs",
+    "confidence": "medium",
+    "struct_sim": 0.9842
+  },
+  "G_Morgan::topfunky": {
+    "github": "topfunky",
+    "reddit": "G_Morgan",
+    "confidence": "medium",
+    "struct_sim": 0.9842
+  },
+  "finix::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "finix",
+    "confidence": "medium",
+    "struct_sim": 0.9841
+  },
+  "finix::jaehess": {
+    "github": "jaehess",
+    "reddit": "finix",
+    "confidence": "medium",
+    "struct_sim": 0.9841
+  },
+  "finix::marcel": {
+    "github": "marcel",
+    "reddit": "finix",
+    "confidence": "medium",
+    "struct_sim": 0.9841
+  },
+  "mjd::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "mjd",
+    "confidence": "medium",
+    "struct_sim": 0.9841
+  },
+  "mjd::jaehess": {
+    "github": "jaehess",
+    "reddit": "mjd",
+    "confidence": "medium",
+    "struct_sim": 0.9841
+  },
+  "mjd::marcel": {
+    "github": "marcel",
+    "reddit": "mjd",
+    "confidence": "medium",
+    "struct_sim": 0.9841
+  },
+  "Jimmy::jeresig": {
+    "github": "jeresig",
+    "reddit": "Jimmy",
+    "confidence": "medium",
+    "struct_sim": 0.984
+  },
+  "Jimmy::mcarter": {
+    "github": "mcarter",
+    "reddit": "Jimmy",
+    "confidence": "medium",
+    "struct_sim": 0.984
+  },
+  "jerf::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "jerf",
+    "confidence": "medium",
+    "struct_sim": 0.984
+  },
+  "jerf::jaehess": {
+    "github": "jaehess",
+    "reddit": "jerf",
+    "confidence": "medium",
+    "struct_sim": 0.984
+  },
+  "jerf::marcel": {
+    "github": "marcel",
+    "reddit": "jerf",
+    "confidence": "medium",
+    "struct_sim": 0.984
+  },
+  "Rhoomba::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "Rhoomba",
+    "confidence": "medium",
+    "struct_sim": 0.984
+  },
+  "Rhoomba::jaehess": {
+    "github": "jaehess",
+    "reddit": "Rhoomba",
+    "confidence": "medium",
+    "struct_sim": 0.984
+  },
+  "Rhoomba::marcel": {
+    "github": "marcel",
+    "reddit": "Rhoomba",
+    "confidence": "medium",
+    "struct_sim": 0.984
+  },
+  "ithika::andrew": {
+    "github": "andrew",
+    "reddit": "ithika",
+    "confidence": "medium",
+    "struct_sim": 0.984
+  },
+  "malcontent::andrew": {
+    "github": "andrew",
+    "reddit": "malcontent",
+    "confidence": "medium",
+    "struct_sim": 0.984
+  },
+  "Philluminati::andrew": {
+    "github": "andrew",
+    "reddit": "Philluminati",
+    "confidence": "medium",
+    "struct_sim": 0.9839
+  },
+  "llimllib::topfunky": {
+    "github": "topfunky",
+    "reddit": "llimllib",
+    "confidence": "medium",
+    "struct_sim": 0.9839
+  },
+  "ubernostrum::topfunky": {
+    "github": "topfunky",
+    "reddit": "ubernostrum",
+    "confidence": "medium",
+    "struct_sim": 0.9839
+  },
+  "IHaveAnIdea::andrew": {
+    "github": "andrew",
+    "reddit": "IHaveAnIdea",
+    "confidence": "medium",
+    "struct_sim": 0.9838
+  },
+  "OMouse::andrew": {
+    "github": "andrew",
+    "reddit": "OMouse",
+    "confidence": "medium",
+    "struct_sim": 0.9838
+  },
+  "sn0re::topfunky": {
+    "github": "topfunky",
+    "reddit": "sn0re",
+    "confidence": "medium",
+    "struct_sim": 0.9838
+  },
+  "cdesignproponentsist::topfunky": {
+    "github": "topfunky",
+    "reddit": "cdesignproponentsist",
+    "confidence": "medium",
+    "struct_sim": 0.9837
+  },
+  "manthrax::topfunky": {
+    "github": "topfunky",
+    "reddit": "manthrax",
+    "confidence": "medium",
+    "struct_sim": 0.9837
+  },
+  "MarshallBanana::topfunky": {
+    "github": "topfunky",
+    "reddit": "MarshallBanana",
+    "confidence": "medium",
+    "struct_sim": 0.9837
+  },
+  "Figs::andrew": {
+    "github": "andrew",
+    "reddit": "Figs",
+    "confidence": "medium",
+    "struct_sim": 0.9837
+  },
+  "sambo357::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "sambo357",
+    "confidence": "medium",
+    "struct_sim": 0.9837
+  },
+  "sambo357::jaehess": {
+    "github": "jaehess",
+    "reddit": "sambo357",
+    "confidence": "medium",
+    "struct_sim": 0.9837
+  },
+  "sambo357::marcel": {
+    "github": "marcel",
+    "reddit": "sambo357",
+    "confidence": "medium",
+    "struct_sim": 0.9837
+  },
+  "masklinn::andrew": {
+    "github": "andrew",
+    "reddit": "masklinn",
+    "confidence": "medium",
+    "struct_sim": 0.9836
+  },
+  "curtisw::topfunky": {
+    "github": "topfunky",
+    "reddit": "curtisw",
+    "confidence": "medium",
+    "struct_sim": 0.9836
+  },
+  "Entropy::jeresig": {
+    "github": "jeresig",
+    "reddit": "Entropy",
+    "confidence": "medium",
+    "struct_sim": 0.9836
+  },
+  "Entropy::mcarter": {
+    "github": "mcarter",
+    "reddit": "Entropy",
+    "confidence": "medium",
+    "struct_sim": 0.9836
+  },
+  "711was_a_retail_job::andrew": {
+    "github": "andrew",
+    "reddit": "711was_a_retail_job",
+    "confidence": "medium",
+    "struct_sim": 0.9836
+  },
+  "OMouse::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "OMouse",
+    "confidence": "medium",
+    "struct_sim": 0.9836
+  },
+  "OMouse::jaehess": {
+    "github": "jaehess",
+    "reddit": "OMouse",
+    "confidence": "medium",
+    "struct_sim": 0.9836
+  },
+  "OMouse::marcel": {
+    "github": "marcel",
+    "reddit": "OMouse",
+    "confidence": "medium",
+    "struct_sim": 0.9836
+  },
+  "berlinbrown::topfunky": {
+    "github": "topfunky",
+    "reddit": "berlinbrown",
+    "confidence": "medium",
+    "struct_sim": 0.9836
+  },
+  "quhaha::topfunky": {
+    "github": "topfunky",
+    "reddit": "quhaha",
+    "confidence": "medium",
+    "struct_sim": 0.9836
+  },
+  "turkourjurbs::andrew": {
+    "github": "andrew",
+    "reddit": "turkourjurbs",
+    "confidence": "medium",
+    "struct_sim": 0.9836
+  },
+  "setuid_w00t::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "setuid_w00t",
+    "confidence": "medium",
+    "struct_sim": 0.9836
+  },
+  "setuid_w00t::jaehess": {
+    "github": "jaehess",
+    "reddit": "setuid_w00t",
+    "confidence": "medium",
+    "struct_sim": 0.9836
+  },
+  "setuid_w00t::marcel": {
+    "github": "marcel",
+    "reddit": "setuid_w00t",
+    "confidence": "medium",
+    "struct_sim": 0.9836
+  },
+  "easytiger::topfunky": {
+    "github": "topfunky",
+    "reddit": "easytiger",
+    "confidence": "medium",
+    "struct_sim": 0.9836
+  },
+  "13ren::andrew": {
+    "github": "andrew",
+    "reddit": "13ren",
+    "confidence": "medium",
+    "struct_sim": 0.9836
+  },
+  "popeix::topfunky": {
+    "github": "topfunky",
+    "reddit": "popeix",
+    "confidence": "medium",
+    "struct_sim": 0.9835
+  },
+  "G_Morgan::andrew": {
+    "github": "andrew",
+    "reddit": "G_Morgan",
+    "confidence": "medium",
+    "struct_sim": 0.9834
+  },
+  "redditnoob::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "redditnoob",
+    "confidence": "medium",
+    "struct_sim": 0.9834
+  },
+  "redditnoob::jaehess": {
+    "github": "jaehess",
+    "reddit": "redditnoob",
+    "confidence": "medium",
+    "struct_sim": 0.9834
+  },
+  "redditnoob::marcel": {
+    "github": "marcel",
+    "reddit": "redditnoob",
+    "confidence": "medium",
+    "struct_sim": 0.9834
+  },
+  "judgej2::topfunky": {
+    "github": "topfunky",
+    "reddit": "judgej2",
+    "confidence": "medium",
+    "struct_sim": 0.9833
+  },
+  "psykotic::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "psykotic",
+    "confidence": "medium",
+    "struct_sim": 0.9833
+  },
+  "psykotic::jaehess": {
+    "github": "jaehess",
+    "reddit": "psykotic",
+    "confidence": "medium",
+    "struct_sim": 0.9833
+  },
+  "psykotic::marcel": {
+    "github": "marcel",
+    "reddit": "psykotic",
+    "confidence": "medium",
+    "struct_sim": 0.9833
+  },
+  "cdesignproponentsist::andrew": {
+    "github": "andrew",
+    "reddit": "cdesignproponentsist",
+    "confidence": "medium",
+    "struct_sim": 0.9833
+  },
+  "sn0re::andrew": {
+    "github": "andrew",
+    "reddit": "sn0re",
+    "confidence": "medium",
+    "struct_sim": 0.9832
+  },
+  "LudoA::btbytes": {
+    "github": "btbytes",
+    "reddit": "LudoA",
+    "confidence": "medium",
+    "struct_sim": 0.9832
+  },
+  "llimllib::andrew": {
+    "github": "andrew",
+    "reddit": "llimllib",
+    "confidence": "medium",
+    "struct_sim": 0.9832
+  },
+  "grauenwolf::topfunky": {
+    "github": "topfunky",
+    "reddit": "grauenwolf",
+    "confidence": "medium",
+    "struct_sim": 0.9832
+  },
+  "bitwize::topfunky": {
+    "github": "topfunky",
+    "reddit": "bitwize",
+    "confidence": "medium",
+    "struct_sim": 0.9832
+  },
+  "gregK::jeresig": {
+    "github": "jeresig",
+    "reddit": "gregK",
+    "confidence": "medium",
+    "struct_sim": 0.9832
+  },
+  "gregK::mcarter": {
+    "github": "mcarter",
+    "reddit": "gregK",
+    "confidence": "medium",
+    "struct_sim": 0.9832
+  },
+  "Freeky::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "Freeky",
+    "confidence": "medium",
+    "struct_sim": 0.9831
+  },
+  "Freeky::jaehess": {
+    "github": "jaehess",
+    "reddit": "Freeky",
+    "confidence": "medium",
+    "struct_sim": 0.9831
+  },
+  "Freeky::marcel": {
+    "github": "marcel",
+    "reddit": "Freeky",
+    "confidence": "medium",
+    "struct_sim": 0.9831
+  },
+  "grauenwolf::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "grauenwolf",
+    "confidence": "medium",
+    "struct_sim": 0.9831
+  },
+  "grauenwolf::jaehess": {
+    "github": "jaehess",
+    "reddit": "grauenwolf",
+    "confidence": "medium",
+    "struct_sim": 0.9831
+  },
+  "grauenwolf::marcel": {
+    "github": "marcel",
+    "reddit": "grauenwolf",
+    "confidence": "medium",
+    "struct_sim": 0.9831
+  },
+  "ubernostrum::andrew": {
+    "github": "andrew",
+    "reddit": "ubernostrum",
+    "confidence": "medium",
+    "struct_sim": 0.9831
+  },
+  "ishmal::topfunky": {
+    "github": "topfunky",
+    "reddit": "ishmal",
+    "confidence": "medium",
+    "struct_sim": 0.983
+  },
+  "manthrax::andrew": {
+    "github": "andrew",
+    "reddit": "manthrax",
+    "confidence": "medium",
+    "struct_sim": 0.983
+  },
+  "MarshallBanana::andrew": {
+    "github": "andrew",
+    "reddit": "MarshallBanana",
+    "confidence": "medium",
+    "struct_sim": 0.983
+  },
+  "pjdelport::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "pjdelport",
+    "confidence": "medium",
+    "struct_sim": 0.983
+  },
+  "pjdelport::jaehess": {
+    "github": "jaehess",
+    "reddit": "pjdelport",
+    "confidence": "medium",
+    "struct_sim": 0.983
+  },
+  "pjdelport::marcel": {
+    "github": "marcel",
+    "reddit": "pjdelport",
+    "confidence": "medium",
+    "struct_sim": 0.983
+  },
+  "dbenhur::jeresig": {
+    "github": "jeresig",
+    "reddit": "dbenhur",
+    "confidence": "medium",
+    "struct_sim": 0.9829
+  },
+  "dbenhur::mcarter": {
+    "github": "mcarter",
+    "reddit": "dbenhur",
+    "confidence": "medium",
+    "struct_sim": 0.9829
+  },
+  "quhaha::andrew": {
+    "github": "andrew",
+    "reddit": "quhaha",
+    "confidence": "medium",
+    "struct_sim": 0.9829
+  },
+  "finix::topfunky": {
+    "github": "topfunky",
+    "reddit": "finix",
+    "confidence": "medium",
+    "struct_sim": 0.9829
+  },
+  "dons::topfunky": {
+    "github": "topfunky",
+    "reddit": "dons",
+    "confidence": "medium",
+    "struct_sim": 0.9829
+  },
+  "toooooob::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "toooooob",
+    "confidence": "medium",
+    "struct_sim": 0.9829
+  },
+  "toooooob::jaehess": {
+    "github": "jaehess",
+    "reddit": "toooooob",
+    "confidence": "medium",
+    "struct_sim": 0.9829
+  },
+  "toooooob::marcel": {
+    "github": "marcel",
+    "reddit": "toooooob",
+    "confidence": "medium",
+    "struct_sim": 0.9829
+  },
+  "curtisw::andrew": {
+    "github": "andrew",
+    "reddit": "curtisw",
+    "confidence": "medium",
+    "struct_sim": 0.9829
+  },
+  "berlinbrown::andrew": {
+    "github": "andrew",
+    "reddit": "berlinbrown",
+    "confidence": "medium",
+    "struct_sim": 0.9829
+  },
+  "Taladar::topfunky": {
+    "github": "topfunky",
+    "reddit": "Taladar",
+    "confidence": "medium",
+    "struct_sim": 0.9829
+  },
+  "easytiger::andrew": {
+    "github": "andrew",
+    "reddit": "easytiger",
+    "confidence": "medium",
+    "struct_sim": 0.9829
+  },
+  "cyancynic::topfunky": {
+    "github": "topfunky",
+    "reddit": "cyancynic",
+    "confidence": "medium",
+    "struct_sim": 0.9829
+  },
+  "mr_chromatic::jeresig": {
+    "github": "jeresig",
+    "reddit": "mr_chromatic",
+    "confidence": "medium",
+    "struct_sim": 0.9828
+  },
+  "mr_chromatic::mcarter": {
+    "github": "mcarter",
+    "reddit": "mr_chromatic",
+    "confidence": "medium",
+    "struct_sim": 0.9828
+  },
+  "martoo::topfunky": {
+    "github": "topfunky",
+    "reddit": "martoo",
+    "confidence": "medium",
+    "struct_sim": 0.9828
+  },
+  "gwern::topfunky": {
+    "github": "topfunky",
+    "reddit": "gwern",
+    "confidence": "medium",
+    "struct_sim": 0.9828
+  },
+  "popeix::andrew": {
+    "github": "andrew",
+    "reddit": "popeix",
+    "confidence": "medium",
+    "struct_sim": 0.9828
+  },
+  "boredzo::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "boredzo",
+    "confidence": "medium",
+    "struct_sim": 0.9828
+  },
+  "boredzo::capitalist": {
+    "github": "capitalist",
+    "reddit": "boredzo",
+    "confidence": "medium",
+    "struct_sim": 0.9828
+  },
+  "boredzo::jwilkins": {
+    "github": "jwilkins",
+    "reddit": "boredzo",
+    "confidence": "medium",
+    "struct_sim": 0.9828
+  },
+  "toooooob::topfunky": {
+    "github": "topfunky",
+    "reddit": "toooooob",
+    "confidence": "medium",
+    "struct_sim": 0.9828
+  },
+  "alphabeat::topfunky": {
+    "github": "topfunky",
+    "reddit": "alphabeat",
+    "confidence": "medium",
+    "struct_sim": 0.9828
+  },
+  "rabidcow::topfunky": {
+    "github": "topfunky",
+    "reddit": "rabidcow",
+    "confidence": "medium",
+    "struct_sim": 0.9828
+  },
+  "awb::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "awb",
+    "confidence": "medium",
+    "struct_sim": 0.9827
+  },
+  "awb::jaehess": {
+    "github": "jaehess",
+    "reddit": "awb",
+    "confidence": "medium",
+    "struct_sim": 0.9827
+  },
+  "awb::marcel": {
+    "github": "marcel",
+    "reddit": "awb",
+    "confidence": "medium",
+    "struct_sim": 0.9827
+  },
+  "judgej2::andrew": {
+    "github": "andrew",
+    "reddit": "judgej2",
+    "confidence": "medium",
+    "struct_sim": 0.9827
+  },
+  "MarshallBanana::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "MarshallBanana",
+    "confidence": "medium",
+    "struct_sim": 0.9827
+  },
+  "MarshallBanana::jaehess": {
+    "github": "jaehess",
+    "reddit": "MarshallBanana",
+    "confidence": "medium",
+    "struct_sim": 0.9827
+  },
+  "MarshallBanana::marcel": {
+    "github": "marcel",
+    "reddit": "MarshallBanana",
+    "confidence": "medium",
+    "struct_sim": 0.9827
+  },
+  "G_Morgan::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "G_Morgan",
+    "confidence": "medium",
+    "struct_sim": 0.9827
+  },
+  "G_Morgan::jaehess": {
+    "github": "jaehess",
+    "reddit": "G_Morgan",
+    "confidence": "medium",
+    "struct_sim": 0.9827
+  },
+  "G_Morgan::marcel": {
+    "github": "marcel",
+    "reddit": "G_Morgan",
+    "confidence": "medium",
+    "struct_sim": 0.9827
+  },
+  "kirun::topfunky": {
+    "github": "topfunky",
+    "reddit": "kirun",
+    "confidence": "medium",
+    "struct_sim": 0.9827
+  },
+  "gwern::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "gwern",
+    "confidence": "medium",
+    "struct_sim": 0.9827
+  },
+  "gwern::jaehess": {
+    "github": "jaehess",
+    "reddit": "gwern",
+    "confidence": "medium",
+    "struct_sim": 0.9827
+  },
+  "gwern::marcel": {
+    "github": "marcel",
+    "reddit": "gwern",
+    "confidence": "medium",
+    "struct_sim": 0.9827
+  },
+  "schwarzwald::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "schwarzwald",
+    "confidence": "medium",
+    "struct_sim": 0.9827
+  },
+  "schwarzwald::jaehess": {
+    "github": "jaehess",
+    "reddit": "schwarzwald",
+    "confidence": "medium",
+    "struct_sim": 0.9827
+  },
+  "schwarzwald::marcel": {
+    "github": "marcel",
+    "reddit": "schwarzwald",
+    "confidence": "medium",
+    "struct_sim": 0.9827
+  },
+  "Philluminati::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "Philluminati",
+    "confidence": "medium",
+    "struct_sim": 0.9827
+  },
+  "Philluminati::jaehess": {
+    "github": "jaehess",
+    "reddit": "Philluminati",
+    "confidence": "medium",
+    "struct_sim": 0.9827
+  },
+  "Philluminati::marcel": {
+    "github": "marcel",
+    "reddit": "Philluminati",
+    "confidence": "medium",
+    "struct_sim": 0.9827
+  },
+  "OriginalSyn::topfunky": {
+    "github": "topfunky",
+    "reddit": "OriginalSyn",
+    "confidence": "medium",
+    "struct_sim": 0.9827
+  },
+  "bitwize::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "bitwize",
+    "confidence": "medium",
+    "struct_sim": 0.9826
+  },
+  "bitwize::jaehess": {
+    "github": "jaehess",
+    "reddit": "bitwize",
+    "confidence": "medium",
+    "struct_sim": 0.9826
+  },
+  "bitwize::marcel": {
+    "github": "marcel",
+    "reddit": "bitwize",
+    "confidence": "medium",
+    "struct_sim": 0.9826
+  },
+  "ubernostrum::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "ubernostrum",
+    "confidence": "medium",
+    "struct_sim": 0.9826
+  },
+  "ubernostrum::jaehess": {
+    "github": "jaehess",
+    "reddit": "ubernostrum",
+    "confidence": "medium",
+    "struct_sim": 0.9826
+  },
+  "ubernostrum::marcel": {
+    "github": "marcel",
+    "reddit": "ubernostrum",
+    "confidence": "medium",
+    "struct_sim": 0.9826
+  },
+  "Atnan::topfunky": {
+    "github": "topfunky",
+    "reddit": "Atnan",
+    "confidence": "medium",
+    "struct_sim": 0.9826
+  },
+  "sjs::btbytes": {
+    "github": "btbytes",
+    "reddit": "sjs",
+    "confidence": "medium",
+    "struct_sim": 0.9826
+  },
+  "wat::topfunky": {
+    "github": "topfunky",
+    "reddit": "wat",
+    "confidence": "medium",
+    "struct_sim": 0.9826
+  },
+  "nostrademons::btbytes": {
+    "github": "btbytes",
+    "reddit": "nostrademons",
+    "confidence": "medium",
+    "struct_sim": 0.9825
+  },
+  "akdas::btbytes": {
+    "github": "btbytes",
+    "reddit": "akdas",
+    "confidence": "medium",
+    "struct_sim": 0.9824
+  },
+  "bitwize::andrew": {
+    "github": "andrew",
+    "reddit": "bitwize",
+    "confidence": "medium",
+    "struct_sim": 0.9824
+  },
+  "grauenwolf::andrew": {
+    "github": "andrew",
+    "reddit": "grauenwolf",
+    "confidence": "medium",
+    "struct_sim": 0.9824
+  },
+  "Taladar::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "Taladar",
+    "confidence": "medium",
+    "struct_sim": 0.9824
+  },
+  "Taladar::jaehess": {
+    "github": "jaehess",
+    "reddit": "Taladar",
+    "confidence": "medium",
+    "struct_sim": 0.9824
+  },
+  "Taladar::marcel": {
+    "github": "marcel",
+    "reddit": "Taladar",
+    "confidence": "medium",
+    "struct_sim": 0.9824
+  },
+  "sketerpot::jeresig": {
+    "github": "jeresig",
+    "reddit": "sketerpot",
+    "confidence": "medium",
+    "struct_sim": 0.9823
+  },
+  "sketerpot::mcarter": {
+    "github": "mcarter",
+    "reddit": "sketerpot",
+    "confidence": "medium",
+    "struct_sim": 0.9823
+  },
+  "ishmal::andrew": {
+    "github": "andrew",
+    "reddit": "ishmal",
+    "confidence": "medium",
+    "struct_sim": 0.9823
+  },
+  "kirun::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "kirun",
+    "confidence": "medium",
+    "struct_sim": 0.9823
+  },
+  "kirun::jaehess": {
+    "github": "jaehess",
+    "reddit": "kirun",
+    "confidence": "medium",
+    "struct_sim": 0.9823
+  },
+  "kirun::marcel": {
+    "github": "marcel",
+    "reddit": "kirun",
+    "confidence": "medium",
+    "struct_sim": 0.9823
+  },
+  "redditcensoredme::btbytes": {
+    "github": "btbytes",
+    "reddit": "redditcensoredme",
+    "confidence": "medium",
+    "struct_sim": 0.9822
+  },
+  "njharman::jeresig": {
+    "github": "jeresig",
+    "reddit": "njharman",
+    "confidence": "medium",
+    "struct_sim": 0.9822
+  },
+  "njharman::mcarter": {
+    "github": "mcarter",
+    "reddit": "njharman",
+    "confidence": "medium",
+    "struct_sim": 0.9822
+  },
+  "Tommah::btbytes": {
+    "github": "btbytes",
+    "reddit": "Tommah",
+    "confidence": "medium",
+    "struct_sim": 0.9821
+  },
+  "jaggederest::btbytes": {
+    "github": "btbytes",
+    "reddit": "jaggederest",
+    "confidence": "medium",
+    "struct_sim": 0.9821
+  },
+  "dons::andrew": {
+    "github": "andrew",
+    "reddit": "dons",
+    "confidence": "medium",
+    "struct_sim": 0.9821
+  },
+  "awj::jeresig": {
+    "github": "jeresig",
+    "reddit": "awj",
+    "confidence": "medium",
+    "struct_sim": 0.9821
+  },
+  "awj::mcarter": {
+    "github": "mcarter",
+    "reddit": "awj",
+    "confidence": "medium",
+    "struct_sim": 0.9821
+  },
+  "derefr::topfunky": {
+    "github": "topfunky",
+    "reddit": "derefr",
+    "confidence": "medium",
+    "struct_sim": 0.9821
+  },
+  "finix::andrew": {
+    "github": "andrew",
+    "reddit": "finix",
+    "confidence": "medium",
+    "struct_sim": 0.9821
+  },
+  "alphabeat::andrew": {
+    "github": "andrew",
+    "reddit": "alphabeat",
+    "confidence": "medium",
+    "struct_sim": 0.9821
+  },
+  "cyancynic::andrew": {
+    "github": "andrew",
+    "reddit": "cyancynic",
+    "confidence": "medium",
+    "struct_sim": 0.9821
+  },
+  "Taladar::andrew": {
+    "github": "andrew",
+    "reddit": "Taladar",
+    "confidence": "medium",
+    "struct_sim": 0.9821
+  },
+  "wat::andrew": {
+    "github": "andrew",
+    "reddit": "wat",
+    "confidence": "medium",
+    "struct_sim": 0.9821
+  },
+  "psykotic::topfunky": {
+    "github": "topfunky",
+    "reddit": "psykotic",
+    "confidence": "medium",
+    "struct_sim": 0.982
+  },
+  "gwern::andrew": {
+    "github": "andrew",
+    "reddit": "gwern",
+    "confidence": "medium",
+    "struct_sim": 0.982
+  },
+  "martoo::andrew": {
+    "github": "andrew",
+    "reddit": "martoo",
+    "confidence": "medium",
+    "struct_sim": 0.982
+  },
+  "setuid_w00t::topfunky": {
+    "github": "topfunky",
+    "reddit": "setuid_w00t",
+    "confidence": "medium",
+    "struct_sim": 0.982
+  },
+  "consultant_barbie::jeresig": {
+    "github": "jeresig",
+    "reddit": "consultant_barbie",
+    "confidence": "medium",
+    "struct_sim": 0.982
+  },
+  "consultant_barbie::mcarter": {
+    "github": "mcarter",
+    "reddit": "consultant_barbie",
+    "confidence": "medium",
+    "struct_sim": 0.982
+  },
+  "toooooob::andrew": {
+    "github": "andrew",
+    "reddit": "toooooob",
+    "confidence": "medium",
+    "struct_sim": 0.982
+  },
+  "OriginalSyn::andrew": {
+    "github": "andrew",
+    "reddit": "OriginalSyn",
+    "confidence": "medium",
+    "struct_sim": 0.982
+  },
+  "derefr::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "derefr",
+    "confidence": "medium",
+    "struct_sim": 0.982
+  },
+  "derefr::jaehess": {
+    "github": "jaehess",
+    "reddit": "derefr",
+    "confidence": "medium",
+    "struct_sim": 0.982
+  },
+  "derefr::marcel": {
+    "github": "marcel",
+    "reddit": "derefr",
+    "confidence": "medium",
+    "struct_sim": 0.982
+  },
+  "rabidcow::andrew": {
+    "github": "andrew",
+    "reddit": "rabidcow",
+    "confidence": "medium",
+    "struct_sim": 0.982
+  },
+  "newton_dave::btbytes": {
+    "github": "btbytes",
+    "reddit": "newton_dave",
+    "confidence": "medium",
+    "struct_sim": 0.982
+  },
+  "Rhoomba::topfunky": {
+    "github": "topfunky",
+    "reddit": "Rhoomba",
+    "confidence": "medium",
+    "struct_sim": 0.982
+  },
+  "kirun::andrew": {
+    "github": "andrew",
+    "reddit": "kirun",
+    "confidence": "medium",
+    "struct_sim": 0.9819
+  },
+  "FionaSarah::topfunky": {
+    "github": "topfunky",
+    "reddit": "FionaSarah",
+    "confidence": "medium",
+    "struct_sim": 0.9819
+  },
+  "killerstorm::jeresig": {
+    "github": "jeresig",
+    "reddit": "killerstorm",
+    "confidence": "medium",
+    "struct_sim": 0.9819
+  },
+  "killerstorm::mcarter": {
+    "github": "mcarter",
+    "reddit": "killerstorm",
+    "confidence": "medium",
+    "struct_sim": 0.9819
+  },
+  "Atnan::andrew": {
+    "github": "andrew",
+    "reddit": "Atnan",
+    "confidence": "medium",
+    "struct_sim": 0.9819
+  },
+  "ithika::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "ithika",
+    "confidence": "medium",
+    "struct_sim": 0.9819
+  },
+  "ithika::capitalist": {
+    "github": "capitalist",
+    "reddit": "ithika",
+    "confidence": "medium",
+    "struct_sim": 0.9819
+  },
+  "ithika::jwilkins": {
+    "github": "jwilkins",
+    "reddit": "ithika",
+    "confidence": "medium",
+    "struct_sim": 0.9819
+  },
+  "drosser::topfunky": {
+    "github": "topfunky",
+    "reddit": "drosser",
+    "confidence": "medium",
+    "struct_sim": 0.9819
+  },
+  "jsolson::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "jsolson",
+    "confidence": "medium",
+    "struct_sim": 0.9818
+  },
+  "jsolson::jaehess": {
+    "github": "jaehess",
+    "reddit": "jsolson",
+    "confidence": "medium",
+    "struct_sim": 0.9818
+  },
+  "jsolson::marcel": {
+    "github": "marcel",
+    "reddit": "jsolson",
+    "confidence": "medium",
+    "struct_sim": 0.9818
+  },
+  "notfancy::jeresig": {
+    "github": "jeresig",
+    "reddit": "notfancy",
+    "confidence": "medium",
+    "struct_sim": 0.9818
+  },
+  "notfancy::mcarter": {
+    "github": "mcarter",
+    "reddit": "notfancy",
+    "confidence": "medium",
+    "struct_sim": 0.9818
+  },
+  "Mr_Smartypants::topfunky": {
+    "github": "topfunky",
+    "reddit": "Mr_Smartypants",
+    "confidence": "medium",
+    "struct_sim": 0.9818
+  },
+  "zem::btbytes": {
+    "github": "btbytes",
+    "reddit": "zem",
+    "confidence": "medium",
+    "struct_sim": 0.9818
+  },
+  "jerf::topfunky": {
+    "github": "topfunky",
+    "reddit": "jerf",
+    "confidence": "medium",
+    "struct_sim": 0.9817
+  },
+  "Poromenos::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "Poromenos",
+    "confidence": "medium",
+    "struct_sim": 0.9817
+  },
+  "Poromenos::capitalist": {
+    "github": "capitalist",
+    "reddit": "Poromenos",
+    "confidence": "medium",
+    "struct_sim": 0.9817
+  },
+  "Poromenos::jwilkins": {
+    "github": "jwilkins",
+    "reddit": "Poromenos",
+    "confidence": "medium",
+    "struct_sim": 0.9817
+  },
+  "cunningjames::jeresig": {
+    "github": "jeresig",
+    "reddit": "cunningjames",
+    "confidence": "medium",
+    "struct_sim": 0.9817
+  },
+  "cunningjames::mcarter": {
+    "github": "mcarter",
+    "reddit": "cunningjames",
+    "confidence": "medium",
+    "struct_sim": 0.9817
+  },
+  "diogames::btbytes": {
+    "github": "btbytes",
+    "reddit": "diogames",
+    "confidence": "medium",
+    "struct_sim": 0.9817
+  },
+  "mccoyn::topfunky": {
+    "github": "topfunky",
+    "reddit": "mccoyn",
+    "confidence": "medium",
+    "struct_sim": 0.9816
+  },
+  "cgibbard::topfunky": {
+    "github": "topfunky",
+    "reddit": "cgibbard",
+    "confidence": "medium",
+    "struct_sim": 0.9815
+  },
+  "braindrane::topfunky": {
+    "github": "topfunky",
+    "reddit": "braindrane",
+    "confidence": "medium",
+    "struct_sim": 0.9815
+  },
+  "yellowking::btbytes": {
+    "github": "btbytes",
+    "reddit": "yellowking",
+    "confidence": "medium",
+    "struct_sim": 0.9815
+  },
+  "bluGill::btbytes": {
+    "github": "btbytes",
+    "reddit": "bluGill",
+    "confidence": "medium",
+    "struct_sim": 0.9815
+  },
+  "artman::topfunky": {
+    "github": "topfunky",
+    "reddit": "artman",
+    "confidence": "medium",
+    "struct_sim": 0.9815
+  },
+  "mjd::topfunky": {
+    "github": "topfunky",
+    "reddit": "mjd",
+    "confidence": "medium",
+    "struct_sim": 0.9815
+  },
+  "curtisw::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "curtisw",
+    "confidence": "medium",
+    "struct_sim": 0.9814
+  },
+  "curtisw::jaehess": {
+    "github": "jaehess",
+    "reddit": "curtisw",
+    "confidence": "medium",
+    "struct_sim": 0.9814
+  },
+  "curtisw::marcel": {
+    "github": "marcel",
+    "reddit": "curtisw",
+    "confidence": "medium",
+    "struct_sim": 0.9814
+  },
+  "amstrdamordeath::antirez": {
+    "github": "antirez",
+    "reddit": "amstrdamordeath",
+    "confidence": "medium",
+    "struct_sim": 0.9814
+  },
+  "taejo::topfunky": {
+    "github": "topfunky",
+    "reddit": "taejo",
+    "confidence": "medium",
+    "struct_sim": 0.9814
+  },
+  "awb::topfunky": {
+    "github": "topfunky",
+    "reddit": "awb",
+    "confidence": "medium",
+    "struct_sim": 0.9814
+  },
+  "sambo357::topfunky": {
+    "github": "topfunky",
+    "reddit": "sambo357",
+    "confidence": "medium",
+    "struct_sim": 0.9813
+  },
+  "derefr::andrew": {
+    "github": "andrew",
+    "reddit": "derefr",
+    "confidence": "medium",
+    "struct_sim": 0.9813
+  },
+  "Ammit::topfunky": {
+    "github": "topfunky",
+    "reddit": "Ammit",
+    "confidence": "medium",
+    "struct_sim": 0.9813
+  },
+  "malcontent::btbytes": {
+    "github": "btbytes",
+    "reddit": "malcontent",
+    "confidence": "medium",
+    "struct_sim": 0.9813
+  },
+  "Mr_Smartypants::andrew": {
+    "github": "andrew",
+    "reddit": "Mr_Smartypants",
+    "confidence": "medium",
+    "struct_sim": 0.9813
+  },
+  "dlsspy::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "dlsspy",
+    "confidence": "medium",
+    "struct_sim": 0.9813
+  },
+  "dlsspy::jaehess": {
+    "github": "jaehess",
+    "reddit": "dlsspy",
+    "confidence": "medium",
+    "struct_sim": 0.9813
+  },
+  "dlsspy::marcel": {
+    "github": "marcel",
+    "reddit": "dlsspy",
+    "confidence": "medium",
+    "struct_sim": 0.9813
+  },
+  "psykotic::andrew": {
+    "github": "andrew",
+    "reddit": "psykotic",
+    "confidence": "medium",
+    "struct_sim": 0.9812
+  },
+  "setuid_w00t::andrew": {
+    "github": "andrew",
+    "reddit": "setuid_w00t",
+    "confidence": "medium",
+    "struct_sim": 0.9812
+  },
+  "LudoA::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "LudoA",
+    "confidence": "medium",
+    "struct_sim": 0.9812
+  },
+  "LudoA::capitalist": {
+    "github": "capitalist",
+    "reddit": "LudoA",
+    "confidence": "medium",
+    "struct_sim": 0.9812
+  },
+  "DRMacIver::jeresig": {
+    "github": "jeresig",
+    "reddit": "DRMacIver",
+    "confidence": "medium",
+    "struct_sim": 0.9812
+  },
+  "DRMacIver::mcarter": {
+    "github": "mcarter",
+    "reddit": "DRMacIver",
+    "confidence": "medium",
+    "struct_sim": 0.9812
+  },
+  "IHaveAnIdea::btbytes": {
+    "github": "btbytes",
+    "reddit": "IHaveAnIdea",
+    "confidence": "medium",
+    "struct_sim": 0.9812
+  },
+  "Rhoomba::andrew": {
+    "github": "andrew",
+    "reddit": "Rhoomba",
+    "confidence": "medium",
+    "struct_sim": 0.9811
+  },
+  "bonzinip::topfunky": {
+    "github": "topfunky",
+    "reddit": "bonzinip",
+    "confidence": "medium",
+    "struct_sim": 0.9811
+  },
+  "FionaSarah::andrew": {
+    "github": "andrew",
+    "reddit": "FionaSarah",
+    "confidence": "medium",
+    "struct_sim": 0.9811
+  },
+  "artman::andrew": {
+    "github": "andrew",
+    "reddit": "artman",
+    "confidence": "medium",
+    "struct_sim": 0.9811
+  },
+  "masklinn::btbytes": {
+    "github": "btbytes",
+    "reddit": "masklinn",
+    "confidence": "medium",
+    "struct_sim": 0.9811
+  },
+  "drosser::andrew": {
+    "github": "andrew",
+    "reddit": "drosser",
+    "confidence": "medium",
+    "struct_sim": 0.9811
+  },
+  "taejo::jeresig": {
+    "github": "jeresig",
+    "reddit": "taejo",
+    "confidence": "medium",
+    "struct_sim": 0.9811
+  },
+  "cyancynic::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "cyancynic",
+    "confidence": "medium",
+    "struct_sim": 0.9811
+  },
+  "cyancynic::jaehess": {
+    "github": "jaehess",
+    "reddit": "cyancynic",
+    "confidence": "medium",
+    "struct_sim": 0.9811
+  },
+  "cyancynic::marcel": {
+    "github": "marcel",
+    "reddit": "cyancynic",
+    "confidence": "medium",
+    "struct_sim": 0.9811
+  },
+  "13ren::btbytes": {
+    "github": "btbytes",
+    "reddit": "13ren",
+    "confidence": "medium",
+    "struct_sim": 0.981
+  },
+  "braindrane::andrew": {
+    "github": "andrew",
+    "reddit": "braindrane",
+    "confidence": "medium",
+    "struct_sim": 0.981
+  },
+  "Freeky::topfunky": {
+    "github": "topfunky",
+    "reddit": "Freeky",
+    "confidence": "medium",
+    "struct_sim": 0.9809
+  },
+  "RugerRedhawk::topfunky": {
+    "github": "topfunky",
+    "reddit": "RugerRedhawk",
+    "confidence": "medium",
+    "struct_sim": 0.9809
+  },
+  "username223::jeresig": {
+    "github": "jeresig",
+    "reddit": "username223",
+    "confidence": "medium",
+    "struct_sim": 0.9809
+  },
+  "username223::mcarter": {
+    "github": "mcarter",
+    "reddit": "username223",
+    "confidence": "medium",
+    "struct_sim": 0.9809
+  },
+  "FionaSarah::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "FionaSarah",
+    "confidence": "medium",
+    "struct_sim": 0.9809
+  },
+  "FionaSarah::jaehess": {
+    "github": "jaehess",
+    "reddit": "FionaSarah",
+    "confidence": "medium",
+    "struct_sim": 0.9809
+  },
+  "FionaSarah::marcel": {
+    "github": "marcel",
+    "reddit": "FionaSarah",
+    "confidence": "medium",
+    "struct_sim": 0.9809
+  },
+  "jerf::andrew": {
+    "github": "andrew",
+    "reddit": "jerf",
+    "confidence": "medium",
+    "struct_sim": 0.9809
+  },
+  "cgibbard::andrew": {
+    "github": "andrew",
+    "reddit": "cgibbard",
+    "confidence": "medium",
+    "struct_sim": 0.9808
+  },
+  "Figs::btbytes": {
+    "github": "btbytes",
+    "reddit": "Figs",
+    "confidence": "medium",
+    "struct_sim": 0.9808
+  },
+  "mccoyn::andrew": {
+    "github": "andrew",
+    "reddit": "mccoyn",
+    "confidence": "medium",
+    "struct_sim": 0.9808
+  },
+  "turkourjurbs::btbytes": {
+    "github": "btbytes",
+    "reddit": "turkourjurbs",
+    "confidence": "medium",
+    "struct_sim": 0.9808
+  },
+  "bluGill::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "bluGill",
+    "confidence": "medium",
+    "struct_sim": 0.9808
+  },
+  "bluGill::capitalist": {
+    "github": "capitalist",
+    "reddit": "bluGill",
+    "confidence": "medium",
+    "struct_sim": 0.9808
+  },
+  "artman::antirez": {
+    "github": "antirez",
+    "reddit": "artman",
+    "confidence": "medium",
+    "struct_sim": 0.9808
+  },
+  "Ammit::andrew": {
+    "github": "andrew",
+    "reddit": "Ammit",
+    "confidence": "medium",
+    "struct_sim": 0.9807
+  },
+  "bonzinip::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "bonzinip",
+    "confidence": "medium",
+    "struct_sim": 0.9807
+  },
+  "bonzinip::jaehess": {
+    "github": "jaehess",
+    "reddit": "bonzinip",
+    "confidence": "medium",
+    "struct_sim": 0.9807
+  },
+  "bonzinip::marcel": {
+    "github": "marcel",
+    "reddit": "bonzinip",
+    "confidence": "medium",
+    "struct_sim": 0.9807
+  },
+  "ipeev::topfunky": {
+    "github": "topfunky",
+    "reddit": "ipeev",
+    "confidence": "medium",
+    "struct_sim": 0.9807
+  },
+  "cdesignproponentsist::btbytes": {
+    "github": "btbytes",
+    "reddit": "cdesignproponentsist",
+    "confidence": "medium",
+    "struct_sim": 0.9807
+  },
+  "manthrax::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "manthrax",
+    "confidence": "medium",
+    "struct_sim": 0.9807
+  },
+  "manthrax::jaehess": {
+    "github": "jaehess",
+    "reddit": "manthrax",
+    "confidence": "medium",
+    "struct_sim": 0.9807
+  },
+  "manthrax::marcel": {
+    "github": "marcel",
+    "reddit": "manthrax",
+    "confidence": "medium",
+    "struct_sim": 0.9807
+  },
+  "dlsspy::topfunky": {
+    "github": "topfunky",
+    "reddit": "dlsspy",
+    "confidence": "medium",
+    "struct_sim": 0.9806
+  },
+  "mjd::andrew": {
+    "github": "andrew",
+    "reddit": "mjd",
+    "confidence": "medium",
+    "struct_sim": 0.9806
+  },
+  "dons::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "dons",
+    "confidence": "medium",
+    "struct_sim": 0.9806
+  },
+  "dons::jaehess": {
+    "github": "jaehess",
+    "reddit": "dons",
+    "confidence": "medium",
+    "struct_sim": 0.9806
+  },
+  "dons::marcel": {
+    "github": "marcel",
+    "reddit": "dons",
+    "confidence": "medium",
+    "struct_sim": 0.9806
+  },
+  "yellowking::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "yellowking",
+    "confidence": "medium",
+    "struct_sim": 0.9806
+  },
+  "yellowking::capitalist": {
+    "github": "capitalist",
+    "reddit": "yellowking",
+    "confidence": "medium",
+    "struct_sim": 0.9806
+  },
+  "awb::andrew": {
+    "github": "andrew",
+    "reddit": "awb",
+    "confidence": "medium",
+    "struct_sim": 0.9806
+  },
+  "llimllib::btbytes": {
+    "github": "btbytes",
+    "reddit": "llimllib",
+    "confidence": "medium",
+    "struct_sim": 0.9806
+  },
+  "ipeev::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "ipeev",
+    "confidence": "medium",
+    "struct_sim": 0.9805
+  },
+  "ipeev::jaehess": {
+    "github": "jaehess",
+    "reddit": "ipeev",
+    "confidence": "medium",
+    "struct_sim": 0.9805
+  },
+  "ipeev::marcel": {
+    "github": "marcel",
+    "reddit": "ipeev",
+    "confidence": "medium",
+    "struct_sim": 0.9805
+  },
+  "711was_a_retail_job::btbytes": {
+    "github": "btbytes",
+    "reddit": "711was_a_retail_job",
+    "confidence": "medium",
+    "struct_sim": 0.9805
+  },
+  "nostrademons::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "nostrademons",
+    "confidence": "medium",
+    "struct_sim": 0.9805
+  },
+  "nostrademons::capitalist": {
+    "github": "capitalist",
+    "reddit": "nostrademons",
+    "confidence": "medium",
+    "struct_sim": 0.9805
+  },
+  "RugerRedhawk::antirez": {
+    "github": "antirez",
+    "reddit": "RugerRedhawk",
+    "confidence": "medium",
+    "struct_sim": 0.9805
+  },
+  "sambo357::andrew": {
+    "github": "andrew",
+    "reddit": "sambo357",
+    "confidence": "medium",
+    "struct_sim": 0.9805
+  },
+  "cecilkorik::topfunky": {
+    "github": "topfunky",
+    "reddit": "cecilkorik",
+    "confidence": "medium",
+    "struct_sim": 0.9805
+  },
+  "sjs::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "sjs",
+    "confidence": "medium",
+    "struct_sim": 0.9805
+  },
+  "sjs::capitalist": {
+    "github": "capitalist",
+    "reddit": "sjs",
+    "confidence": "medium",
+    "struct_sim": 0.9805
+  },
+  "Atnan::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "Atnan",
+    "confidence": "medium",
+    "struct_sim": 0.9804
+  },
+  "Atnan::jaehess": {
+    "github": "jaehess",
+    "reddit": "Atnan",
+    "confidence": "medium",
+    "struct_sim": 0.9804
+  },
+  "Atnan::marcel": {
+    "github": "marcel",
+    "reddit": "Atnan",
+    "confidence": "medium",
+    "struct_sim": 0.9804
+  },
+  "RugerRedhawk::andrew": {
+    "github": "andrew",
+    "reddit": "RugerRedhawk",
+    "confidence": "medium",
+    "struct_sim": 0.9804
+  },
+  "diogames::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "diogames",
+    "confidence": "medium",
+    "struct_sim": 0.9804
+  },
+  "diogames::capitalist": {
+    "github": "capitalist",
+    "reddit": "diogames",
+    "confidence": "medium",
+    "struct_sim": 0.9804
+  },
+  "berlinbrown::btbytes": {
+    "github": "btbytes",
+    "reddit": "berlinbrown",
+    "confidence": "medium",
+    "struct_sim": 0.9804
+  },
+  "bonzinip::andrew": {
+    "github": "andrew",
+    "reddit": "bonzinip",
+    "confidence": "medium",
+    "struct_sim": 0.9803
+  },
+  "drosser::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "drosser",
+    "confidence": "medium",
+    "struct_sim": 0.9803
+  },
+  "drosser::jaehess": {
+    "github": "jaehess",
+    "reddit": "drosser",
+    "confidence": "medium",
+    "struct_sim": 0.9803
+  },
+  "drosser::marcel": {
+    "github": "marcel",
+    "reddit": "drosser",
+    "confidence": "medium",
+    "struct_sim": 0.9803
+  },
+  "popeix::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "popeix",
+    "confidence": "medium",
+    "struct_sim": 0.9803
+  },
+  "popeix::jaehess": {
+    "github": "jaehess",
+    "reddit": "popeix",
+    "confidence": "medium",
+    "struct_sim": 0.9803
+  },
+  "popeix::marcel": {
+    "github": "marcel",
+    "reddit": "popeix",
+    "confidence": "medium",
+    "struct_sim": 0.9803
+  },
+  "Tommah::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "Tommah",
+    "confidence": "medium",
+    "struct_sim": 0.9803
+  },
+  "Tommah::capitalist": {
+    "github": "capitalist",
+    "reddit": "Tommah",
+    "confidence": "medium",
+    "struct_sim": 0.9803
+  },
+  "jsolson::topfunky": {
+    "github": "topfunky",
+    "reddit": "jsolson",
+    "confidence": "medium",
+    "struct_sim": 0.9803
+  },
+  "paro::topfunky": {
+    "github": "topfunky",
+    "reddit": "paro",
+    "confidence": "medium",
+    "struct_sim": 0.9803
+  },
+  "redditcensoredme::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "redditcensoredme",
+    "confidence": "medium",
+    "struct_sim": 0.9803
+  },
+  "redditcensoredme::capitalist": {
+    "github": "capitalist",
+    "reddit": "redditcensoredme",
+    "confidence": "medium",
+    "struct_sim": 0.9803
+  },
+  "quhaha::btbytes": {
+    "github": "btbytes",
+    "reddit": "quhaha",
+    "confidence": "medium",
+    "struct_sim": 0.9803
+  },
+  "burtonmkz::topfunky": {
+    "github": "topfunky",
+    "reddit": "burtonmkz",
+    "confidence": "medium",
+    "struct_sim": 0.9803
+  },
+  "redditnoob::topfunky": {
+    "github": "topfunky",
+    "reddit": "redditnoob",
+    "confidence": "medium",
+    "struct_sim": 0.9802
+  },
+  "berlinbrown::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "berlinbrown",
+    "confidence": "medium",
+    "struct_sim": 0.9802
+  },
+  "berlinbrown::jaehess": {
+    "github": "jaehess",
+    "reddit": "berlinbrown",
+    "confidence": "medium",
+    "struct_sim": 0.9802
+  },
+  "Figs::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "Figs",
+    "confidence": "medium",
+    "struct_sim": 0.9802
+  },
+  "Figs::capitalist": {
+    "github": "capitalist",
+    "reddit": "Figs",
+    "confidence": "medium",
+    "struct_sim": 0.9802
+  },
+  "akdas::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "akdas",
+    "confidence": "medium",
+    "struct_sim": 0.9802
+  },
+  "akdas::capitalist": {
+    "github": "capitalist",
+    "reddit": "akdas",
+    "confidence": "medium",
+    "struct_sim": 0.9802
+  },
+  "rednukleus::topfunky": {
+    "github": "topfunky",
+    "reddit": "rednukleus",
+    "confidence": "medium",
+    "struct_sim": 0.9801
+  },
+  "Freeky::andrew": {
+    "github": "andrew",
+    "reddit": "Freeky",
+    "confidence": "medium",
+    "struct_sim": 0.9801
+  },
+  "jaggederest::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "jaggederest",
+    "confidence": "medium",
+    "struct_sim": 0.98
+  },
+  "jaggederest::capitalist": {
+    "github": "capitalist",
+    "reddit": "jaggederest",
+    "confidence": "medium",
+    "struct_sim": 0.98
+  },
+  "newton_dave::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "newton_dave",
+    "confidence": "medium",
+    "struct_sim": 0.98
+  },
+  "newton_dave::capitalist": {
+    "github": "capitalist",
+    "reddit": "newton_dave",
+    "confidence": "medium",
+    "struct_sim": 0.98
+  },
+  "zem::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "zem",
+    "confidence": "medium",
+    "struct_sim": 0.98
+  },
+  "zem::capitalist": {
+    "github": "capitalist",
+    "reddit": "zem",
+    "confidence": "medium",
+    "struct_sim": 0.98
+  },
+  "ipeev::andrew": {
+    "github": "andrew",
+    "reddit": "ipeev",
+    "confidence": "medium",
+    "struct_sim": 0.9799
+  },
+  "cecilkorik::andrew": {
+    "github": "andrew",
+    "reddit": "cecilkorik",
+    "confidence": "medium",
+    "struct_sim": 0.9799
+  },
+  "711was_a_retail_job::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "711was_a_retail_job",
+    "confidence": "medium",
+    "struct_sim": 0.9798
+  },
+  "711was_a_retail_job::capitalist": {
+    "github": "capitalist",
+    "reddit": "711was_a_retail_job",
+    "confidence": "medium",
+    "struct_sim": 0.9798
+  },
+  "sn0re::btbytes": {
+    "github": "btbytes",
+    "reddit": "sn0re",
+    "confidence": "medium",
+    "struct_sim": 0.9798
+  },
+  "dlsspy::andrew": {
+    "github": "andrew",
+    "reddit": "dlsspy",
+    "confidence": "medium",
+    "struct_sim": 0.9798
+  },
+  "easytiger::btbytes": {
+    "github": "btbytes",
+    "reddit": "easytiger",
+    "confidence": "medium",
+    "struct_sim": 0.9798
+  },
+  "judgej2::btbytes": {
+    "github": "btbytes",
+    "reddit": "judgej2",
+    "confidence": "medium",
+    "struct_sim": 0.9798
+  },
+  "paro::andrew": {
+    "github": "andrew",
+    "reddit": "paro",
+    "confidence": "medium",
+    "struct_sim": 0.9798
+  },
+  "sn0re::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "sn0re",
+    "confidence": "medium",
+    "struct_sim": 0.9797
+  },
+  "sn0re::capitalist": {
+    "github": "capitalist",
+    "reddit": "sn0re",
+    "confidence": "medium",
+    "struct_sim": 0.9797
+  },
+  "redditnoob::jeresig": {
+    "github": "jeresig",
+    "reddit": "redditnoob",
+    "confidence": "medium",
+    "struct_sim": 0.9797
+  },
+  "burtonmkz::andrew": {
+    "github": "andrew",
+    "reddit": "burtonmkz",
+    "confidence": "medium",
+    "struct_sim": 0.9797
+  },
+  "easytiger::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "easytiger",
+    "confidence": "medium",
+    "struct_sim": 0.9797
+  },
+  "easytiger::capitalist": {
+    "github": "capitalist",
+    "reddit": "easytiger",
+    "confidence": "medium",
+    "struct_sim": 0.9797
+  },
+  "ishmal::btbytes": {
+    "github": "btbytes",
+    "reddit": "ishmal",
+    "confidence": "medium",
+    "struct_sim": 0.9797
+  },
+  "rednukleus::andrew": {
+    "github": "andrew",
+    "reddit": "rednukleus",
+    "confidence": "medium",
+    "struct_sim": 0.9797
+  },
+  "pjdelport::topfunky": {
+    "github": "topfunky",
+    "reddit": "pjdelport",
+    "confidence": "medium",
+    "struct_sim": 0.9797
+  },
+  "schwarzwald::topfunky": {
+    "github": "topfunky",
+    "reddit": "schwarzwald",
+    "confidence": "medium",
+    "struct_sim": 0.9795
+  },
+  "jsolson::andrew": {
+    "github": "andrew",
+    "reddit": "jsolson",
+    "confidence": "medium",
+    "struct_sim": 0.9794
+  },
+  "turkourjurbs::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "turkourjurbs",
+    "confidence": "medium",
+    "struct_sim": 0.9794
+  },
+  "turkourjurbs::capitalist": {
+    "github": "capitalist",
+    "reddit": "turkourjurbs",
+    "confidence": "medium",
+    "struct_sim": 0.9794
+  },
+  "masklinn::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "masklinn",
+    "confidence": "medium",
+    "struct_sim": 0.9794
+  },
+  "masklinn::capitalist": {
+    "github": "capitalist",
+    "reddit": "masklinn",
+    "confidence": "medium",
+    "struct_sim": 0.9794
+  },
+  "rednukleus::antirez": {
+    "github": "antirez",
+    "reddit": "rednukleus",
+    "confidence": "medium",
+    "struct_sim": 0.9794
+  },
+  "malcontent::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "malcontent",
+    "confidence": "medium",
+    "struct_sim": 0.9793
+  },
+  "malcontent::capitalist": {
+    "github": "capitalist",
+    "reddit": "malcontent",
+    "confidence": "medium",
+    "struct_sim": 0.9793
+  },
+  "13ren::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "13ren",
+    "confidence": "medium",
+    "struct_sim": 0.9793
+  },
+  "13ren::capitalist": {
+    "github": "capitalist",
+    "reddit": "13ren",
+    "confidence": "medium",
+    "struct_sim": 0.9793
+  },
+  "alphabeat::btbytes": {
+    "github": "btbytes",
+    "reddit": "alphabeat",
+    "confidence": "medium",
+    "struct_sim": 0.9793
+  },
+  "IHaveAnIdea::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "IHaveAnIdea",
+    "confidence": "medium",
+    "struct_sim": 0.9792
+  },
+  "IHaveAnIdea::capitalist": {
+    "github": "capitalist",
+    "reddit": "IHaveAnIdea",
+    "confidence": "medium",
+    "struct_sim": 0.9792
+  },
+  "pjdelport::jeresig": {
+    "github": "jeresig",
+    "reddit": "pjdelport",
+    "confidence": "medium",
+    "struct_sim": 0.9791
+  },
+  "OriginalSyn::btbytes": {
+    "github": "btbytes",
+    "reddit": "OriginalSyn",
+    "confidence": "medium",
+    "struct_sim": 0.979
+  },
+  "llimllib::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "llimllib",
+    "confidence": "medium",
+    "struct_sim": 0.9789
+  },
+  "llimllib::capitalist": {
+    "github": "capitalist",
+    "reddit": "llimllib",
+    "confidence": "medium",
+    "struct_sim": 0.9789
+  },
+  "paro::antirez": {
+    "github": "antirez",
+    "reddit": "paro",
+    "confidence": "medium",
+    "struct_sim": 0.9789
+  },
+  "schwarzwald::jeresig": {
+    "github": "jeresig",
+    "reddit": "schwarzwald",
+    "confidence": "medium",
+    "struct_sim": 0.9788
+  },
+  "ishmal::hornbeck": {
+    "github": "hornbeck",
+    "reddit": "ishmal",
+    "confidence": "medium",
+    "struct_sim": 0.9787
+  },
+  "ishmal::jaehess": {
+    "github": "jaehess",
+    "reddit": "ishmal",
+    "confidence": "medium",
+    "struct_sim": 0.9787
+  },
+  "quhaha::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "quhaha",
+    "confidence": "medium",
+    "struct_sim": 0.9787
+  },
+  "quhaha::capitalist": {
+    "github": "capitalist",
+    "reddit": "quhaha",
+    "confidence": "medium",
+    "struct_sim": 0.9787
+  },
+  "wat::btbytes": {
+    "github": "btbytes",
+    "reddit": "wat",
+    "confidence": "medium",
+    "struct_sim": 0.9785
+  },
+  "wat::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "wat",
+    "confidence": "medium",
+    "struct_sim": 0.9785
+  },
+  "wat::capitalist": {
+    "github": "capitalist",
+    "reddit": "wat",
+    "confidence": "medium",
+    "struct_sim": 0.9785
+  },
+  "judgej2::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "judgej2",
+    "confidence": "medium",
+    "struct_sim": 0.9785
+  },
+  "judgej2::capitalist": {
+    "github": "capitalist",
+    "reddit": "judgej2",
+    "confidence": "medium",
+    "struct_sim": 0.9785
+  },
+  "artman::btbytes": {
+    "github": "btbytes",
+    "reddit": "artman",
+    "confidence": "medium",
+    "struct_sim": 0.9785
+  },
+  "braindrane::btbytes": {
+    "github": "btbytes",
+    "reddit": "braindrane",
+    "confidence": "medium",
+    "struct_sim": 0.9783
+  },
+  "cdesignproponentsist::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "cdesignproponentsist",
+    "confidence": "medium",
+    "struct_sim": 0.9782
+  },
+  "cdesignproponentsist::capitalist": {
+    "github": "capitalist",
+    "reddit": "cdesignproponentsist",
+    "confidence": "medium",
+    "struct_sim": 0.9782
+  },
+  "Mr_Smartypants::btbytes": {
+    "github": "btbytes",
+    "reddit": "Mr_Smartypants",
+    "confidence": "medium",
+    "struct_sim": 0.9782
+  },
+  "cgibbard::btbytes": {
+    "github": "btbytes",
+    "reddit": "cgibbard",
+    "confidence": "medium",
+    "struct_sim": 0.9781
+  },
+  "alphabeat::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "alphabeat",
+    "confidence": "medium",
+    "struct_sim": 0.9781
+  },
+  "alphabeat::capitalist": {
+    "github": "capitalist",
+    "reddit": "alphabeat",
+    "confidence": "medium",
+    "struct_sim": 0.9781
+  },
+  "OriginalSyn::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "OriginalSyn",
+    "confidence": "medium",
+    "struct_sim": 0.978
+  },
+  "OriginalSyn::capitalist": {
+    "github": "capitalist",
+    "reddit": "OriginalSyn",
+    "confidence": "medium",
+    "struct_sim": 0.978
+  },
+  "Ammit::btbytes": {
+    "github": "btbytes",
+    "reddit": "Ammit",
+    "confidence": "medium",
+    "struct_sim": 0.9779
+  },
+  "RugerRedhawk::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "RugerRedhawk",
+    "confidence": "medium",
+    "struct_sim": 0.9772
+  },
+  "RugerRedhawk::capitalist": {
+    "github": "capitalist",
+    "reddit": "RugerRedhawk",
+    "confidence": "medium",
+    "struct_sim": 0.9772
+  },
+  "rednukleus::btbytes": {
+    "github": "btbytes",
+    "reddit": "rednukleus",
+    "confidence": "medium",
+    "struct_sim": 0.977
+  },
+  "cecilkorik::btbytes": {
+    "github": "btbytes",
+    "reddit": "cecilkorik",
+    "confidence": "medium",
+    "struct_sim": 0.9767
+  },
+  "Mr_Smartypants::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "Mr_Smartypants",
+    "confidence": "medium",
+    "struct_sim": 0.9767
+  },
+  "Mr_Smartypants::capitalist": {
+    "github": "capitalist",
+    "reddit": "Mr_Smartypants",
+    "confidence": "medium",
+    "struct_sim": 0.9767
+  },
+  "burtonmkz::btbytes": {
+    "github": "btbytes",
+    "reddit": "burtonmkz",
+    "confidence": "medium",
+    "struct_sim": 0.9766
+  },
+  "cgibbard::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "cgibbard",
+    "confidence": "medium",
+    "struct_sim": 0.9765
+  },
+  "cgibbard::capitalist": {
+    "github": "capitalist",
+    "reddit": "cgibbard",
+    "confidence": "medium",
+    "struct_sim": 0.9765
+  },
+  "paro::btbytes": {
+    "github": "btbytes",
+    "reddit": "paro",
+    "confidence": "medium",
+    "struct_sim": 0.9763
+  },
+  "braindrane::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "braindrane",
+    "confidence": "medium",
+    "struct_sim": 0.9759
+  },
+  "braindrane::capitalist": {
+    "github": "capitalist",
+    "reddit": "braindrane",
+    "confidence": "medium",
+    "struct_sim": 0.9759
+  },
+  "Ammit::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "Ammit",
+    "confidence": "medium",
+    "struct_sim": 0.9759
+  },
+  "Ammit::capitalist": {
+    "github": "capitalist",
+    "reddit": "Ammit",
+    "confidence": "medium",
+    "struct_sim": 0.9759
+  },
+  "paro::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "paro",
+    "confidence": "medium",
+    "struct_sim": 0.9757
+  },
+  "cecilkorik::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "cecilkorik",
+    "confidence": "medium",
+    "struct_sim": 0.9756
+  },
+  "cecilkorik::capitalist": {
+    "github": "capitalist",
+    "reddit": "cecilkorik",
+    "confidence": "medium",
+    "struct_sim": 0.9756
+  },
+  "artman::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "artman",
+    "confidence": "medium",
+    "struct_sim": 0.9756
+  },
+  "burtonmkz::antirez": {
+    "github": "antirez",
+    "reddit": "burtonmkz",
+    "confidence": "medium",
+    "struct_sim": 0.9752
+  },
+  "burtonmkz::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "burtonmkz",
+    "confidence": "medium",
+    "struct_sim": 0.975
+  },
+  "rednukleus::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "rednukleus",
+    "confidence": "medium",
+    "struct_sim": 0.9742
+  },
+  "amstrdamordeath::topfunky": {
+    "github": "topfunky",
+    "reddit": "amstrdamordeath",
+    "confidence": "medium",
+    "struct_sim": 0.9741
+  },
+  "amstrdamordeath::andrew": {
+    "github": "andrew",
+    "reddit": "amstrdamordeath",
+    "confidence": "medium",
+    "struct_sim": 0.9736
+  },
+  "mclovinsuperpower::defunkt": {
+    "github": "defunkt",
+    "reddit": "mclovinsuperpower",
+    "confidence": "medium",
+    "struct_sim": 0.9733
+  },
+  "mclovinsuperpower::topfunky": {
+    "github": "topfunky",
+    "reddit": "mclovinsuperpower",
+    "confidence": "medium",
+    "struct_sim": 0.9714
+  },
+  "mclovinsuperpower::andrew": {
+    "github": "andrew",
+    "reddit": "mclovinsuperpower",
+    "confidence": "medium",
+    "struct_sim": 0.9708
+  },
+  "amstrdamordeath::btbytes": {
+    "github": "btbytes",
+    "reddit": "amstrdamordeath",
+    "confidence": "medium",
+    "struct_sim": 0.9704
+  },
+  "amstrdamordeath::defunkt": {
+    "github": "defunkt",
+    "reddit": "amstrdamordeath",
+    "confidence": "medium",
+    "struct_sim": 0.9684
+  },
+  "mclovinsuperpower::ELLIOTTCABLE": {
+    "github": "ELLIOTTCABLE",
+    "reddit": "mclovinsuperpower",
+    "confidence": "medium",
+    "struct_sim": 0.9671
+  }
+}

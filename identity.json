@@ -1,0 +1,48 @@
+{
+  "linus_torvalds": {
+    "github": "torvalds"
+  },
+  "salvatore_sanfilippo": {
+    "github": "antirez",
+    "reddit": "antirez"
+  },
+  "steve_huffman": {
+    "github": "spez",
+    "reddit": "spez"
+  },
+  "alexis_ohanian": {
+    "github": "Kn0thing",
+    "reddit": "kn0thing"
+  },
+  "hadley_wickham": {
+    "github": "hadley",
+    "reddit": "hadley"
+  },
+  "ryan_tomayko": {
+    "github": "rtomayko",
+    "reddit": "rtomayko"
+  },
+  "reg_braithwaite": {
+    "github": "raganwald",
+    "reddit": "raganwald"
+  },
+  "max_goodman": {
+    "github": "chromakode",
+    "reddit": "chromakode"
+  },
+  "jay_graber": {
+    "bluesky": "jay.bsky.team"
+  },
+  "bluesky_app": {
+    "bluesky": "bsky.app"
+  },
+  "paul_frazee": {
+    "bluesky": "pfrazee.com"
+  },
+  "emily_liu": {
+    "bluesky": "emilyliu.me"
+  },
+  "dan_abramov": {
+    "bluesky": "danabra.mov"
+  }
+}
