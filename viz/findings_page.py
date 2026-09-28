@@ -93,6 +93,36 @@ def esc(value) -> str:
     return html.escape(str(value), quote=True)
 
 
+def _wrap_text(text: str, limit: int = 420) -> str:
+    """Break prose so a generated line stays short enough for the preview."""
+    words = text.split()
+    lines: list[str] = []
+    current: list[str] = []
+    length = 0
+    for word in words:
+        extra = len(word) if not current else len(word) + 1
+        if current and length + extra > limit:
+            lines.append(" ".join(current))
+            current = [word]
+            length = len(word)
+        else:
+            current.append(word)
+            length += extra
+    if current:
+        lines.append(" ".join(current))
+    return "\n".join(lines)
+
+
+def explain(means: str, matters: str) -> str:
+    """The reading that sits under the stored numbers."""
+    return (
+        "<h3>What it means</h3>\n"
+        f'<p class="note">{_wrap_text(esc(means))}</p>\n'
+        "<h3>Why it matters</h3>\n"
+        f'<p class="note">{_wrap_text(esc(matters))}</p>\n'
+    )
+
+
 def load_sweep(path: Path = SWEEP_PATH) -> list[dict]:
     """Persistence and modularity for each omega. Per-community rows are dropped."""
     rows = json.loads(path.read_text(encoding="utf-8"))
@@ -107,6 +137,7 @@ def load_sweep(path: Path = SWEEP_PATH) -> list[dict]:
                 "shared": [int(item["shared_members"]) for item in transitions],
                 "labels": [f"{item['earlier']}→{item['later']}" for item in transitions],
                 "communities": [int(item["communities"]) for item in row["snapshots"]],
+                "nodes": [int(item["nodes"]) for item in row["snapshots"] if "nodes" in item],
                 "months": list(row["months"]),
             }
         )
@@ -260,6 +291,12 @@ def _finding_modularity() -> str:
         rows,
     )
     body += f'<p class="note">Rise = (0.5582584329 − 0.3246767820) / 0.3246767820 = {MODULARITY_RISE:.10f}.</p>'
+    body += explain(
+        "Modularity 0.325 in 2008 and 0.558 in 2012 means the later groups are more cleanly separated. "
+        "In 2008 the co-participation graph is one overlapping mass. By 2012 people sit in tighter clusters.",
+        "The network moved from a mixed crowd to distinct neighborhoods. "
+        f"The rise is {MODULARITY_RISE:.3f}, about 72 percent.",
+    )
     return section("finding-1", "Finding 1", "Modularity rose 72%", "Reddit co-participation in 2012 is more modular than the 2008 graph.", body)
 
 
@@ -271,7 +308,15 @@ def _finding_elites() -> str:
         '<p><strong>64</strong><span>of the 2008 top 100 are gone. 36 are still in the 2012 graph, and 1 is still in the top 100.</span></p>\n'
         "</div>\n"
         '<p class="note">compare.py --a r2008-v2 --b r2012-v2 --mode cohort --metric pagerank --top 100. '
-        "grauenwolf PageRank share moved from 0.6067% to 0.1131%.</p>"
+        "grauenwolf PageRank share moved from 0.6067% to 0.1131%. "
+        "Of the 36 who remain in the 2012 graph, 35 are no longer in the top 100.</p>\n"
+    )
+    body += explain(
+        "The prominent accounts of 2008 did not merely slip a few ranks. "
+        "64 of that top 100 are absent from the 2012 graph. 35 are still in the graph and out of the top 100. "
+        "grauenwolf is the one account still in both top 100s, from rank 31 to rank 62.",
+        "This is a 99 percent replacement of the 2012 hub list, and a 99 percent loss of the 2008 hub list. "
+        "The accounts that defined the earlier graph are not the accounts that define the later one.",
     )
     return section("finding-2", "Finding 2", "Elite turnover 99%", "The 2012 hub list is almost a new set of accounts.", body)
 
@@ -304,7 +349,15 @@ def _finding_dissolution() -> str:
     )
     body += (
         "<p class=\"note\">Null containment is 0.000876 (1/1141). "
-        "The other 78 communities have containment 0, lift 0, and classification DISSOLVED.</p>"
+        "The other 78 communities have containment 0, lift 0, and classification DISSOLVED. "
+        "The one STABLE community is 54, a pair, with containment 0.500000 in 2012 community 35.</p>\n"
+    )
+    body += explain(
+        "The 2008 communities did not grow into the 2012 ones. "
+        "78 of 96 have containment 0. 14 split across more than one 2012 destination. "
+        "3 small groups were absorbed. Community 54 is the stable case: size 2, destination 35, containment 0.5, lift 570.50.",
+        "The group-level result matches the elite turnover. The 2008 partition does not survive inside 2012. "
+        "Members left, or they no longer share a community.",
     )
     return section(
         "finding-3",
@@ -352,6 +405,13 @@ def _finding_people() -> str:
 </article>
 </div>
 """
+    body += explain(
+        "akdas is rank 1 in 2008 on PageRank, degree, betweenness, and closeness, and is absent in 2012. "
+        "grauenwolf stays in the top 100, rank 31 to rank 62, while closeness falls from rank 57 to rank 5443. "
+        "incredible-ninja is absent in 2008 and, in 2012, rank 1 on PageRank, betweenness, and closeness, and rank 2 on degree.",
+        "The three accounts are the turnover in miniature. "
+        "The old center disappears, the one survivor keeps a high PageRank rank and loses reach, and the new center arrives already at the top.",
+    )
     return section(
         "finding-4",
         "Finding 4",
@@ -375,7 +435,15 @@ def _finding_robustness() -> str:
     note = (
         "<p class=\"note\">At 30% random removal the giant component is 0.649 in 2008 and 0.633 in 2012. "
         "At 30% degree removal it is 0.300 and 0.022. At 30% betweenness removal it is 0.280 and 0.001. "
-        "That last cut leaves 15,989 components in 2012 and 1,029 in 2008.</p>"
+        "That last cut leaves 15,989 components in 2012 and 1,029 in 2008.</p>\n"
+    )
+    note += explain(
+        "Random deletion leaves both years about as connected: 0.649 of the 2008 giant component and 0.633 of the 2012 one after 30 percent. "
+        "Deleting the highest-degree 30 percent leaves 0.300 in 2008 and 0.022 in 2012. "
+        "Deleting the highest-betweenness 30 percent leaves 0.280 and 0.001.",
+        "By 2012 the graph depends on a small set of hubs. "
+        "Random loss is tolerated. Targeted removal of those hubs breaks the largest connected piece. "
+        "That is the stored signature of a scale-free network, and it matches the thinner rich club and higher max degree in the next section.",
     )
     return section(
         "finding-5",
@@ -403,7 +471,14 @@ def _finding_structure() -> str:
         [("metric", "text"), ("r2008-v2", "num"), ("r2012-v2", "num")],
         rows,
     )
-    body += "<p class=\"note\">Both years fit a power law better than a lognormal or an exponential. The 2012 rich club is much thinner.</p>"
+    body += "<p class=\"note\">Both years fit a power law better than a lognormal or an exponential. The 2012 rich club is much thinner.</p>\n"
+    body += explain(
+        "Max degree rises from 759 to 1,890. Components rise from 77 to 1,082. "
+        "The rich-club coefficient at 100 falls from 0.215 to 0.038. Power-law alpha rises from 1.347 to 1.866. "
+        "The top accounts are larger, and they are less tied to each other.",
+        "This is the structural change under the other Reddit results. "
+        "The 2008 graph still has a connected high-degree core. The 2012 graph is a set of large broadcasters over a more fragmented graph.",
+    )
     return section(
         "finding-6",
         "Finding 6",
@@ -447,6 +522,13 @@ def _finding_reach() -> str:
         + table(
             [("run", "text"), ("n", "num"), ("min", "num"), ("median", "num"), ("mean", "num"), ("max", "num"), ("maximum account", "text")],
             rows,
+        )
+        + explain(
+            "Closeness falls from 2008 to 2012. The maximum is 0.485747 for akdas and 0.396632 for incredible-ninja. "
+            "The mean falls from 0.322296 to 0.242883. "
+            "The graphs are disconnected, 77 components then 1,082, so this is reach inside that fragmented graph.",
+            "The graph grew faster than its hubs' reach. "
+            "A lower maximum closeness sits with the extra components: even the top account is less close to the rest of the graph.",
         ),
     )
 
@@ -474,7 +556,14 @@ def _finding_roles() -> str:
     note = (
         "<p class=\"note\">Class uses PageRank rank. Above the 90th percentile means rank/nodes ≤ 0.10. "
         "GitHub is github-multi-ego (1,247 nodes). Reddit is r2008-v2 (5,110 nodes). "
-        "antirez is the only UNIVERSAL account. The other four are GITHUB-DOMINANT.</p>"
+        "antirez is the only UNIVERSAL account. The other four are GITHUB-DOMINANT.</p>\n"
+    )
+    note += explain(
+        "Fingerprint similarity is how close the two structural positions are. "
+        "antirez scores 0.9251 and is high on both platforms. chromakode scores 0.6873: GitHub PageRank rank 2 of 1,247, Reddit PageRank rank 3,790 of 5,110. "
+        "hadley is 3 and 1,637. rtomayko is 4 and 1,615. spez is 7 and 516.",
+        "A GitHub rank does not predict the Reddit rank. "
+        "The same person holds a different position once the edges mean something else.",
     )
     return section(
         "finding-8",
@@ -508,6 +597,14 @@ def _finding_identity() -> str:
 </div>
 <p class="note">Seven features: degree, PageRank, betweenness, closeness, community size, mean neighbor degree, and neighbor-degree Gini. The structural cutoff stayed at 0.8. A shared name only adjusted confidence afterward.</p>
 """
+    body += explain(
+        "All three scalings fail as an identity method. "
+        "Within-graph z-scores pile onto the same seven GitHub centers. "
+        "Pooled z-scores make those centers look like each other and like nobody on Reddit. "
+        "Rank percentiles put 93.5 percent of pairs above 0.8, and the best GitHub match for antirez on Reddit is marcel at 0.9839, not antirez at 0.9251.",
+        "A structural fingerprint measures the difference in role. It does not recognize the same person across a follow graph and a co-participation graph. "
+        "Cross-platform identity needs something besides these seven scores.",
+    )
     return section(
         "finding-9",
         "Finding 9",
@@ -556,7 +653,15 @@ def _finding_platforms() -> str:
             rows,
         )
         + '<p class="note">The drawings of these six graphs are in the <a href="#networks">Networks</a> section on this page. '
-        "Follow graphs halve after removing 1% of high-degree nodes. Friendship and Reddit 2008 last until 30%.</p>"
+        "Follow graphs halve after removing 1% of high-degree nodes. Friendship and Reddit 2008 last until 30%.</p>\n"
+        + explain(
+            "Follow edges are interest in another account: GitHub clustering 0.131 and Bluesky clustering 0.021, both halving at 1 percent degree removal. "
+            "Co-participation edges are shared rooms: Reddit 2008 clustering 0.640, Bluesky replies 0.921. "
+            "SNAP friendship clusters at 0.606 and halves at 30 percent. "
+            "GitHub changes shape with the edge rule: follows cluster at 0.131, co-contribution at 0.879.",
+            "The shape follows the edge rule. The platform name does not. "
+            "A follow graph is a set of broadcasters. A co-participation graph is a mesh. A friendship graph holds together under hub removal.",
+        )
     )
     return section(
         "finding-10",
@@ -593,6 +698,15 @@ def _finding_sweep(sweep: list[dict]) -> str:
         rows.append(cells)
     shared = sweep[0]["shared"]
     shared_text = ", ".join(f"{count:,}" for count in shared)
+    nodes = sweep[0].get("nodes") or []
+    overlap = ""
+    if len(nodes) == len(shared) + 1 and all(count > 0 for count in nodes):
+        rates = [shared[index] / nodes[index + 1] for index in range(len(shared))]
+        overlap = (
+            " Share of each later month already present in the earlier month: "
+            + ", ".join(f"{rate:.1%}" for rate in rates)
+            + "."
+        )
     note = (
         f"<p class=\"note\">Shared people on the five pairs: {shared_text}. "
         "Omega 0.1, 0.5, 1.0, and 2.0 find the same communities. "
@@ -602,7 +716,17 @@ def _finding_sweep(sweep: list[dict]) -> str:
         + ", ".join(sweep[0]["months"])
         + ". At omega 0 the counts are "
         + ", ".join(str(count) for count in sweep[0]["communities"])
-        + ".</p>"
+        + "."
+        + overlap
+        + "</p>\n"
+    )
+    note += explain(
+        "At omega 0, community ids are not aligned across months, so persistence is 0. "
+        "From omega 0.1 through 2.0, every account present in both consecutive months keeps the same community id. "
+        "Persistence 1.0 counts only those shared accounts."
+        + overlap,
+        "The people who appear in two consecutive months do not change community once the slices are coupled. "
+        "The four-year change is the much larger set of accounts that are not in both graphs.",
     )
     return section(
         "multislice",
@@ -614,13 +738,39 @@ def _finding_sweep(sweep: list[dict]) -> str:
 
 
 def _steam() -> str:
+    body = (
+        "<p class=\"note\">steamcommunity.com/id/gabelogannewell reports “This profile is private.” "
+        "The scraped layer was not usable, so it was removed.</p>\n"
+        + explain(
+            "SteamGPT returned 79 friends for Gabe Newell's account. Steam's own page for that account says the profile is private. "
+            "The scrape is either cached from before the profile went private, or it is not the live profile. It is not a usable layer.",
+            "The check against the live profile is why the other findings stay. "
+            "They come from official APIs and public archives, and this one did not survive that check.",
+        )
+    )
     return section(
         "steam",
         "Verification",
         "Steam layer removed",
         "SteamGPT returned 79 friends for a profile Steam itself marks private.",
-        "<p class=\"note\">steamcommunity.com/id/gabelogannewell reports “This profile is private.” "
-        "The scraped layer was not usable, so it was removed.</p>",
+        body,
+    )
+
+
+def _story() -> str:
+    return section(
+        "story",
+        "The whole story",
+        "Edge meaning, not the platform",
+        "Reddit from 2008 to 2012 went from a small connected graph to a large fragmented one.",
+        explain(
+            "The old elite left. The 2008 communities dissolved. "
+            "Accounts present in consecutive half-year slices kept their community once coupling was on, and most of each later month was new. "
+            "The 2012 graph has a higher max degree, more components, a thinner rich club, and it breaks when hubs are removed.",
+            "Across the six graphs, the shape follows what an edge means. "
+            "A follow is a broadcaster and an audience. A shared thread or a shared codebase is a mesh. A friendship holds under hub removal. "
+            "The platform name does not decide which of those shapes you get.",
+        ),
     )
 
 
@@ -645,6 +795,8 @@ def render_page(sweep: list[dict], networks_markup: str = "", network_scripts: s
         ("finding-9", "9 Identity"),
         ("finding-10", "10 Platforms"),
         ("multislice", "Multislice"),
+        ("steam", "Steam"),
+        ("story", "Story"),
     ))
     links = "".join(f'<a href="#{anchor}">{esc(label)}</a>' for anchor, label in nav)
     parts = [
@@ -660,6 +812,7 @@ def render_page(sweep: list[dict], networks_markup: str = "", network_scripts: s
         _finding_platforms(),
         _finding_sweep(sweep),
         _steam(),
+        _story(),
     ]
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -721,7 +874,7 @@ input, select, button {{ font: 16px system-ui, sans-serif; padding: 6px 8px; }}
 <body>
 <header>
 <h1>Findings</h1>
-<p class="lede">Stored results for the Reddit years, the six platform graphs, and the half-year multislice. The graphs are drawn on this page. Search highlights a handle in every one, and a column heading sorts a table.</p>
+<p class="lede">Six graphs on four platforms: Reddit, GitHub, Bluesky, and Facebook. Dots are accounts and lines are relationships. The same measurements were run on each graph. Each section below is a stored result, then what that result means. The graphs are drawn on this page. Search highlights a handle in every one, and a column heading sorts a table.</p>
 <nav>{links}</nav>
 </header>
 {networks_markup}

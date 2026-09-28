@@ -53,8 +53,14 @@ def test_page_carries_every_finding_and_the_sweep(tmp_path):
         "finding-9",
         "finding-10",
         "multislice",
+        "steam",
+        "story",
     ):
         assert f'id="{anchor}"' in page
+    assert page.count("What it means") == 13
+    assert page.count("Why it matters") == 13
+    assert "100% containment" not in page
+    assert "rank 2 on degree" in page
     assert "0.3246767820" in page
     assert "0.5582584329" in page
     assert "grauenwolf" in page
