@@ -22,7 +22,68 @@ from pyvis.network import Network
 
 from osi.analysis import _partition_record
 from osi.store import get_run, load_communities, load_graph, load_metrics, load_result
-from viz.interactive import _community_color, populate_pyvis
+
+
+def _community_color(community_id: int) -> str:
+    # tab20 repeats every 20 communities, matching the static plot.
+    red, green, blue, _alpha = plt.colormaps["tab20"](community_id % 20)
+    return f"#{int(red * 255):02x}{int(green * 255):02x}{int(blue * 255):02x}"
+
+
+def populate_pyvis(
+    net: Network,
+    graph: nx.Graph,
+    scores: dict,
+    communities: dict,
+    size_for=None,
+    label_for=None,
+    title_for=None,
+    fields_for=None,
+) -> None:
+    """Add nodes and edges. PageRank sets the size and Louvain sets the color."""
+    for node in graph.nodes:
+        community = int(communities.get(node, 0))
+        score = float(scores.get(node, 0.0))
+        label = str(node) if label_for is None else str(label_for(node))
+        if size_for is None:
+            # Same size scale as the static plot: PageRank times 20000.
+            size = max(score * 20000, 1)
+        else:
+            size = size_for(node, score)
+        if title_for is None:
+            title = f"user: {node} | community: {community} | pagerank: {score:.6f}"
+        else:
+            title = title_for(node, score, community)
+        extra = {} if fields_for is None else fields_for(node, score, community)
+        net.add_node(
+            str(node),
+            label=label,
+            size=size,
+            color=_community_color(community),
+            title=title,
+            **extra,
+        )
+    for left, right in graph.edges:
+        net.add_edge(str(left), str(right))
+
+
+def write_pyvis(graph: nx.Graph, output: str, scores: dict, communities: dict) -> str:
+    """Write one graph with PageRank sizes, Louvain colors, and the PyVis search menu."""
+    # in_line embeds the scripts so the file works without a network connection.
+    net = Network(
+        height="800px",
+        width="100%",
+        bgcolor="#ffffff",
+        font_color="#1c1917",
+        select_menu=True,
+        filter_menu=True,
+        cdn_resources="in_line",
+    )
+    net.barnes_hut()
+    net.toggle_physics(True)
+    populate_pyvis(net, graph, scores, communities)
+    net.write_html(output, notebook=False, open_browser=False)
+    return output
 
 # Top row is the follow graphs plus SNAP friendship. Bottom row is co-participation.
 # That is the 2 by 3 the page draws. SNAP is friendship, so its caption says so.

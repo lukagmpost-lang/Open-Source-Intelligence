@@ -1,4 +1,8 @@
-"""Build a public graph, analyze it, and write node-link JSON."""
+"""Analyze a graph that is already in the store.
+
+Platform fetchers are gone. ``--source file`` is accepted and filled in next.
+``--load-run`` and ``--run`` read a saved graph.
+"""
 
 from __future__ import annotations
 
@@ -16,9 +20,9 @@ sys.path.insert(0, str(ROOT / "src"))
 from osi.analysis import (  # noqa: E402
     adamic_adar,
     betweenness_centrality,
+    closeness_centrality,
     compare_centralities,
     compare_communities,
-    closeness_centrality,
     cpm_communities,
     cross_reference,
     degree_centrality,
@@ -32,22 +36,6 @@ from osi.analysis import (  # noqa: E402
     print_cpm_summary,
     rich_club,
     robustness,
-)
-from viz.interactive import to_interactive_html  # noqa: E402
-from layers.reddit_archive import load_reddit_layers  # noqa: E402
-from osi.datasets import load_snap_facebook  # noqa: E402
-from osi.github_graph import MULTI_EGO_LAYER, MULTI_EGO_RUN  # noqa: E402
-from osi.graph import fetch_github_graph  # noqa: E402
-from osi.layers.bluesky import build_bluesky_layer  # noqa: E402
-from osi.layers.bluesky_organic import build_bluesky_organic  # noqa: E402
-from osi.layers.github_organic import build_github_organic  # noqa: E402
-from osi.identity import (  # noqa: E402
-    annotate_coverage,
-    fetch_github_identities,
-    load_identity_map,
-    merge_identity_layers,
-    normalize_layers,
-    warn_missing_handles,
 )
 from osi.store import (  # noqa: E402
     create_run,
@@ -77,22 +65,9 @@ def _parse_top(value: str) -> int:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build a public social graph and analyze it.")
-    parser.add_argument(
-        "--source",
-        choices=(
-            "github",
-            "snap_facebook",
-            "reddit",
-            "reddit_2012",
-            "bluesky",
-            "github_multi_ego",
-            "github_organic",
-            "bluesky_organic",
-        ),
-        default=None,
-    )
-    parser.add_argument("--username", help="Public GitHub login. Required when --source is github.")
+    parser = argparse.ArgumentParser(description="Analyze a saved graph, or a file in the next step.")
+    parser.add_argument("--source", choices=("file",), default=None)
+    parser.add_argument("--path", help="Edge list or GraphML. Used with --source file.")
     parser.add_argument("--analyze", choices=("all", "centrality", "communities"), default="all")
     parser.add_argument(
         "--compare",
@@ -100,26 +75,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Print a side-by-side comparison. Omit this flag to keep the original report.",
     )
     parser.add_argument("--out", default="graph.json", help="Node-link JSON output path.")
-    # Draw graph.png after the text report. Off unless this flag is present.
     parser.add_argument("--plot", action="store_true", help="Save graph.png after the analysis.")
-    # Value is top=N, for example --link-predict top=10.
     parser.add_argument("--link-predict", type=_parse_top, metavar="top=N")
     parser.add_argument("--cpm", action="store_true", help="Print overlapping k-clique communities.")
-    parser.add_argument("--interactive", action="store_true", help="Save graph.html.")
-    # Interactive HTML only. The analysis above still uses the full graph.
-    parser.add_argument(
-        "--max-nodes",
-        type=int,
-        default=1000,
-        help="Interactive node cap, applied after light edges are removed.",
-    )
-    parser.add_argument(
-        "--min-edge-weight",
-        type=float,
-        default=2,
-        help="Drop interactive edges lighter than this before the node cap.",
-    )
-    # The store is optional. Omitting these flags keeps the old one-shot run.
     parser.add_argument("--save-run", metavar="NAME", help="Save results under this run id.")
     parser.add_argument("--run", metavar="NAME", help="Saved run to analyze. Takes precedence over --source.")
     parser.add_argument("--load-run", metavar="NAME", help="Load a previous run instead of recomputing.")
@@ -128,217 +86,34 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--robustness",
         action="store_true",
-        help="Remove nodes at random, by degree, and by betweenness, and print what remains. With no --source and no --run, the newest saved run is used.",
+        help="Remove nodes at random, by degree, and by betweenness, and print what remains.",
     )
     parser.add_argument(
         "--health",
         action="store_true",
-        help="Print network health, degree-distribution fits, and rich-club coefficients. Stored under the source key health.",
-    )
-    parser.add_argument("--identity", metavar="path.json", help="JSON map from person id to platform handles.")
-    parser.add_argument("--layers", help="Comma-separated layer names. Used only with --identity.")
-    parser.add_argument(
-        "--normalize-layers",
-        action="store_true",
-        help="Scale each layer's edge weights to the same total before the supra-graph is built.",
+        help="Print network health, degree-distribution fits, and rich-club coefficients.",
     )
     args = parser.parse_args(argv)
     args.robustness_loaded_latest = False
     if args.list_runs:
         return args
-    # A named run is the graph to analyze, even when --source is also present.
     if args.run:
         args.load_run = args.run
-    # --robustness with no source and no named run uses the store. GitHub is not assumed.
-    if args.robustness and args.source is None and not args.load_run and not args.identity:
+    if args.robustness and args.source is None and not args.load_run:
         if args.no_cache:
-            parser.error("pass --source with --robustness --no-cache")
+            parser.error("pass --load-run with --robustness --no-cache")
         saved = list_runs()
         if not saved:
-            parser.error("pass --source with --robustness, or save a run first. The store is empty.")
-        # list_runs is oldest first, so the last row is the newest save.
+            parser.error("pass --load-run with --robustness, or save a run first. The store is empty.")
         args.load_run = saved[-1][0]
         args.robustness_loaded_latest = True
-    # Loading does not build a GitHub graph, so a login is not required yet.
     if args.load_run and not args.no_cache:
         return args
-    if args.source is None:
-        args.source = "github"
-    # Identity loads each named layer on its own, so a GitHub login is not required up front.
-    if args.identity:
-        if args.max_nodes < 1:
-            parser.error("--max-nodes must be at least 1")
-        return args
-    if args.source == "github" and not args.username:
-        parser.error("--username is required when --source is github")
-    if args.max_nodes < 1:
-        parser.error("--max-nodes must be at least 1")
+    if args.source == "file":
+        # The reader lands in the next step. The flag is here so the command stays stable.
+        parser.error("--source file is not wired yet")
+    parser.error("pass --load-run, or --run")
     return args
-
-
-def _requested_layers(args: argparse.Namespace) -> list[str]:
-    if args.layers:
-        return [part.strip() for part in args.layers.split(",") if part.strip()]
-    # The flag is documented with these two layers when the caller does not list any.
-    return ["github", "reddit"]
-
-
-def _load_named_layer(name: str, args: argparse.Namespace) -> nx.Graph | None:
-    """Load one layer. Any failure returns None so the rest of the merge can continue."""
-    try:
-        if name == "github":
-            # Identity mode fetches every mapped login, not the single --username ego graph.
-            if args.identity:
-                return fetch_github_identities(load_identity_map(args.identity))
-            if not args.username:
-                return None
-            return fetch_github_graph(args.username)
-        if name == "reddit":
-            if args.identity:
-                # Read the saved January 2008 user layer. Do not rebuild it and do not write that run.
-                stored = load_graph("r2008-v2", "reddit_user")
-                if stored is not None:
-                    return stored
-            return load_reddit_layers()["reddit_user"]
-        if name == "reddit_2012":
-            return load_reddit_layers(
-                "2012-08",
-                user_layer="reddit_2012_user",
-                subreddit_layer="reddit_2012_subreddit",
-            )["reddit_2012_user"]
-        if name == "snap_facebook":
-            return load_snap_facebook()
-        if name == "bluesky":
-            # Public AppView. Only identity-map handles are fetched, and no token is sent.
-            if not args.identity:
-                return None
-            handles = [
-                str(accounts["bluesky"])
-                for accounts in load_identity_map(args.identity).values()
-                if accounts.get("bluesky")
-            ]
-            return build_bluesky_layer(handles)
-    except Exception as error:  # noqa: BLE001 - a bad layer must not abort the merge
-        print(f"warning: layer {name} not loaded: {error}", file=sys.stderr)
-        return None
-    return None
-
-
-def _graph_from_identity(args: argparse.Namespace) -> nx.Graph:
-    identity_map = load_identity_map(args.identity)
-    layers: dict[str, nx.Graph | None] = {}
-    for name in _requested_layers(args):
-        graph = _load_named_layer(name, args)
-        if graph is None:
-            print(f"warning: layer {name} not loaded", file=sys.stderr)
-            continue
-        layers[name] = graph
-    warn_missing_handles(layers, identity_map)
-    if args.normalize_layers:
-        # Scale the layers first. merge_identity_layers then calls the existing supra-graph builder.
-        layers = normalize_layers(layers)
-    merged = merge_identity_layers(layers, identity_map)
-    annotate_coverage(merged)
-    return merged
-
-
-def print_identity_summary(graph: nx.Graph) -> None:
-    """Print how many mapped people landed on both platforms, plus the supra-graph size."""
-    coverage = graph.graph.get("coverage") or {}
-    # "both" lists person ids, so its length is the cross-platform count.
-    print(f"cross-platform persons {len(coverage.get('both') or [])}")
-    print(f"nodes {graph.number_of_nodes()}")
-    interlayer = sum(1 for _left, _right, data in graph.edges(data=True) if data.get("kind") == "interlayer")
-    print(f"interlayer edges {interlayer}")
-
-
-def print_identity_membership(graph: nx.Graph, ranks: dict) -> None:
-    """Print which layer each top PageRank node came from."""
-    print("PageRank top 20 layer membership:")
-    for index, (node, score) in enumerate(list(ranks.items())[:20], start=1):
-        data = graph.nodes[node] if node in graph else {}
-        print(f"{index}. {node} {score:.6f} layer {data.get('layer')} person {data.get('person')}")
-
-
-def _saved_bluesky_layer() -> nx.Graph | None:
-    """Read a Bluesky follow graph that is already stored. Does not write any run."""
-    runs = list(reversed(list_runs()))
-    for run_id, _source, _created_at, _notes in runs:
-        # A run saved with --source bluesky keeps the layer under this name.
-        graph = load_graph(run_id, "bluesky")
-        if graph is not None and graph.number_of_nodes():
-            return graph
-    for run_id, _source, _created_at, _notes in runs:
-        meta = get_run(run_id)
-        layer = (meta.get("config") or {}).get("layer") if meta else None
-        if layer != "supra":
-            continue
-        graph = load_graph(run_id, "supra")
-        if graph is None:
-            continue
-        # The supra-graph rewrites mapped accounts to person|layer. Neighbors stay bluesky:handle.
-        nodes = [node for node, data in graph.nodes(data=True) if data.get("layer") == "bluesky"]
-        if not nodes:
-            continue
-        # Copy. The induced subgraph has no interlayer edges, and the stored supra-graph stays as it was.
-        return graph.subgraph(nodes).copy()
-    return None
-
-
-def _bluesky_graph() -> nx.Graph:
-    """Saved Bluesky layer when one exists. Otherwise fetch the identity.json handles."""
-    saved = _saved_bluesky_layer()
-    if saved is not None:
-        return saved
-    identity_path = ROOT / "identity.json"
-    handles: list[str] = []
-    if identity_path.is_file():
-        handles = [
-            str(accounts["bluesky"])
-            for accounts in load_identity_map(identity_path).values()
-            if isinstance(accounts, dict) and accounts.get("bluesky")
-        ]
-    return build_bluesky_layer(handles)
-
-
-def _github_multi_ego_graph() -> nx.Graph:
-    """The stored multi-ego layer. This does not call the GitHub API or rewrite that run."""
-    graph = load_graph(MULTI_EGO_RUN, MULTI_EGO_LAYER)
-    if graph is not None and graph.number_of_nodes():
-        return graph
-    path = ROOT / "github_multi_ego.graphml"
-    if not path.is_file():
-        raise SystemExit("github multi-ego graph is not in the store and github_multi_ego.graphml is missing")
-    loaded = nx.read_graphml(path)
-    # GraphML stores weight as text. Centrality expects a number.
-    for _left, _right, data in loaded.edges(data=True):
-        if "weight" in data:
-            data["weight"] = float(data["weight"])
-    return loaded
-
-
-def build_graph(args: argparse.Namespace) -> nx.Graph:
-    if args.source == "github_organic":
-        return build_github_organic()
-    if args.source == "bluesky_organic":
-        return build_bluesky_organic()
-    if args.source == "github_multi_ego":
-        return _github_multi_ego_graph()
-    if args.source == "bluesky":
-        return _bluesky_graph()
-    if args.source == "snap_facebook":
-        return load_snap_facebook()
-    if args.source == "reddit":
-        # The user co-participation layer is the graph the report and the plot use.
-        return load_reddit_layers()["reddit_user"]
-    if args.source == "reddit_2012":
-        # August 2012 keeps its own layer names, so the 2008 graph is left as it is.
-        return load_reddit_layers(
-            "2012-08",
-            user_layer="reddit_2012_user",
-            subreddit_layer="reddit_2012_subreddit",
-        )["reddit_2012_user"]
-    return fetch_github_graph(args.username)
 
 
 def community_sizes(membership: dict) -> list[tuple[int, int]]:
@@ -649,23 +424,9 @@ def write_graph(graph: nx.Graph, path: str) -> None:
 
 
 def graph_layer(args: argparse.Namespace) -> str:
-    if args.identity:
-        return "supra"
-    if args.source == "reddit":
-        return "reddit_user"
-    if args.source == "reddit_2012":
-        return "reddit_2012_user"
-    if args.source == "snap_facebook":
-        return "snap_facebook"
-    if args.source == "bluesky":
-        return "bluesky"
-    if args.source == "github_multi_ego":
-        return "github_multi_ego"
-    if args.source == "github_organic":
-        return "github_organic"
-    if args.source == "bluesky_organic":
-        return "bluesky_organic"
-    return "github"
+    if args.source == "file":
+        return "file"
+    return "graph"
 
 
 def _print_saved_runs() -> None:
@@ -720,20 +481,10 @@ def _eigenvector_scores(graph: nx.Graph) -> dict | None:
 
 def _persist_run(args: argparse.Namespace, graph: nx.Graph, centralities: dict | None, communities: dict | None) -> None:
     layer = graph_layer(args)
-    source = "identity" if args.identity else args.source
-    config = {
-        "source": source,
-        "username": args.username,
-        "analyze": args.analyze,
-        "layer": layer,
-        "identity": args.identity,
-        "layers": args.layers,
-        "normalize_layers": bool(args.normalize_layers),
-    }
-    # The flag value is the primary key, so a second save with the same name replaces it.
+    source = args.source or "file"
+    config = {"source": source, "analyze": args.analyze, "layer": layer, "path": args.path}
     run_id = create_run(source, config, args.save_run, run_id=args.save_run)
     save_graph(run_id, layer, graph)
-    # Always store the standard metrics, including ones this report did not print.
     scores = dict(centralities or {})
     if "degree" not in scores:
         scores["degree"] = degree_centrality(graph)
@@ -750,9 +501,6 @@ def _persist_run(args: argparse.Namespace, graph: nx.Graph, centralities: dict |
         save_metrics(run_id, values, metric=metric)
     for algorithm, membership in (communities or {}).items():
         save_communities(run_id, algorithm, membership)
-    if args.identity:
-        # Person ids already classified on the graph: both platforms, or one side only.
-        save_result(run_id, "identity", graph.graph.get("coverage") or {})
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -762,31 +510,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.list_runs:
         _print_saved_runs()
         return 0
-    loaded = False
-    if args.load_run and not args.no_cache:
-        try:
-            graph = _load_saved_graph(args.load_run)
-            loaded = True
-        except (LookupError, json.JSONDecodeError, OSError, ValueError) as error:
-            # --run names one saved graph. Do not silently rebuild a different source.
-            if args.run:
-                print(f"run {args.run} was not found", file=sys.stderr)
-                return 1
-            # A bad or missing --load-run must not stop the command. Rebuild from the source.
-            print(f"warning: could not load run {args.load_run}: {error}; computing fresh", file=sys.stderr)
-            if args.source == "github" and not args.username:
-                raise SystemExit("--username is required when --source is github") from error
-            graph = build_graph(args)
-    elif args.identity:
-        graph = _graph_from_identity(args)
-    else:
-        graph = build_graph(args)
-    centralities = None
-    communities = None
+    try:
+        graph = _load_saved_graph(args.load_run)
+    except (LookupError, json.JSONDecodeError, OSError, ValueError) as error:
+        print(f"run {args.load_run} was not found", file=sys.stderr)
+        print(error, file=sys.stderr)
+        return 1
     if args.robustness:
-        # Saved centralities are the intact-graph ranking. Recomputing betweenness here would repeat that work.
-        degree_scores = load_metrics(args.load_run, "degree") if loaded else None
-        between_scores = load_metrics(args.load_run, "betweenness") if loaded else None
+        degree_scores = load_metrics(args.load_run, "degree")
+        between_scores = load_metrics(args.load_run, "betweenness")
         print_robustness(
             robustness(
                 graph,
@@ -794,26 +526,12 @@ def main(argv: list[str] | None = None) -> int:
                 betweenness_scores=between_scores or None,
             )
         )
-    if loaded:
-        _report_from_store(args, graph)
-    else:
-        if args.analyze in ("all", "centrality"):
-            centralities = print_pagerank(graph)
-        if args.analyze in ("all", "communities"):
-            communities = print_communities(graph)
-    if args.identity:
-        # Communities-only runs have not ranked nodes yet. PageRank is computed here for the membership list.
-        scores = (centralities or {}).get("pagerank") if centralities else None
-        print_identity_membership(graph, scores or pagerank(graph))
+    _report_from_store(args, graph)
     if args.health:
-        # Loaded runs keep their id. A fresh build can still store health when --save-run is set.
         _emit_health(args.load_run or args.save_run, graph)
     if args.compare:
         print_comparison(graph, args.compare)
-    if args.save_run and not args.no_cache and not loaded:
-        _persist_run(args, graph, centralities, communities)
     write_graph(graph, args.out)
-    # Plot last so "Saved graph.png" is the final line of the run.
     if args.plot:
         save_plot(graph)
     if args.link_predict:
@@ -822,14 +540,6 @@ def main(argv: list[str] | None = None) -> int:
         print(f"cpm before: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges")
         print_cpm_summary(cpm_communities(graph))
         print(f"cpm after: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges")
-    if args.interactive:
-        to_interactive_html(
-            graph,
-            max_nodes=args.max_nodes,
-            min_edge_weight=args.min_edge_weight,
-        )
-    if args.identity:
-        print_identity_summary(graph)
     return 0
 
 

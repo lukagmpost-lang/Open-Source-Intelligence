@@ -8,9 +8,10 @@ from viz.compare_platforms import (
     caption_line,
     display_label,
     panel_records,
+    populate_pyvis,
     render_html,
+    write_pyvis,
 )
-from viz.interactive import populate_pyvis, write_pyvis
 from pyvis.network import Network
 
 

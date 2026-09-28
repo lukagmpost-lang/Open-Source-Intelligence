@@ -21,7 +21,7 @@ from main import write_graph
 from osi.analysis import louvain_communities, pagerank
 from osi.store import get_run, list_runs, load_communities, load_graph, load_metrics
 from query import _closest_names, _score_cell
-from viz.interactive import write_pyvis
+from viz.compare_platforms import write_pyvis
 
 
 def _load_run(run_id: str) -> tuple[nx.Graph, dict, dict] | None:
