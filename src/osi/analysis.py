@@ -27,10 +27,32 @@ def pagerank(G: nx.Graph, weight: str = "weight") -> dict[Any, float]:
     return _by_score(nx.pagerank(G, weight=weight))
 
 
+def _undirected_projection(G: nx.Graph) -> nx.Graph:
+    """Return an undirected graph for algorithms that reject a DiGraph.
+
+    An undirected graph is returned as itself. Reciprocal gift edges add their weights.
+    """
+    if not G.is_directed():
+        return G
+    plain = nx.Graph()
+    plain.add_nodes_from(G.nodes(data=True))
+    for left, right, data in G.edges(data=True):
+        weight = float(data.get("weight", 1.0))
+        if plain.has_edge(left, right):
+            plain[left][right]["weight"] = float(plain[left][right].get("weight", 1.0)) + weight
+            continue
+        copied = dict(data)
+        copied["weight"] = weight
+        plain.add_edge(left, right, **copied)
+    return plain
+
+
 def _as_igraph(G: nx.Graph, weight: str | None):
     """Copy an undirected NetworkX graph into igraph, optionally with edge weights."""
     import igraph as ig
 
+    # igraph is built as a simple undirected graph, so a DiGraph is collapsed first.
+    G = _undirected_projection(G)
     names = list(G.nodes)
     index = {node: position for position, node in enumerate(names)}
     edges = []
@@ -97,11 +119,13 @@ def _community_index(groups: list[set[Any]]) -> dict[Any, int]:
 
 
 def louvain_communities(G: nx.Graph, weight: str = "weight") -> dict[Any, int]:
-    groups = _louvain_communities(G, weight=weight, seed=0)
+    # Louvain is defined on undirected graphs. Directed gift edges are collapsed first.
+    groups = _louvain_communities(_undirected_projection(G), weight=weight, seed=0)
     return _community_index([set(group) for group in groups])
 
 
 def leiden_communities(G: nx.Graph, weight: str = "weight") -> dict[Any, int]:
+    G = _undirected_projection(G)
     # leidenalg needs python-igraph. If that import fails, Louvain is the stand-in.
     try:
         import igraph as ig
@@ -177,6 +201,8 @@ def compare_centralities(G: nx.Graph) -> dict[str, Any]:
 
 
 def _partition_record(G: nx.Graph, assignment: dict[Any, int], weight: str = "weight") -> dict[str, Any]:
+    # Modularity in NetworkX rejects a directed graph. The partition was built on this projection.
+    G = _undirected_projection(G)
     grouped: dict[int, set[Any]] = {}
     for node, community in assignment.items():
         grouped.setdefault(community, set()).add(node)
@@ -190,6 +216,7 @@ def _partition_record(G: nx.Graph, assignment: dict[Any, int], weight: str = "we
 
 
 def _girvan_newman(G: nx.Graph, weight: str = "weight") -> dict[str, Any]:
+    G = _undirected_projection(G)
     node_count = G.number_of_nodes()
     if node_count > GIRVAN_NEWMAN_NODE_LIMIT:
         return {
@@ -648,6 +675,8 @@ def network_health(G: nx.Graph) -> dict[str, Any]:
     - avg_degree: mean degree
     - max_degree: max degree
     """
+    # Component counts and clustering below use undirected neighborhoods.
+    G = _undirected_projection(G)
     degrees = [degree for _node, degree in G.degree()]
     node_count = len(degrees)
     if node_count == 0:
@@ -767,6 +796,7 @@ def degree_distribution(G: nx.Graph) -> dict[str, Any]:
 
 def rich_club(G: nx.Graph, k_values: list[int] | None = None) -> dict[int, float | None]:
     """Return dict {k: rich_club_coefficient} for each k."""
+    G = _undirected_projection(G)
     if k_values is None:
         k_values = [10, 20, 50, 100]
     # normalized=True rewires every edge Q times. That is a null model, not the coefficient.

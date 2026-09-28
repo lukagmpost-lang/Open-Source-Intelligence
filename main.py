@@ -41,6 +41,7 @@ from osi.graph import fetch_github_graph  # noqa: E402
 from osi.layers.bluesky import build_bluesky_layer  # noqa: E402
 from osi.layers.bluesky_organic import build_bluesky_organic  # noqa: E402
 from osi.layers.github_organic import build_github_organic  # noqa: E402
+from osi.layers.telegram_gifts import build_telegram_gifts_layer  # noqa: E402
 from osi.identity import (  # noqa: E402
     annotate_coverage,
     fetch_github_identities,
@@ -89,6 +90,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "github_multi_ego",
             "github_organic",
             "bluesky_organic",
+            "telegram_gifts",
         ),
         default=None,
     )
@@ -318,6 +320,8 @@ def _github_multi_ego_graph() -> nx.Graph:
 
 
 def build_graph(args: argparse.Namespace) -> nx.Graph:
+    if args.source == "telegram_gifts":
+        return build_telegram_gifts_layer()
     if args.source == "github_organic":
         return build_github_organic()
     if args.source == "bluesky_organic":
@@ -665,6 +669,8 @@ def graph_layer(args: argparse.Namespace) -> str:
         return "github_organic"
     if args.source == "bluesky_organic":
         return "bluesky_organic"
+    if args.source == "telegram_gifts":
+        return "telegram_gifts"
     return "github"
 
 
@@ -707,7 +713,9 @@ def _report_from_store(args: argparse.Namespace, graph: nx.Graph) -> None:
 
 def _eigenvector_scores(graph: nx.Graph) -> dict | None:
     # A disconnected graph has no single leading eigenvector. Skip it instead of failing the save.
-    if graph.number_of_nodes() == 0 or not nx.is_connected(graph):
+    # is_connected rejects a DiGraph. Weak connectivity is the directed equivalent.
+    one_piece = nx.is_weakly_connected(graph) if graph.is_directed() else nx.is_connected(graph)
+    if graph.number_of_nodes() == 0 or not one_piece:
         print("warning: eigenvector skipped: graph is disconnected", file=sys.stderr)
         return None
     try:
@@ -729,6 +737,8 @@ def _persist_run(args: argparse.Namespace, graph: nx.Graph, centralities: dict |
         "identity": args.identity,
         "layers": args.layers,
         "normalize_layers": bool(args.normalize_layers),
+        # Gift edges point from sender to recipient. Other sources are undirected.
+        "directed": bool(graph.is_directed()),
     }
     # The flag value is the primary key, so a second save with the same name replaces it.
     run_id = create_run(source, config, args.save_run, run_id=args.save_run)
