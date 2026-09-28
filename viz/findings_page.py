@@ -858,23 +858,24 @@ line.grid {{ stroke: #e7e5e4; stroke-width: 1; }}
 .tag {{ margin: 0 0 8px; color: #78716c; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; }}
 .toolbar {{ display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: center; padding: 4px 0 12px; }}
 input, select, button {{ font: 16px system-ui, sans-serif; padding: 6px 8px; }}
-.networks {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }}
+.networks {{ display: grid; grid-template-columns: 1fr; gap: 16px; }}
 .networks h2 {{ grid-column: 1 / -1; font-size: 18px; margin: 8px 0; }}
 .card {{ background: #fff; border: 1px solid #e7e5e4; min-width: 0; }}
 .caption {{ margin: 0; padding: 8px 10px; font-size: 13px; line-height: 1.4; }}
-.network {{ height: 420px; background: #fff; }}
-.networks circle.dim {{ opacity: 0.15; }}
-.networks circle.hit {{ stroke: #1c1917; stroke-width: 2px; }}
-.networks text {{ font: 11px system-ui, sans-serif; fill: #44403c; pointer-events: none; }}
+.network {{ width: 100%; height: auto; aspect-ratio: 1000 / 720; background: #fff; touch-action: none; cursor: grab; }}
+.networks g.node.dim {{ opacity: 0.12; }}
+.networks g.node.hit circle {{ stroke: #1c1917; stroke-width: 2px; }}
+.networks g.node.hit text {{ font-weight: 700; fill: #1c1917; }}
+.networks text {{ font: 15px system-ui, sans-serif; fill: #44403c; pointer-events: none; }}
 @media (max-width: 900px) {{
-  .stats, .people, .networks {{ grid-template-columns: 1fr; }}
+  .stats, .people {{ grid-template-columns: 1fr; }}
 }}
 </style>
 </head>
 <body>
 <header>
 <h1>Findings</h1>
-<p class="lede">Six graphs on four platforms: Reddit, GitHub, Bluesky, and Facebook. Dots are accounts and lines are relationships. The same measurements were run on each graph. Each section below is a stored result, then what that result means. The graphs are drawn on this page. Search highlights a handle in every one, and a column heading sorts a table.</p>
+<p class="lede">Six graphs on four platforms: Reddit, GitHub, Bluesky, and Facebook. Dots are accounts and lines are relationships. The same measurements were run on each graph. Each section below is a stored result, then what that result means. The graphs are drawn on this page, every drawn node is named, and you can drag, zoom, and let the layout settle. Search highlights a handle in every one, and a column heading sorts a table.</p>
 <nav>{links}</nav>
 </header>
 {networks_markup}
@@ -967,7 +968,9 @@ def network_drawings(panels: list[dict]) -> tuple[str, str]:
             return 36 + (x - min_x) / span_x * 928, 36 + (y - min_y) / span_y * 628
 
         parts = [
-            f'<svg class="network" viewBox="0 0 1000 700" role="img" aria-label="{esc(panel["caption"])}">'
+            f'<svg class="network" viewBox="0 0 1000 720" role="img" aria-label="{esc(panel["caption"])}">',
+            '<g class="viewport">',
+            '<g class="edges">',
         ]
         for edge in edges:
             left, right = edge.get("from"), edge.get("to")
@@ -976,10 +979,12 @@ def network_drawings(panels: list[dict]) -> tuple[str, str]:
             x1, y1 = place(left)
             x2, y2 = place(right)
             parts.append(
-                f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="#d6d3d1" stroke-width="1"/>'
+                f'<line data-from="{esc(left)}" data-to="{esc(right)}" '
+                f'x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
+                'stroke="#d6d3d1" stroke-width="1"/>'
             )
-        labeled = sorted(nodes, key=lambda node: float(node.get("size") or 0.0), reverse=True)[:8]
-        labeled_ids = {node.get("id") for node in labeled}
+        parts.append("</g>")
+        parts.append('<g class="nodes">')
         for node in nodes:
             node_id = node.get("id")
             if node_id not in pos:
@@ -989,18 +994,19 @@ def network_drawings(panels: list[dict]) -> tuple[str, str]:
             radius = min(14.0, max(3.5, radius))
             label = str(node.get("label") or node_id)
             parts.append(
-                "<circle "
-                f'cx="{x:.1f}" cy="{y:.1f}" r="{radius:.1f}" '
-                f'fill="{esc(node.get("color") or "#44403c")}" '
-                f'data-label="{esc(label)}" '
+                f'<g class="node" data-id="{esc(node_id)}" data-label="{esc(label)}" '
                 f'data-community="{esc(node.get("colorCommunity") or node.get("color") or "#44403c")}" '
                 f'data-pagerank="{esc(node.get("colorPagerank") or "#44403c")}" '
                 f'data-degree="{esc(node.get("colorDegree") or "#44403c")}">'
+            )
+            parts.append(
+                f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{radius:.1f}" '
+                f'fill="{esc(node.get("color") or "#44403c")}">'
                 f"<title>{esc(node.get('title') or label)}</title></circle>"
             )
-            if node_id in labeled_ids:
-                parts.append(f'<text x="{x + radius + 2:.1f}" y="{y + 3:.1f}">{esc(label)}</text>')
-        parts.append("</svg>")
+            parts.append(f'<text x="{x + radius + 3:.1f}" y="{y + 4:.1f}">{esc(label)}</text>')
+            parts.append("</g>")
+        parts.append("</g></g></svg>")
         cards.append(
             '<section class="card"><p class="caption">'
             + esc(panel["caption"])
@@ -1017,30 +1023,248 @@ def network_drawings(panels: list[dict]) -> tuple[str, str]:
         '<option value="community">community</option>\n'
         '<option value="pagerank">pagerank</option>\n'
         '<option value="degree">degree</option>\n'
-        "</select></label></div>\n"
-        '<p class="note">Each drawing is the 100 highest-PageRank people, with at most 400 edges. The caption above a drawing is the full stored graph.</p>\n'
+        "</select></label>\n"
+        '<button id="physics-toggle" type="button">Freeze physics</button>\n'
+        "</div>\n"
+        '<p class="note">Each drawing is the 100 highest-PageRank people, with at most 400 edges, and every one of those nodes is labeled. '
+        "Drag a node, scroll to zoom, drag the background to pan, and double-click to reset the view. "
+        "The caption above a drawing is the full stored graph.</p>\n"
         '<div class="networks">\n'
         + "\n".join(cards)
         + "\n</div></section>"
     )
     scripts = """<script>
+const graphs = Array.from(document.querySelectorAll("svg.network")).map((svg) => ({
+  svg: svg,
+  nodes: Array.from(svg.querySelectorAll("g.node")),
+  lines: Array.from(svg.querySelectorAll("line")),
+}));
+let live = true;
+let ticking = false;
+let cool = 1;
+const physicsButton = document.getElementById("physics-toggle");
+
+function pointOf(node) {
+  const circle = node.querySelector("circle");
+  return {
+    x: Number(circle.getAttribute("cx")),
+    y: Number(circle.getAttribute("cy")),
+    r: Number(circle.getAttribute("r")),
+  };
+}
+
+function placeNode(node, x, y) {
+  const circle = node.querySelector("circle");
+  const text = node.querySelector("text");
+  const radius = Number(circle.getAttribute("r"));
+  circle.setAttribute("cx", x.toFixed(1));
+  circle.setAttribute("cy", y.toFixed(1));
+  text.setAttribute("x", (x + radius + 3).toFixed(1));
+  text.setAttribute("y", (y + 4).toFixed(1));
+}
+
+function drawLines(graph, positions) {
+  graph.lines.forEach((line) => {
+    const left = positions.get(line.dataset.from);
+    const right = positions.get(line.dataset.to);
+    if (!left || !right) return;
+    line.setAttribute("x1", left.x.toFixed(1));
+    line.setAttribute("y1", left.y.toFixed(1));
+    line.setAttribute("x2", right.x.toFixed(1));
+    line.setAttribute("y2", right.y.toFixed(1));
+  });
+}
+
+function stepGraph(graph) {
+  const positions = new Map(graph.nodes.map((node) => [node.dataset.id, pointOf(node)]));
+  const push = new Map(graph.nodes.map((node) => [node.dataset.id, { x: 0, y: 0 }]));
+  for (let i = 0; i < graph.nodes.length; i += 1) {
+    for (let j = i + 1; j < graph.nodes.length; j += 1) {
+      const left = graph.nodes[i];
+      const right = graph.nodes[j];
+      const a = positions.get(left.dataset.id);
+      const b = positions.get(right.dataset.id);
+      let dx = a.x - b.x;
+      let dy = a.y - b.y;
+      let dist = Math.hypot(dx, dy) || 0.1;
+      const gap = a.r + b.r + 26 + Math.min(36, (left.dataset.label || "").length);
+      const force = dist < gap ? (gap - dist) * 0.08 : 140 / (dist * dist);
+      dx /= dist;
+      dy /= dist;
+      push.get(left.dataset.id).x += dx * force;
+      push.get(left.dataset.id).y += dy * force;
+      push.get(right.dataset.id).x -= dx * force;
+      push.get(right.dataset.id).y -= dy * force;
+    }
+  }
+  graph.lines.forEach((line) => {
+    const a = positions.get(line.dataset.from);
+    const b = positions.get(line.dataset.to);
+    if (!a || !b) return;
+    const pull = 0.012;
+    push.get(line.dataset.from).x += (b.x - a.x) * pull;
+    push.get(line.dataset.from).y += (b.y - a.y) * pull;
+    push.get(line.dataset.to).x += (a.x - b.x) * pull;
+    push.get(line.dataset.to).y += (a.y - b.y) * pull;
+  });
+  let speed = 0;
+  graph.nodes.forEach((node) => {
+    const here = positions.get(node.dataset.id);
+    if (node.dataset.pin === "1") {
+      speed += Math.hypot(Number(node.dataset.vx) || 0, Number(node.dataset.vy) || 0);
+      return;
+    }
+    const force = push.get(node.dataset.id);
+    force.x += (500 - here.x) * 0.004;
+    force.y += (360 - here.y) * 0.004;
+    const vx = (((Number(node.dataset.vx) || 0) * 0.6) + force.x) * cool;
+    const vy = (((Number(node.dataset.vy) || 0) * 0.6) + force.y) * cool;
+    node.dataset.vx = vx.toFixed(3);
+    node.dataset.vy = vy.toFixed(3);
+    placeNode(node, Math.max(24, Math.min(860, here.x + vx)), Math.max(24, Math.min(690, here.y + vy)));
+    speed += Math.hypot(vx, vy);
+    positions.set(node.dataset.id, pointOf(node));
+  });
+  drawLines(graph, positions);
+  return speed / Math.max(graph.nodes.length, 1);
+}
+
+function stopPhysics() {
+  live = false;
+  ticking = false;
+  physicsButton.textContent = "Unfreeze physics";
+}
+
+function frame() {
+  if (!live) {
+    ticking = false;
+    return;
+  }
+  cool = Math.max(0, cool - 0.008);
+  const speed = graphs.reduce((total, graph) => total + stepGraph(graph), 0) / Math.max(graphs.length, 1);
+  if (cool === 0 || speed < 0.05) {
+    stopPhysics();
+    return;
+  }
+  requestAnimationFrame(frame);
+}
+
+function startPhysics() {
+  live = true;
+  cool = 1;
+  physicsButton.textContent = "Freeze physics";
+  if (!ticking) {
+    ticking = true;
+    requestAnimationFrame(frame);
+  }
+}
+
+physicsButton.addEventListener("click", () => {
+  if (live) {
+    live = false;
+    physicsButton.textContent = "Unfreeze physics";
+    return;
+  }
+  startPhysics();
+});
+
+function viewOf(svg) {
+  return {
+    x: Number(svg.dataset.panX || 0),
+    y: Number(svg.dataset.panY || 0),
+    k: Number(svg.dataset.zoom || 1),
+  };
+}
+
+function applyView(svg) {
+  const view = viewOf(svg);
+  svg.querySelector(".viewport").setAttribute(
+    "transform",
+    "translate(" + view.x.toFixed(1) + " " + view.y.toFixed(1) + ") scale(" + view.k.toFixed(3) + ")"
+  );
+}
+
+function worldPoint(svg, clientX, clientY) {
+  const rect = svg.getBoundingClientRect();
+  const view = viewOf(svg);
+  const x = ((clientX - rect.left) / rect.width) * 1000;
+  const y = ((clientY - rect.top) / rect.height) * 720;
+  return { x: (x - view.x) / view.k, y: (y - view.y) / view.k };
+}
+
+let drag = null;
+graphs.forEach((graph) => {
+  const svg = graph.svg;
+  svg.addEventListener("pointerdown", (event) => {
+    const node = event.target.closest("g.node");
+    svg.setPointerCapture(event.pointerId);
+    if (node) {
+      node.dataset.pin = "1";
+      drag = { kind: "node", node: node, svg: svg };
+      return;
+    }
+    const view = viewOf(svg);
+    drag = { kind: "pan", svg: svg, x: event.clientX, y: event.clientY, panX: view.x, panY: view.y };
+  });
+  svg.addEventListener("pointermove", (event) => {
+    if (!drag || drag.svg !== svg) return;
+    if (drag.kind === "node") {
+      const spot = worldPoint(svg, event.clientX, event.clientY);
+      placeNode(drag.node, spot.x, spot.y);
+      drag.node.dataset.vx = "0";
+      drag.node.dataset.vy = "0";
+      drawLines(graph, new Map(graph.nodes.map((node) => [node.dataset.id, pointOf(node)])));
+      return;
+    }
+    const rect = svg.getBoundingClientRect();
+    svg.dataset.panX = String(drag.panX + ((event.clientX - drag.x) / rect.width) * 1000);
+    svg.dataset.panY = String(drag.panY + ((event.clientY - drag.y) / rect.height) * 720);
+    applyView(svg);
+  });
+  svg.addEventListener("pointerup", () => {
+    if (drag && drag.kind === "node") drag.node.dataset.pin = "0";
+    drag = null;
+  });
+  svg.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    const view = viewOf(svg);
+    const rect = svg.getBoundingClientRect();
+    const px = ((event.clientX - rect.left) / rect.width) * 1000;
+    const py = ((event.clientY - rect.top) / rect.height) * 720;
+    const next = Math.min(8, Math.max(0.35, view.k * (event.deltaY < 0 ? 1.12 : 1 / 1.12)));
+    const ratio = next / view.k;
+    svg.dataset.zoom = String(next);
+    svg.dataset.panX = String(px - (px - view.x) * ratio);
+    svg.dataset.panY = String(py - (py - view.y) * ratio);
+    applyView(svg);
+  }, { passive: false });
+  svg.addEventListener("dblclick", () => {
+    svg.dataset.panX = "0";
+    svg.dataset.panY = "0";
+    svg.dataset.zoom = "1";
+    applyView(svg);
+  });
+});
+
 document.getElementById("search").addEventListener("input", (event) => {
   const query = event.target.value.trim().toLowerCase();
-  const circles = Array.from(document.querySelectorAll(".networks circle"));
-  const exact = circles.filter((circle) => (circle.dataset.label || "").toLowerCase() === query);
-  const hits = exact.length ? exact : circles.filter((circle) => (circle.dataset.label || "").toLowerCase().includes(query));
+  const nodes = graphs.flatMap((graph) => graph.nodes);
+  const exact = nodes.filter((node) => (node.dataset.label || "").toLowerCase() === query);
+  const hits = exact.length ? exact : nodes.filter((node) => (node.dataset.label || "").toLowerCase().includes(query));
   const hitSet = new Set(hits);
-  circles.forEach((circle) => {
-    const on = !query || hitSet.has(circle);
-    circle.classList.toggle("dim", Boolean(query) && !on);
-    circle.classList.toggle("hit", Boolean(query) && on);
+  nodes.forEach((node) => {
+    const on = !query || hitSet.has(node);
+    node.classList.toggle("dim", Boolean(query) && !on);
+    node.classList.toggle("hit", Boolean(query) && on);
   });
 });
 document.getElementById("color-by").addEventListener("change", (event) => {
-  document.querySelectorAll(".networks circle").forEach((circle) => {
-    circle.setAttribute("fill", circle.dataset[event.target.value] || circle.getAttribute("fill"));
+  graphs.flatMap((graph) => graph.nodes).forEach((node) => {
+    const circle = node.querySelector("circle");
+    circle.setAttribute("fill", node.dataset[event.target.value] || circle.getAttribute("fill"));
   });
 });
+startPhysics();
 </script>
 """
     return markup, scripts

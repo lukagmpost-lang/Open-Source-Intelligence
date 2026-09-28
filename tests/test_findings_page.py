@@ -127,4 +127,7 @@ def test_page_embeds_the_six_networks(tmp_path):
     assert page.count("<script>") == 2
     assert "document.write" not in page
     assert "100 highest-PageRank" in page
+    assert 'id="physics-toggle"' in page
+    assert markup.count('<g class="node"') == 6
+    assert markup.count("<text ") == 6
     assert max(len(line) for line in page.splitlines()) <= 500
