@@ -13,16 +13,16 @@ def _index(month: tuple[int, int]) -> int:
     return year * 12 + mon
 
 
-def test_six_months_step_sixteen_months():
+def test_six_months_step_fifteen_months():
     gaps = [_index(right) - _index(left) for left, right in zip(_MODULE.MONTHS, _MODULE.MONTHS[1:])]
-    assert _MODULE.MONTHS[0] == (2005, 12)
+    assert _MODULE.MONTHS[0] == (2006, 5)
     assert _MODULE.MONTHS[-1] == (2012, 8)
-    assert gaps == [16, 16, 16, 16, 16]
+    assert gaps == [15, 15, 15, 15, 15]
 
 
 def test_four_slice_fallback_keeps_both_ends():
     reduced = _MODULE.reduce_to_four(_MODULE.MONTHS)
-    assert reduced[0] == (2005, 12)
+    assert reduced[0] == (2006, 5)
     assert reduced[-1] == (2012, 8)
     assert len(reduced) == 4
     assert len(set(reduced)) == 4

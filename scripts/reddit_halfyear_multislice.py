@@ -28,13 +28,15 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
-# December 2005 through August 2012 is 80 months. Five gaps of 16 months land on these six.
+# 2005-12 is only the subreddit reddit.com, so the eight-subreddit filter is empty there.
+# 2006-05 is the earliest month in the even grid that still has those subreddits.
+# August 2012 is the last month. Five gaps of 15 months land on these six.
 MONTHS = (
-    (2005, 12),
-    (2007, 4),
-    (2008, 8),
-    (2009, 12),
-    (2011, 4),
+    (2006, 5),
+    (2007, 8),
+    (2008, 11),
+    (2010, 2),
+    (2011, 5),
     (2012, 8),
 )
 OMEGA = 0.5
