@@ -41,6 +41,16 @@ def main() -> None:
     session_path.parent.mkdir(parents=True, exist_ok=True)
 
     client = TelegramClient(str(session_path), int(api_id_raw), api_hash)
+    # Port 443 on Telegram DCs is answered with HTTP here, which breaks the handshake.
+    # 5222 is an MTProto port, including after a phone-number DC migration.
+    original_set_dc = client.session.set_dc
+
+    def set_dc(dc_id, server_address, port):
+        return original_set_dc(dc_id, server_address, 5222)
+
+    client.session.set_dc = set_dc
+    if client.session.server_address and client.session.port != 5222:
+        original_set_dc(client.session.dc_id, client.session.server_address, 5222)
     # First run asks for the phone, the login code, and the 2FA password if one is set.
     client.start()
     me = client.get_me()
