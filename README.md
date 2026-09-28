@@ -2,6 +2,21 @@
 
 Local multi-layer graph of public social relations. Accounts are nodes, public relations are weighted edges, and each relation type is a layer. The viewer groups accounts into communities and lists bridges: accounts whose neighbors fall in more than one community.
 
+## Try it
+
+`examples/` holds the manual test inputs.
+
+- `examples/simple.csv` is a weighted edge list. Alice, Bob, and Carol form a triangle, and Dave is tied to Alice.
+- `examples/simple.json` is NetworkX node-link JSON: a path from `a` to `c` through `b`.
+- `examples/simple.graphml` has four nodes in two communities. Alice and Bob are east, Carol and Dave are west, and the edge from Bob to Carol is the bridge.
+
+```bash
+python3 main.py --source file --path examples/simple.csv --save-run simple-v1
+python3 query.py --run simple-v1 "top 5 by pagerank"
+```
+
+The same two commands work with `examples/simple.json` and `examples/simple.graphml`.
+
 ## What it will collect
 
 | Source | Relation | Access |

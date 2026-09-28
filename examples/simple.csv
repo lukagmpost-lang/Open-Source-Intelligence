@@ -1,0 +1,5 @@
+source,target,weight
+alice,bob,2
+bob,carol,1
+carol,alice,3
+alice,dave,1

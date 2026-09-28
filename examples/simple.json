@@ -1,0 +1,7 @@
+{
+  "nodes": [{"id": "a"}, {"id": "b"}, {"id": "c"}],
+  "links": [
+    {"source": "a", "target": "b", "weight": 1},
+    {"source": "b", "target": "c", "weight": 1}
+  ]
+}
