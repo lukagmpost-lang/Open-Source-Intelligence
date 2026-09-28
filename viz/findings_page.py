@@ -127,7 +127,7 @@ def _chart_frame(width: int, height: int, y_max: float, y_ticks: int, x_labels: 
     for index, label in enumerate(x_labels):
         x = left + index * slot
         parts.append(f'<text x="{x:.1f}" y="{height - 8}" class="tick" text-anchor="middle">{esc(label)}</text>')
-    return "".join(parts), left, top, plot_w, plot_h
+    return "\n".join(parts), left, top, plot_w, plot_h
 
 
 def line_chart(series: tuple[dict, ...], x_labels: list[str], y_max: float, title: str) -> str:
@@ -147,11 +147,15 @@ def line_chart(series: tuple[dict, ...], x_labels: list[str], y_max: float, titl
             f'<polyline points="{" ".join(points)}" fill="none" stroke="{item["color"]}" stroke-width="2.4"{dash}/>'
         )
     lines.append("</svg>")
-    legend = "".join(
+    legend = "\n".join(
         f'<span class="legend"><i style="background:{item["color"]}"></i>{esc(item["name"])}</span>'
         for item in series
     )
-    return f'<figure class="chart"><figcaption>{esc(title)}</figcaption>{"".join(lines)}<div class="legend-row">{legend}</div></figure>'
+    return (
+        f'<figure class="chart">\n<figcaption>{esc(title)}</figcaption>\n'
+        + "\n".join(lines)
+        + f'\n<div class="legend-row">{legend}</div>\n</figure>'
+    )
 
 
 def bar_chart(labels: list[str], values: list[float], captions: list[str], y_max: float, title: str, colors: list[str] | None = None) -> str:
@@ -176,7 +180,11 @@ def bar_chart(labels: list[str], values: list[float], captions: list[str], y_max
         parts.append(f'<text x="{x + bar_w / 2:.1f}" y="{y - 6:.1f}" class="tick" text-anchor="middle">{esc(caption)}</text>')
         parts.append(f'<text x="{x + bar_w / 2:.1f}" y="{height - 18}" class="tick" text-anchor="middle">{esc(label)}</text>')
     parts.append("</svg>")
-    return f'<figure class="chart"><figcaption>{esc(title)}</figcaption>{"".join(parts)}</figure>'
+    return (
+        f'<figure class="chart">\n<figcaption>{esc(title)}</figcaption>\n'
+        + "\n".join(parts)
+        + "\n</figure>"
+    )
 
 
 def stacked_bar(pairs: tuple[tuple[str, int], ...], title: str) -> str:
@@ -189,14 +197,14 @@ def stacked_bar(pairs: tuple[tuple[str, int], ...], title: str) -> str:
         spans.append(
             f'<span style="width:{width:.4f}%;background:{colors[name]}" title="{esc(name)} {count}">{label}</span>'
         )
-    legend = "".join(
+    legend = "\n".join(
         f'<span class="legend"><i style="background:{colors[name]}"></i>{esc(name)} {count}</span>'
         for name, count in pairs
     )
     return (
-        f'<figure class="chart"><figcaption>{esc(title)}</figcaption>'
-        f'<div class="stack" role="img">{"".join(spans)}</div>'
-        f'<div class="legend-row">{legend}</div></figure>'
+        f'<figure class="chart">\n<figcaption>{esc(title)}</figcaption>\n'
+        f'<div class="stack" role="img">{"".join(spans)}</div>\n'
+        f'<div class="legend-row">{legend}</div>\n</figure>'
     )
 
 
@@ -208,21 +216,21 @@ def table(headers: list[tuple[str, str]], rows: list[list[tuple[str, str]]]) -> 
         cells = "".join(f'<td data-value="{esc(value)}">{esc(text)}</td>' for value, text in row)
         body.append(f"<tr>{cells}</tr>")
     return (
-        '<div class="table-wrap"><table class="sortable"><thead><tr>'
+        '<div class="table-wrap">\n<table class="sortable"><thead><tr>'
         + head
-        + "</tr></thead><tbody>"
-        + "".join(body)
-        + "</tbody></table></div>"
+        + "</tr></thead>\n<tbody>\n"
+        + "\n".join(body)
+        + "\n</tbody></table>\n</div>"
     )
 
 
 def section(anchor: str, number: str, title: str, claim: str, body: str) -> str:
     return (
-        f'<section id="{anchor}">'
-        f'<p class="eyebrow">{esc(number)}</p>'
-        f"<h2>{esc(title)}</h2>"
-        f'<p class="claim">{esc(claim)}</p>'
-        f"{body}</section>"
+        f'<section id="{anchor}">\n'
+        f'<p class="eyebrow">{esc(number)}</p>\n'
+        f"<h2>{esc(title)}</h2>\n"
+        f'<p class="claim">{esc(claim)}</p>\n'
+        f"{body}\n</section>"
     )
 
 
@@ -257,11 +265,11 @@ def _finding_modularity() -> str:
 
 def _finding_elites() -> str:
     body = (
-        '<div class="stats">'
-        '<p><strong>99</strong><span>of the 100 highest-PageRank accounts in 2012 are absent from 2008</span></p>'
-        '<p><strong>1</strong><span>of the 2008 top 100 is still in the 2012 top 100: grauenwolf, rank 31 to rank 62</span></p>'
-        '<p><strong>64</strong><span>of the 2008 top 100 are gone. 36 are still in the 2012 graph, and 1 is still in the top 100.</span></p>'
-        "</div>"
+        '<div class="stats">\n'
+        '<p><strong>99</strong><span>of the 100 highest-PageRank accounts in 2012 are absent from 2008</span></p>\n'
+        '<p><strong>1</strong><span>of the 2008 top 100 is still in the 2012 top 100: grauenwolf, rank 31 to rank 62</span></p>\n'
+        '<p><strong>64</strong><span>of the 2008 top 100 are gone. 36 are still in the 2012 graph, and 1 is still in the top 100.</span></p>\n'
+        "</div>\n"
         '<p class="note">compare.py --a r2008-v2 --b r2012-v2 --mode cohort --metric pagerank --top 100. '
         "grauenwolf PageRank share moved from 0.6067% to 0.1131%.</p>"
     )
@@ -701,7 +709,10 @@ input, select, button {{ font: 16px system-ui, sans-serif; padding: 6px 8px; }}
 .networks h2 {{ grid-column: 1 / -1; font-size: 18px; margin: 8px 0; }}
 .card {{ background: #fff; border: 1px solid #e7e5e4; min-width: 0; }}
 .caption {{ margin: 0; padding: 8px 10px; font-size: 13px; line-height: 1.4; }}
-.network {{ height: 420px; }}
+.network {{ height: 420px; background: #fff; }}
+.networks circle.dim {{ opacity: 0.15; }}
+.networks circle.hit {{ stroke: #1c1917; stroke-width: 2px; }}
+.networks text {{ font: 11px system-ui, sans-serif; fill: #44403c; pointer-events: none; }}
 @media (max-width: 900px) {{
   .stats, .people, .networks {{ grid-template-columns: 1fr; }}
 }}
@@ -710,7 +721,7 @@ input, select, button {{ font: 16px system-ui, sans-serif; padding: 6px 8px; }}
 <body>
 <header>
 <h1>Findings</h1>
-<p class="lede">Stored results for the Reddit years, the six platform graphs, and the half-year multislice. The graphs are on this page. Search highlights a handle in every one, and a column heading sorts a table.</p>
+<p class="lede">Stored results for the Reddit years, the six platform graphs, and the half-year multislice. The graphs are drawn on this page. Search highlights a handle in every one, and a column heading sorts a table.</p>
 <nav>{links}</nav>
 </header>
 {networks_markup}
@@ -746,30 +757,150 @@ document.querySelectorAll("table.sortable th").forEach((header) => {{
 """
 
 
+# Drawings stay small enough for a browser and for Cursor's preview. The captions still
+# report the full stored graph. vis.js is not embedded: that library is what made the
+# downloaded file open as a broken preview.
+DRAW_NODE_CAP = 100
+DRAW_EDGE_CAP = 400
+
+
+def _thin_edges(nodes: list[dict], edges: list[dict], limit: int) -> list[dict]:
+    """Keep the edges that touch the highest-PageRank nodes. Size tracks PageRank."""
+    if len(edges) <= limit:
+        return edges
+    rank = {node.get("id"): float(node.get("size") or 0.0) for node in nodes}
+
+    def score(edge: dict) -> float:
+        return rank.get(edge.get("from"), 0.0) + rank.get(edge.get("to"), 0.0)
+
+    ranked = sorted(edges, key=score, reverse=True)
+    return ranked[:limit]
+
+
+def _layout(nodes: list[dict], edges: list[dict]) -> dict:
+    import networkx as nx
+
+    graph = nx.Graph()
+    graph.add_nodes_from(node.get("id") for node in nodes)
+    for edge in edges:
+        left, right = edge.get("from"), edge.get("to")
+        if left in graph and right in graph:
+            graph.add_edge(left, right)
+    if graph.number_of_nodes() == 0:
+        return {}
+    return nx.spring_layout(graph, seed=0, iterations=50)
+
+
+def network_drawings(panels: list[dict]) -> tuple[str, str]:
+    """Six SVG graphs plus a short search and color script. No bundled library."""
+    cards = []
+    for index, panel in enumerate(panels):
+        if index == 0:
+            cards.append("<h2>Follow graphs, plus the SNAP friendship graph</h2>")
+        if index == 3:
+            cards.append("<h2>Co-participation</h2>")
+        nodes = list(panel["nodes"])
+        edges = _thin_edges(nodes, list(panel["edges"]), DRAW_EDGE_CAP)
+        pos = _layout(nodes, edges)
+        xs = [point[0] for point in pos.values()] or [0.0]
+        ys = [point[1] for point in pos.values()] or [0.0]
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        span_x = max_x - min_x or 1.0
+        span_y = max_y - min_y or 1.0
+
+        def place(node_id) -> tuple[float, float]:
+            x, y = pos.get(node_id, (0.0, 0.0))
+            return 36 + (x - min_x) / span_x * 928, 36 + (y - min_y) / span_y * 628
+
+        parts = [
+            f'<svg class="network" viewBox="0 0 1000 700" role="img" aria-label="{esc(panel["caption"])}">'
+        ]
+        for edge in edges:
+            left, right = edge.get("from"), edge.get("to")
+            if left not in pos or right not in pos:
+                continue
+            x1, y1 = place(left)
+            x2, y2 = place(right)
+            parts.append(
+                f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="#d6d3d1" stroke-width="1"/>'
+            )
+        labeled = sorted(nodes, key=lambda node: float(node.get("size") or 0.0), reverse=True)[:8]
+        labeled_ids = {node.get("id") for node in labeled}
+        for node in nodes:
+            node_id = node.get("id")
+            if node_id not in pos:
+                continue
+            x, y = place(node_id)
+            radius = 4.0 + 10.0 * (float(node.get("size") or 6.0) - 6.0) / 22.0
+            radius = min(14.0, max(3.5, radius))
+            label = str(node.get("label") or node_id)
+            parts.append(
+                "<circle "
+                f'cx="{x:.1f}" cy="{y:.1f}" r="{radius:.1f}" '
+                f'fill="{esc(node.get("color") or "#44403c")}" '
+                f'data-label="{esc(label)}" '
+                f'data-community="{esc(node.get("colorCommunity") or node.get("color") or "#44403c")}" '
+                f'data-pagerank="{esc(node.get("colorPagerank") or "#44403c")}" '
+                f'data-degree="{esc(node.get("colorDegree") or "#44403c")}">'
+                f"<title>{esc(node.get('title') or label)}</title></circle>"
+            )
+            if node_id in labeled_ids:
+                parts.append(f'<text x="{x + radius + 2:.1f}" y="{y + 3:.1f}">{esc(label)}</text>')
+        parts.append("</svg>")
+        cards.append(
+            '<section class="card"><p class="caption">'
+            + esc(panel["caption"])
+            + "</p>\n"
+            + "\n".join(parts)
+            + "\n</section>"
+        )
+    markup = (
+        '<section id="networks" class="networks-wrap">'
+        '<div class="toolbar">\n'
+        '<input id="search" type="search" placeholder="Highlight a handle in all six graphs" autocomplete="off">\n'
+        "<label>color by "
+        '<select id="color-by">\n'
+        '<option value="community">community</option>\n'
+        '<option value="pagerank">pagerank</option>\n'
+        '<option value="degree">degree</option>\n'
+        "</select></label></div>\n"
+        '<p class="note">Each drawing is the 100 highest-PageRank people, with at most 400 edges. The caption above a drawing is the full stored graph.</p>\n'
+        '<div class="networks">\n'
+        + "\n".join(cards)
+        + "\n</div></section>"
+    )
+    scripts = """<script>
+document.getElementById("search").addEventListener("input", (event) => {
+  const query = event.target.value.trim().toLowerCase();
+  const circles = Array.from(document.querySelectorAll(".networks circle"));
+  const exact = circles.filter((circle) => (circle.dataset.label || "").toLowerCase() === query);
+  const hits = exact.length ? exact : circles.filter((circle) => (circle.dataset.label || "").toLowerCase().includes(query));
+  const hitSet = new Set(hits);
+  circles.forEach((circle) => {
+    const on = !query || hitSet.has(circle);
+    circle.classList.toggle("dim", Boolean(query) && !on);
+    circle.classList.toggle("hit", Boolean(query) && on);
+  });
+});
+document.getElementById("color-by").addEventListener("change", (event) => {
+  document.querySelectorAll(".networks circle").forEach((circle) => {
+    circle.setAttribute("fill", circle.dataset[event.target.value] || circle.getAttribute("fill"));
+  });
+});
+</script>
+"""
+    return markup, scripts
+
+
 def write_page(path: Path = OUTPUT, sweep_path: Path = SWEEP_PATH) -> Path:
     """Write the findings and the six graphs into one file."""
-    from viz.compare_platforms import (
-        MAX_BYTES,
-        NODE_CAP,
-        NODE_CAP_FALLBACK,
-        _vis_source,
-        load_panels,
-        network_bundle,
-        view_panels,
-    )
+    from viz.compare_platforms import load_panels, view_panels
 
     sweep = load_sweep(sweep_path)
-    panels = load_panels()
-    vis_js = _vis_source()
-    views = view_panels(panels, NODE_CAP)
-    markup, scripts = network_bundle(views, vis_js)
+    views = view_panels(load_panels(), DRAW_NODE_CAP)
+    markup, scripts = network_drawings(views)
     html_text = render_page(sweep, markup, scripts)
-    # The same cap the comparison page uses. A larger file is redrawn with fewer nodes.
-    if len(html_text.encode("utf-8")) > MAX_BYTES:
-        print(f"page is over {MAX_BYTES} bytes; redrawing at {NODE_CAP_FALLBACK}", flush=True)
-        views = view_panels(panels, NODE_CAP_FALLBACK)
-        markup, scripts = network_bundle(views, vis_js)
-        html_text = render_page(sweep, markup, scripts)
     path.write_text(html_text, encoding="utf-8")
     print(f"wrote {path} ({path.stat().st_size} bytes)")
     return path

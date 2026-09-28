@@ -71,7 +71,7 @@ def test_page_carries_every_finding_and_the_sweep(tmp_path):
 
 
 def test_page_embeds_the_six_networks(tmp_path):
-    from viz.compare_platforms import network_bundle
+    from viz.findings_page import network_drawings
 
     sweep_path = tmp_path / "sweep.json"
     sweep_path.write_text(
@@ -106,16 +106,19 @@ def test_page_embeds_the_six_networks(tmp_path):
         "colorCommunity": "#111111",
         "colorPagerank": "#222222",
         "colorDegree": "#333333",
+        "size": 20,
+        "title": "ada",
     }
     panels = [{"caption": f"panel {index}", "nodes": [node], "edges": []} for index in range(6)]
-    markup, scripts = network_bundle(panels, "/* vis */")
+    markup, scripts = network_drawings(panels)
     page = render_page(load_sweep(sweep_path), markup, scripts)
     assert page.count('class="network"') == 6
     assert 'id="search"' in page
-    assert 'id="physics-toggle"' in page
     assert 'id="color-by"' in page
+    assert "vis-network" not in page
     assert "Follow graphs, plus the SNAP friendship graph" in page
     assert "<h2>Co-participation</h2>" in page
-    assert "colorCommunity" in page
-    assert page.count("<script>") == 3
-    assert max(len(line) for line in scripts.splitlines()) <= 2100
+    assert page.count("<script>") == 2
+    assert "document.write" not in page
+    assert "100 highest-PageRank" in page
+    assert max(len(line) for line in page.splitlines()) <= 500
