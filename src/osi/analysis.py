@@ -101,6 +101,51 @@ def louvain_communities(G: nx.Graph, weight: str = "weight") -> dict[Any, int]:
     return _community_index([set(group) for group in groups])
 
 
+def _modularity_of(G: nx.Graph, assignment: dict[Any, int], weight: str = "weight") -> float:
+    grouped: dict[int, set[Any]] = {}
+    for node, community in assignment.items():
+        grouped.setdefault(community, set()).add(node)
+    groups = list(grouped.values())
+    # An edgeless sample has modularity 0. The quality function would divide by zero.
+    if not groups or G.number_of_edges() == 0:
+        return 0.0
+    return float(nx.community.modularity(G, groups, weight=weight))
+
+
+def bootstrap_stability(
+    G: nx.Graph,
+    n_iterations: int = 100,
+    sample_fraction: float = 0.9,
+    seed: int = 42,
+) -> dict[str, Any]:
+    """Randomly drop 10% of edges, run Louvain, record modularity.
+
+    Repeat n_iterations. Return dict with mean, std, 95% CI.
+    """
+    # One generator keeps the dropped edges the same for a given seed.
+    rng = np.random.default_rng(seed)
+    edges = list(G.edges())
+    edge_count = len(edges)
+    # round(0.9 * m) keeps 90% and drops the other 10%. A short list cannot go negative.
+    keep_count = int(round(edge_count * sample_fraction))
+    keep_count = max(0, min(edge_count, keep_count))
+    drop_count = edge_count - keep_count
+    scores: list[float] = []
+    for _ in range(n_iterations):
+        sample = G.copy()
+        if drop_count:
+            # replace=False so one edge is not dropped twice in the same draw.
+            dropped = rng.choice(edge_count, size=drop_count, replace=False)
+            sample.remove_edges_from(edges[int(index)] for index in dropped)
+        scores.append(_modularity_of(sample, louvain_communities(sample)))
+    values = np.asarray(scores, dtype=float)
+    # The interval is the 2.5 and 97.5 percentiles of these modularities.
+    low, high = np.quantile(values, [0.025, 0.975])
+    # ddof=1 is the sample standard deviation. One draw has no spread.
+    std = float(values.std(ddof=1)) if len(values) > 1 else 0.0
+    return {"mean": float(values.mean()), "std": std, "95% CI": (float(low), float(high))}
+
+
 def leiden_communities(G: nx.Graph, weight: str = "weight") -> dict[Any, int]:
     # leidenalg needs python-igraph. If that import fails, Louvain is the stand-in.
     try:

@@ -4,6 +4,7 @@ import pytest
 
 from osi.analysis import (
     betweenness_centrality,
+    bootstrap_stability,
     compare_centralities,
     compare_communities,
     cross_reference,
@@ -108,6 +109,16 @@ def test_louvain_and_leiden_split_the_barbell():
     assert louvain[0] == louvain[1]
     assert leiden[0] == leiden[1]
     assert louvain[0] != louvain[5]
+
+
+def test_bootstrap_stability_returns_mean_std_and_interval():
+    graph = _barbell()
+    # Five draws are enough to check the keys. The reported runs use the default of 100.
+    result = bootstrap_stability(graph, n_iterations=5, sample_fraction=0.9, seed=42)
+    low, high = result["95% CI"]
+    assert set(result) == {"mean", "std", "95% CI"}
+    assert low <= result["mean"] <= high
+    assert result["std"] >= 0.0
 
 
 def test_compare_centralities_ranks_every_node():
