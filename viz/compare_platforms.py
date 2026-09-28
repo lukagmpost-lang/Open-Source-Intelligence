@@ -393,6 +393,140 @@ def _vis_script(vis_js: str) -> str:
     return vis_js
 
 
+def network_options() -> dict:
+    """Physics stays on, but stabilization stops early so six layouts can share a tab."""
+    return {
+        "physics": {
+            "enabled": True,
+            "barnesHut": {
+                "gravitationalConstant": -4000,
+                "centralGravity": 0.25,
+                "springLength": 90,
+                "springConstant": 0.04,
+                "damping": 0.7,
+                "avoidOverlap": 0.15,
+            },
+            "stabilization": {"enabled": True, "iterations": STABILIZATION_ITERATIONS, "fit": True},
+        },
+        "interaction": {"hover": True},
+        "edges": {"smooth": False, "color": "#d6d3d1", "width": 0.4},
+        "nodes": {"font": {"size": 11, "color": "#44403c"}},
+    }
+
+
+def network_bundle(panels: list[dict], vis_js: str) -> tuple[str, str]:
+    """Markup and scripts for the six graphs. The findings page embeds both."""
+    cards = []
+    data = []
+    for index, panel in enumerate(panels):
+        if index == 0:
+            cards.append("<h2>Follow graphs, plus the SNAP friendship graph</h2>")
+        if index == 3:
+            cards.append("<h2>Co-participation</h2>")
+        element = f"net-{index}"
+        cards.append(
+            "<section class=\"card\">"
+            f"<p class=\"caption\">{panel['caption']}</p>"
+            f"<div id=\"{element}\" class=\"network\"></div>"
+            "</section>"
+        )
+        data.append({"element": element, "nodes": panel["nodes"], "edges": panel["edges"]})
+    markup = (
+        '<section id="networks" class="networks-wrap">'
+        '<div class="toolbar">'
+        '<input id="search" type="search" placeholder="Highlight a handle in all six graphs" autocomplete="off">'
+        '<button id="physics-toggle" type="button">Freeze physics</button>'
+        "<label>color by "
+        '<select id="color-by">'
+        '<option value="community">community</option>'
+        '<option value="pagerank">pagerank</option>'
+        '<option value="degree">degree</option>'
+        "</select></label></div>"
+        '<div class="networks">'
+        + "".join(cards)
+        + "</div></section>"
+    )
+    scripts = (
+        "<script>\n"
+        + _vis_script(vis_js)
+        + "\n</script>\n<script>\n"
+        + "const PANELS = "
+        + _script_json(data)
+        + ";\nconst OPTIONS = "
+        + _script_json(network_options())
+        + """;
+const networks = [];
+const COLOR_FIELD = { community: "colorCommunity", pagerank: "colorPagerank", degree: "colorDegree" };
+
+function draw(panel) {
+  const container = document.getElementById(panel.element);
+  const data = {
+    nodes: new vis.DataSet(panel.nodes),
+    edges: new vis.DataSet(panel.edges),
+  };
+  const network = new vis.Network(container, data, OPTIONS);
+  network.dataset = data.nodes;
+  networks.push(network);
+}
+
+// Six Barnes-Hut starts at once stall the first paint. Stagger them by a frame.
+PANELS.forEach((panel, index) => {
+  setTimeout(() => draw(panel), index * 40);
+});
+
+function matchingIds(network, query) {
+  const nodes = network.dataset.get();
+  const folded = query.toLowerCase();
+  const hits = nodes.filter((node) => {
+    const label = String(node.label).toLowerCase();
+    const id = String(node.id).toLowerCase();
+    return label.includes(folded) || id.includes(folded);
+  });
+  // An exact handle wins over every node that merely contains those letters.
+  const exact = hits.filter((node) => {
+    const label = String(node.label).toLowerCase();
+    const id = String(node.id).toLowerCase();
+    return label === folded || id === folded || id.endsWith(":" + folded);
+  });
+  return (exact.length ? exact : hits).map((node) => node.id);
+}
+
+document.getElementById("search").addEventListener("input", (event) => {
+  const query = event.target.value.trim();
+  networks.forEach((network) => {
+    if (!query) {
+      network.unselectAll();
+      return;
+    }
+    const ids = matchingIds(network, query);
+    network.selectNodes(ids);
+    if (ids.length) {
+      network.fit({ nodes: ids, animation: false });
+    }
+  });
+});
+
+document.getElementById("physics-toggle").addEventListener("click", (event) => {
+  const freeze = event.target.textContent === "Freeze physics";
+  networks.forEach((network) => {
+    network.setOptions({ physics: { enabled: !freeze } });
+  });
+  event.target.textContent = freeze ? "Unfreeze physics" : "Freeze physics";
+});
+
+document.getElementById("color-by").addEventListener("change", (event) => {
+  const field = COLOR_FIELD[event.target.value];
+  networks.forEach((network) => {
+    const updates = network.dataset.get().map((node) => ({ id: node.id, color: node[field] }));
+    network.dataset.update(updates);
+  });
+});
+</script>
+"""
+    )
+    return markup, scripts
+
+
 def _modularity(graph: nx.Graph, communities: dict) -> float:
     if graph.number_of_nodes() == 0:
         return 0.0

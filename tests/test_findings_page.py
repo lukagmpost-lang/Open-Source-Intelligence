@@ -63,7 +63,58 @@ def test_page_carries_every_finding_and_the_sweep(tmp_path):
     assert "incredible-ninja" in page
     assert "UNIVERSAL" in page
     assert "marcel" in page
-    assert "compare_platforms.html" in page
+    assert 'href="#networks"' in page
     assert "0.529423" in page
     assert "table.sortable" in page
     assert page.count("<script>") == 1
+    assert 'class="network"' not in page
+
+
+def test_page_embeds_the_six_networks(tmp_path):
+    from viz.compare_platforms import network_bundle
+
+    sweep_path = tmp_path / "sweep.json"
+    sweep_path.write_text(
+        json.dumps(
+            [
+                {
+                    "omega": 0.0,
+                    "modularity": 0.5,
+                    "months": ["2006-05", "2007-08"],
+                    "snapshots": [{"communities": 1}, {"communities": 1}],
+                    "transitions": [
+                        {"earlier": "2006-05", "later": "2007-08", "mean_persistence": 0.0, "shared_members": 1}
+                    ],
+                },
+                {
+                    "omega": 0.1,
+                    "modularity": 0.4,
+                    "months": ["2006-05", "2007-08"],
+                    "snapshots": [{"communities": 1}, {"communities": 1}],
+                    "transitions": [
+                        {"earlier": "2006-05", "later": "2007-08", "mean_persistence": 1.0, "shared_members": 1}
+                    ],
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+    node = {
+        "id": "ada",
+        "label": "ada",
+        "color": "#111111",
+        "colorCommunity": "#111111",
+        "colorPagerank": "#222222",
+        "colorDegree": "#333333",
+    }
+    panels = [{"caption": f"panel {index}", "nodes": [node], "edges": []} for index in range(6)]
+    markup, scripts = network_bundle(panels, "/* vis */")
+    page = render_page(load_sweep(sweep_path), markup, scripts)
+    assert page.count('class="network"') == 6
+    assert 'id="search"' in page
+    assert 'id="physics-toggle"' in page
+    assert 'id="color-by"' in page
+    assert "Follow graphs, plus the SNAP friendship graph" in page
+    assert "<h2>Co-participation</h2>" in page
+    assert "colorCommunity" in page
+    assert page.count("<script>") == 3

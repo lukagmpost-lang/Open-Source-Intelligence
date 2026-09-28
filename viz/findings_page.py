@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import html
 import json
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 OUTPUT = ROOT / "findings.html"
 SWEEP_PATH = ROOT / "results" / "reddit_halfyear_omega_sweep.json"
 
@@ -545,7 +547,7 @@ def _finding_platforms() -> str:
             ],
             rows,
         )
-        + '<p class="note">The interactive drawings of these six graphs are in <a href="compare_platforms.html">compare_platforms.html</a>. '
+        + '<p class="note">The drawings of these six graphs are in the <a href="#networks">Networks</a> section on this page. '
         "Follow graphs halve after removing 1% of high-degree nodes. Friendship and Reddit 2008 last until 30%.</p>"
     )
     return section(
@@ -614,9 +616,16 @@ def _steam() -> str:
     )
 
 
-def render_page(sweep: list[dict]) -> str:
-    """Full document. ``sweep`` is the omega summary from load_sweep."""
-    nav = (
+def render_page(sweep: list[dict], networks_markup: str = "", network_scripts: str = "") -> str:
+    """Full document. ``sweep`` is the omega summary from load_sweep.
+
+    ``networks_markup`` and ``network_scripts`` are the six interactive graphs.
+    An empty pair leaves the findings readable without them, which the unit test uses.
+    """
+    nav = []
+    if networks_markup:
+        nav.append(("networks", "Networks"))
+    nav.extend((
         ("finding-1", "1 Modularity"),
         ("finding-2", "2 Elites"),
         ("finding-3", "3 Dissolution"),
@@ -628,7 +637,7 @@ def render_page(sweep: list[dict]) -> str:
         ("finding-9", "9 Identity"),
         ("finding-10", "10 Platforms"),
         ("multislice", "Multislice"),
-    )
+    ))
     links = "".join(f'<a href="#{anchor}">{esc(label)}</a>' for anchor, label in nav)
     parts = [
         _finding_modularity(),
@@ -652,7 +661,7 @@ def render_page(sweep: list[dict]) -> str:
 <title>Findings</title>
 <style>
 body {{ margin: 0; font-family: "Iowan Old Style", Palatino, Georgia, serif; color: #1c1917; background: #fafaf9; }}
-header, main {{ max-width: 880px; margin: 0 auto; padding: 20px 24px 8px; }}
+header, main, .networks-wrap {{ max-width: 1180px; margin: 0 auto; padding: 20px 24px 8px; }}
 h1 {{ font-size: 32px; margin: 0 0 8px; }}
 h2 {{ font-size: 24px; margin: 0 0 8px; }}
 h3 {{ margin: 0 0 6px; font-size: 18px; }}
@@ -686,20 +695,29 @@ line.grid {{ stroke: #e7e5e4; stroke-width: 1; }}
 .people {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }}
 .people ul {{ margin: 0; padding-left: 18px; }}
 .tag {{ margin: 0 0 8px; color: #78716c; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; }}
-@media (max-width: 720px) {{
-  .stats, .people {{ grid-template-columns: 1fr; }}
+.toolbar {{ display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: center; padding: 4px 0 12px; }}
+input, select, button {{ font: 16px system-ui, sans-serif; padding: 6px 8px; }}
+.networks {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }}
+.networks h2 {{ grid-column: 1 / -1; font-size: 18px; margin: 8px 0; }}
+.card {{ background: #fff; border: 1px solid #e7e5e4; min-width: 0; }}
+.caption {{ margin: 0; padding: 8px 10px; font-size: 13px; line-height: 1.4; }}
+.network {{ height: 420px; }}
+@media (max-width: 900px) {{
+  .stats, .people, .networks {{ grid-template-columns: 1fr; }}
 }}
 </style>
 </head>
 <body>
 <header>
 <h1>Findings</h1>
-<p class="lede">Stored results for the Reddit years, the six platform graphs, and the half-year multislice. Click a column heading to sort a table. The network drawings are on <a href="compare_platforms.html">the platform comparison page</a>.</p>
+<p class="lede">Stored results for the Reddit years, the six platform graphs, and the half-year multislice. The graphs are on this page. Search highlights a handle in every one, and a column heading sorts a table.</p>
 <nav>{links}</nav>
 </header>
+{networks_markup}
 <main>
 {"".join(parts)}
 </main>
+{network_scripts}
 <script>
 document.querySelectorAll("table.sortable th").forEach((header) => {{
   header.addEventListener("click", () => {{
@@ -729,7 +747,29 @@ document.querySelectorAll("table.sortable th").forEach((header) => {{
 
 
 def write_page(path: Path = OUTPUT, sweep_path: Path = SWEEP_PATH) -> Path:
-    html_text = render_page(load_sweep(sweep_path))
+    """Write the findings and the six graphs into one file."""
+    from viz.compare_platforms import (
+        MAX_BYTES,
+        NODE_CAP,
+        NODE_CAP_FALLBACK,
+        _vis_source,
+        load_panels,
+        network_bundle,
+        view_panels,
+    )
+
+    sweep = load_sweep(sweep_path)
+    panels = load_panels()
+    vis_js = _vis_source()
+    views = view_panels(panels, NODE_CAP)
+    markup, scripts = network_bundle(views, vis_js)
+    html_text = render_page(sweep, markup, scripts)
+    # The same cap the comparison page uses. A larger file is redrawn with fewer nodes.
+    if len(html_text.encode("utf-8")) > MAX_BYTES:
+        print(f"page is over {MAX_BYTES} bytes; redrawing at {NODE_CAP_FALLBACK}", flush=True)
+        views = view_panels(panels, NODE_CAP_FALLBACK)
+        markup, scripts = network_bundle(views, vis_js)
+        html_text = render_page(sweep, markup, scripts)
     path.write_text(html_text, encoding="utf-8")
     print(f"wrote {path} ({path.stat().st_size} bytes)")
     return path
