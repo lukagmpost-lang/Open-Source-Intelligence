@@ -1,7 +1,7 @@
-"""Network measures on a public social graph.
+"""Network measures used by the ask path.
 
-The score functions do not print. ``cross_reference`` is the exception:
-it prints which community the top hubs fall in.
+Rank, communities, paths, and explain use NetworkX only. igraph, NumPy,
+and SciPy are imported inside the functions that can go faster with them.
 """
 
 from __future__ import annotations
@@ -10,9 +10,7 @@ import math
 from typing import Any
 
 import networkx as nx
-import numpy as np
 from networkx.algorithms.community import louvain_communities as _louvain_communities
-from scipy import stats
 
 
 def _by_score(scores: dict[Any, float]) -> dict[Any, float]:
@@ -112,40 +110,6 @@ def _modularity_of(G: nx.Graph, assignment: dict[Any, int], weight: str = "weigh
     return float(nx.community.modularity(G, groups, weight=weight))
 
 
-def bootstrap_stability(
-    G: nx.Graph,
-    n_iterations: int = 100,
-    sample_fraction: float = 0.9,
-    seed: int = 42,
-) -> dict[str, Any]:
-    """Randomly drop 10% of edges, run Louvain, record modularity.
-
-    Repeat n_iterations. Return dict with mean, std, 95% CI.
-    """
-    # One generator keeps the dropped edges the same for a given seed.
-    rng = np.random.default_rng(seed)
-    edges = list(G.edges())
-    edge_count = len(edges)
-    # round(0.9 * m) keeps 90% and drops the other 10%. A short list cannot go negative.
-    keep_count = int(round(edge_count * sample_fraction))
-    keep_count = max(0, min(edge_count, keep_count))
-    drop_count = edge_count - keep_count
-    scores: list[float] = []
-    for _ in range(n_iterations):
-        sample = G.copy()
-        if drop_count:
-            # replace=False so one edge is not dropped twice in the same draw.
-            dropped = rng.choice(edge_count, size=drop_count, replace=False)
-            sample.remove_edges_from(edges[int(index)] for index in dropped)
-        scores.append(_modularity_of(sample, louvain_communities(sample)))
-    values = np.asarray(scores, dtype=float)
-    # The interval is the 2.5 and 97.5 percentiles of these modularities.
-    low, high = np.quantile(values, [0.025, 0.975])
-    # ddof=1 is the sample standard deviation. One draw has no spread.
-    std = float(values.std(ddof=1)) if len(values) > 1 else 0.0
-    return {"mean": float(values.mean()), "std": std, "95% CI": (float(low), float(high))}
-
-
 def leiden_communities(G: nx.Graph, weight: str = "weight") -> dict[Any, int]:
     # leidenalg needs python-igraph. If that import fails, Louvain is the stand-in.
     try:
@@ -167,237 +131,6 @@ def leiden_communities(G: nx.Graph, weight: str = "weight") -> dict[Any, int]:
     for index, community in enumerate(partition.membership):
         groups.setdefault(community, set()).add(names[index])
     return _community_index(list(groups.values()))
-
-
-# Girvan-Newman removes the highest-betweenness edge over and over.
-# That is O(m^2 n), so a few thousand nodes is already too slow to finish.
-GIRVAN_NEWMAN_NODE_LIMIT = 1000
-# Stop after this many splits and keep the split with the best modularity.
-GIRVAN_NEWMAN_MAX_ITER = 20
-
-
-def _ranks(scores: dict[Any, float]) -> tuple[dict[Any, int], list[Any]]:
-    # Highest score is rank 1. Equal scores break ties by node text so the
-    # order does not change between runs.
-    ordered = sorted(scores, key=lambda node: (-scores[node], str(node)))
-    return {node: index for index, node in enumerate(ordered, start=1)}, ordered
-
-
-def compare_centralities(G: nx.Graph) -> dict[str, Any]:
-    """Run several centrality measures and rank every node in each one.
-
-    The result is a dict of columns, like a table: ``rank`` maps each node
-    to its 1-based place in every measure, and ``order`` lists nodes from
-    strongest to weakest for that measure.
-    """
-    measures = {
-        "degree": degree_centrality(G),
-        # Weight is the edge attribute. NetworkX treats it as path length.
-        "betweenness": betweenness_centrality(G, weight="weight"),
-        "closeness": closeness_centrality(G),
-        "pagerank": pagerank(G, weight="weight"),
-    }
-    try:
-        # NumPy solver. It can fail on a graph that is not a single component.
-        measures["eigenvector"] = _by_score(nx.eigenvector_centrality_numpy(G, weight="weight"))
-    except Exception as error:  # noqa: BLE001 - report the failure instead of inventing scores
-        measures["eigenvector"] = {}
-        eigenvector_error = f"{type(error).__name__}: {error}"
-    else:
-        eigenvector_error = None
-
-    rank: dict[Any, dict[str, int | None]] = {node: {} for node in G.nodes}
-    order: dict[str, list[Any]] = {}
-    for name, scores in measures.items():
-        places, ordered = _ranks(scores) if scores else ({}, [])
-        order[name] = ordered
-        for node in rank:
-            rank[node][name] = places.get(node)
-    return {
-        "columns": list(measures),
-        "rank": rank,
-        "order": order,
-        "eigenvector_error": eigenvector_error,
-    }
-
-
-def _partition_record(G: nx.Graph, assignment: dict[Any, int], weight: str = "weight") -> dict[str, Any]:
-    grouped: dict[int, set[Any]] = {}
-    for node, community in assignment.items():
-        grouped.setdefault(community, set()).add(node)
-    groups = list(grouped.values())
-    return {
-        "skipped": False,
-        "count": len(groups),
-        "modularity": float(nx.community.modularity(G, groups, weight=weight)) if groups else 0.0,
-        "assignment": assignment,
-    }
-
-
-def _girvan_newman(G: nx.Graph, weight: str = "weight") -> dict[str, Any]:
-    node_count = G.number_of_nodes()
-    if node_count > GIRVAN_NEWMAN_NODE_LIMIT:
-        return {
-            "skipped": True,
-            "count": None,
-            "modularity": None,
-            "assignment": {},
-            "message": (
-                f"Girvan-Newman skipped: this graph has {node_count} nodes. "
-                f"It is O(m^2 n), so it only runs on graphs of at most {GIRVAN_NEWMAN_NODE_LIMIT} nodes."
-            ),
-        }
-    # Each step yields a finer split. We keep only the first few and choose
-    # the one with the highest modularity.
-    best_groups: list[set[Any]] | None = None
-    best_score = float("-inf")
-    for index, communities in enumerate(nx.community.girvan_newman(G)):
-        if index >= GIRVAN_NEWMAN_MAX_ITER:
-            break
-        groups = [set(community) for community in communities]
-        score = nx.community.modularity(G, groups, weight=weight)
-        if score > best_score:
-            best_score = score
-            best_groups = groups
-    if not best_groups:
-        best_groups = [{node} for node in G.nodes]
-    return _partition_record(G, _community_index(best_groups), weight)
-
-
-def compare_communities(G: nx.Graph) -> dict[str, Any]:
-    """Compare Louvain, Leiden, and Girvan-Newman on one graph.
-
-    Girvan-Newman is skipped, with a message, when the graph has more than
-    1000 nodes. On smaller graphs it stops after ``GIRVAN_NEWMAN_MAX_ITER``
-    splits.
-    """
-    return {
-        "louvain": _partition_record(G, louvain_communities(G)),
-        "leiden": _partition_record(G, leiden_communities(G)),
-        "girvan_newman": _girvan_newman(G),
-    }
-
-
-def cross_reference(
-    G: nx.Graph,
-    communities: dict[str, Any],
-    centralities: dict[str, Any],
-    top_n: int = 10,
-) -> list[Any]:
-    """Print the community of each top hub, then say if those hubs share one community."""
-    del G  # The rankings and partitions already describe the graph.
-    seen: set[Any] = set()
-    hubs: list[Any] = []
-    for ordered in centralities["order"].values():
-        for node in ordered[:top_n]:
-            if node not in seen:
-                seen.add(node)
-                hubs.append(node)
-
-    print("COMMUNITY ASSIGNMENT OF TOP HUBS:")
-    print("Node | Louvain | Leiden | Girvan-Newman")
-    for node in hubs:
-        cells = [str(node)]
-        for name in ("louvain", "leiden", "girvan_newman"):
-            block = communities[name]
-            if block.get("skipped"):
-                cells.append("skipped")
-            else:
-                cells.append(str(block["assignment"].get(node, "")))
-        print(" | ".join(cells))
-
-    for name in ("louvain", "leiden", "girvan_newman"):
-        block = communities[name]
-        if block.get("skipped"):
-            print(block["message"])
-            continue
-        # One id means the hubs sit together. Several ids means they bridge groups.
-        ids = {block["assignment"][node] for node in hubs if node in block["assignment"]}
-        label = name.replace("_", "-")
-        if len(ids) <= 1:
-            only = next(iter(ids), None)
-            print(f"Top hubs are concentrated in one {label} community: {only}.")
-        else:
-            print(f"Top hubs span {len(ids)} {label} communities: {sorted(ids)}.")
-    return hubs
-
-
-def _graph_counts(G: nx.Graph, label: str) -> None:
-    print(f"{label}: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
-
-
-def _predicted_pairs(G: nx.Graph) -> list[tuple[Any, Any]] | None:
-    """Pairs to score. None means every missing pair, which only fits a small graph."""
-    missing = G.number_of_nodes() * (G.number_of_nodes() - 1) // 2 - G.number_of_edges()
-    # A few million missing pairs can be listed. The 2012 user graph has about 1.5 billion.
-    if missing <= 2_000_000:
-        return None
-    seen: set[tuple[Any, Any]] = set()
-    pairs: list[tuple[Any, Any]] = []
-    for node in G:
-        neighbors = set(G[node])
-        for neighbor in neighbors:
-            for other in G[neighbor]:
-                if other == node or other in neighbors:
-                    continue
-                # One undirected pair, stored in a stable order.
-                pair = (node, other) if str(node) <= str(other) else (other, node)
-                if pair in seen:
-                    continue
-                seen.add(pair)
-                pairs.append(pair)
-    print(
-        f"link candidates: {len(pairs)} pairs that share a neighbor "
-        f"(not all {missing} missing pairs)"
-    )
-    return pairs
-
-
-def _sorted_predictions(rows) -> list[tuple[Any, Any, float]]:
-    return sorted(rows, key=lambda item: (-item[2], str(item[0]), str(item[1])))
-
-
-def adamic_adar(G: nx.Graph) -> list[tuple[Any, Any, float]]:
-    """Score missing edges by how rare the shared neighbors are."""
-    _graph_counts(G, "adamic_adar before")
-    pairs = _predicted_pairs(G)
-    # NetworkX scores every missing pair when ebunch is omitted.
-    scored = nx.adamic_adar_index(G, ebunch=pairs)
-    ranked = _sorted_predictions(scored)
-    _graph_counts(G, "adamic_adar after")
-    return ranked
-
-
-def jaccard(G: nx.Graph) -> list[tuple[Any, Any, float]]:
-    """Score missing edges by the share of neighbors two accounts have in common."""
-    _graph_counts(G, "jaccard before")
-    pairs = _predicted_pairs(G)
-    scored = nx.jaccard_coefficient(G, ebunch=pairs)
-    ranked = _sorted_predictions(scored)
-    _graph_counts(G, "jaccard after")
-    return ranked
-
-
-def preferential_attachment(G: nx.Graph) -> list[tuple[Any, Any, float]]:
-    """Score missing edges by the product of the two degrees."""
-    _graph_counts(G, "preferential_attachment before")
-    pairs = _predicted_pairs(G)
-    scored = nx.preferential_attachment(G, ebunch=pairs)
-    ranked = _sorted_predictions(scored)
-    _graph_counts(G, "preferential_attachment after")
-    return ranked
-
-
-def cpm_communities(G: nx.Graph, k: int = 3) -> dict[Any, list[int]]:
-    """Clique percolation. A node can sit in more than one community."""
-    _graph_counts(G, "cpm before")
-    membership: dict[Any, list[int]] = {node: [] for node in G.nodes}
-    # Each yielded set is one k-clique community. They are allowed to overlap.
-    for index, community in enumerate(nx.community.k_clique_communities(G, k)):
-        for node in community:
-            membership[node].append(index)
-    _graph_counts(G, "cpm after")
-    return membership
 
 
 # Below this size, starting a process pool costs more than the removals themselves.
@@ -511,10 +244,8 @@ def robustness(
     if node_count == 0:
         return {"baseline": empty, **{name: {ratio: dict(empty) for ratio in remove_ratio} for name in strategies}}
 
-    names, base = _as_igraph(G, None)
-    index = {node: position for position, node in enumerate(names)}
-    edges = base.get_edgelist()
-    nodes = list(names)
+    nodes = list(G.nodes())
+    index = {node: position for position, node in enumerate(nodes)}
     # One ranking of the intact graph. Stored scores are that same ranking when the caller already has them.
     degree_order = _attack_order(nodes, index, degree_scores, G.degree)
     between_order: list[int] = []
@@ -548,18 +279,78 @@ def robustness(
             else:
                 groups.append([rng.sample(range(node_count), count) for _trial in range(runs)])
 
-    measured = _measure_groups(edges, node_count, groups)
+    measured = _measure_robustness(G, nodes, groups)
     by_label = {label: stats for label, stats in zip(labels, measured)}
     # 0% removal is the baseline. If the caller did not ask for it, measure the intact graph once.
     if any(ratio == 0.0 for _name, ratio in labels):
         baseline = by_label[(strategies[0], 0.0)]
     else:
-        baseline = _measure_groups(edges, node_count, [[[]]])[0]
+        baseline = _measure_robustness(G, nodes, [[[]]])[0]
     results: dict[str, Any] = {"baseline": baseline}
     for name in strategies:
         # Stored in the caller's ratio order, which is what the table and giant_halved_at walk.
         results[name] = {ratio: by_label[(name, ratio)] for ratio in remove_ratio}
     return results
+
+
+def _nx_component_stats(graph: nx.Graph, original_count: int) -> dict[str, float]:
+    remaining = graph.number_of_nodes()
+    if remaining == 0 or original_count == 0:
+        return {"remaining": 0.0, "largest": 0.0, "components": 0.0, "efficiency": 0.0}
+    components = list(nx.connected_components(graph))
+    largest = max(len(component) for component in components) / original_count
+    if remaining < 2:
+        efficiency = 0.0
+    else:
+        # Same quantity as igraph's summed harmonic centrality over ordered pairs.
+        efficiency = float(nx.global_efficiency(graph))
+    return {
+        "remaining": float(remaining),
+        "largest": float(largest),
+        "components": float(len(components)),
+        "efficiency": efficiency,
+    }
+
+
+def _measure_groups_networkx(
+    graph: nx.Graph, nodes: list, groups: list[list[list[int]]]
+) -> list[dict[str, float]]:
+    base = graph.to_undirected() if graph.is_directed() else graph
+    node_count = len(nodes)
+    total = len(groups)
+    _progress(0, total)
+    cache: dict[frozenset[int], dict[str, float]] = {}
+    averaged = []
+    for done, group in enumerate(groups, start=1):
+        rows = []
+        for trial in group:
+            key = frozenset(trial)
+            if key not in cache:
+                attacked = base.copy()
+                if trial:
+                    attacked.remove_nodes_from(nodes[position] for position in trial)
+                cache[key] = _nx_component_stats(attacked, node_count)
+            rows.append(cache[key])
+        averaged.append(_average_stats(rows))
+        _progress(done, total)
+    return averaged
+
+
+def _measure_robustness(
+    graph: nx.Graph, nodes: list, groups: list[list[list[int]]]
+) -> list[dict[str, float]]:
+    """Use igraph when it is installed. NetworkX is the slower fallback."""
+    try:
+        import igraph as ig
+
+        _names, base = _as_igraph(graph, None)
+        if not isinstance(base, ig.Graph):
+            raise RuntimeError("igraph did not build the robustness graph")
+    except ImportError:
+        return _measure_groups_networkx(graph, nodes, groups)
+    if base.vcount() != len(nodes):
+        raise RuntimeError("igraph node count does not match the NetworkX graph")
+    return _measure_groups(base.get_edgelist(), len(nodes), groups)
 
 
 def _progress(done: int, total: int) -> None:
@@ -657,26 +448,6 @@ def giant_halved_at(results: dict[str, Any]) -> dict[str, float | None]:
     return found
 
 
-def print_cpm_summary(membership: dict[Any, list[int]]) -> None:
-    """Count nodes by how many communities they belong to, then list the most overlapped."""
-    buckets = {1: 0, 2: 0, "3+": 0}
-    for communities in membership.values():
-        count = len(communities)
-        if count == 1:
-            buckets[1] += 1
-        elif count == 2:
-            buckets[2] += 1
-        elif count >= 3:
-            buckets["3+"] += 1
-    print(f"nodes in 1 community: {buckets[1]}")
-    print(f"nodes in 2 communities: {buckets[2]}")
-    print(f"nodes in 3+ communities: {buckets['3+']}")
-    ranked = sorted(membership, key=lambda node: (-len(membership[node]), str(node)))
-    print("top 20 nodes by overlapping communities:")
-    for node in ranked[:20]:
-        print(f"{node} {len(membership[node])}")
-
-
 def _finite(value: float) -> float | None:
     # Assortativity is NaN when every node in the component has the same degree.
     if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
@@ -734,6 +505,8 @@ def network_health(G: nx.Graph) -> dict[str, Any]:
 
 
 def _r_squared(observed, predicted) -> float | None:
+    import numpy as np
+
     observed = np.asarray(observed, dtype=float)
     predicted = np.asarray(predicted, dtype=float)
     total = float(np.sum((observed - observed.mean()) ** 2))
@@ -759,6 +532,11 @@ def degree_distribution(G: nx.Graph) -> dict[str, Any]:
     blank = {"best_fit": None, **{name: _blank_fit() for name in names}}
     # Two occupied bins are the minimum for a slope.
     if len(positive) < 2:
+        return blank
+    try:
+        import numpy as np
+        from scipy import stats
+    except ImportError:
         return blank
     values, counts = np.unique(positive, return_counts=True)
     values = values.astype(float)
@@ -808,23 +586,3 @@ def degree_distribution(G: nx.Graph) -> dict[str, Any]:
             best_fit = name
             best_score = score
     return {"best_fit": best_fit, **fits}
-
-
-def rich_club(G: nx.Graph, k_values: list[int] | None = None) -> dict[int, float | None]:
-    """Return dict {k: rich_club_coefficient} for each k."""
-    if k_values is None:
-        k_values = [10, 20, 50, 100]
-    # normalized=True rewires every edge Q times. That is a null model, not the coefficient.
-    try:
-        coefficients = nx.rich_club_coefficient(G, normalized=False)
-    except Exception:
-        # NetworkX raises Exception, not NetworkXError, when the graph has a self-loop.
-        return {k: None for k in k_values}
-    found: dict[int, float | None] = {}
-    for k in k_values:
-        # Degrees past the last node with a neighbor are absent from the coefficient dict.
-        if k not in coefficients:
-            found[k] = None
-            continue
-        found[k] = _finite(float(coefficients[k]))
-    return found

@@ -19,23 +19,14 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from osi.loader import load_edge_list, load_graphml  # noqa: E402
 from osi.analysis import (  # noqa: E402
-    adamic_adar,
     betweenness_centrality,
     closeness_centrality,
-    compare_centralities,
-    compare_communities,
-    cpm_communities,
-    cross_reference,
     degree_centrality,
     degree_distribution,
-    jaccard,
     leiden_communities,
     louvain_communities,
     network_health,
     pagerank,
-    preferential_attachment,
-    print_cpm_summary,
-    rich_club,
     robustness,
 )
 from osi.store import (  # noqa: E402
@@ -54,30 +45,12 @@ from osi.store import (  # noqa: E402
 )
 
 
-def _parse_top(value: str) -> int:
-    text = value.strip().removeprefix("top=")
-    try:
-        number = int(text)
-    except ValueError as error:
-        raise argparse.ArgumentTypeError("use top=N") from error
-    if number < 1:
-        raise argparse.ArgumentTypeError("top must be at least 1")
-    return number
-
-
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Analyze a graph from a file or from a saved run.")
     parser.add_argument("--source", choices=("file",), default=None)
     parser.add_argument("--path", help="Edge list or GraphML. Used with --source file.")
     parser.add_argument("--analyze", choices=("all", "centrality", "communities"), default="all")
-    parser.add_argument(
-        "--compare",
-        choices=("all", "centrality", "communities", "cross"),
-        help="Print a side-by-side comparison. Omit this flag to keep the original report.",
-    )
     parser.add_argument("--out", default="graph.json", help="Node-link JSON output path.")
-    parser.add_argument("--link-predict", type=_parse_top, metavar="top=N")
-    parser.add_argument("--cpm", action="store_true", help="Print overlapping k-clique communities.")
     parser.add_argument("--save-run", metavar="NAME", help="Save results under this run id.")
     parser.add_argument("--run", metavar="NAME", help="Saved run to analyze. Takes precedence over --source.")
     parser.add_argument("--load-run", metavar="NAME", help="Load a previous run instead of recomputing.")
@@ -91,7 +64,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--health",
         action="store_true",
-        help="Print network health, degree-distribution fits, and rich-club coefficients.",
+        help="Print network health and degree-distribution fits.",
     )
     args = parser.parse_args(argv)
     args.robustness_loaded_latest = False
@@ -159,70 +132,6 @@ def print_communities(graph: nx.Graph) -> dict[str, dict]:
     return saved
 
 
-def print_centrality_table(centralities: dict, top_n: int = 10) -> None:
-    # The example table shows these four. Eigenvector stays in the data for callers.
-    columns = ["degree", "betweenness", "closeness", "pagerank"]
-    print("TOP NODES BY EACH CENTRALITY MEASURE:")
-    print("Rank | Degree | Betweenness | Closeness | PageRank")
-    for rank in range(1, top_n + 1):
-        cells = [str(rank)]
-        for name in columns:
-            ordered = centralities["order"][name]
-            cells.append(str(ordered[rank - 1]) if rank <= len(ordered) else "")
-        print(" | ".join(cells))
-    if centralities.get("eigenvector_error"):
-        print(f"Eigenvector centrality failed: {centralities['eigenvector_error']}")
-
-
-def print_community_table(communities: dict) -> None:
-    print("COMMUNITY ALGORITHMS:")
-    print("Method | Communities | Modularity")
-    for name, label in (("louvain", "Louvain"), ("leiden", "Leiden"), ("girvan_newman", "Girvan-Newman")):
-        block = communities[name]
-        if block.get("skipped"):
-            print(f"{label} | skipped | {block['message']}")
-            continue
-        print(f"{label} | {block['count']} | {block['modularity']:.6f}")
-
-
-def print_comparison(graph: nx.Graph, mode: str) -> None:
-    # Cross-reference needs both results, so "all" and "cross" compute both.
-    need_centrality = mode in ("all", "centrality", "cross")
-    need_communities = mode in ("all", "communities", "cross")
-    centralities = compare_centralities(graph) if need_centrality else None
-    communities = compare_communities(graph) if need_communities else None
-    if mode in ("all", "centrality") and centralities is not None:
-        print_centrality_table(centralities)
-    if mode in ("all", "communities") and communities is not None:
-        print_community_table(communities)
-    if mode in ("all", "cross") and centralities is not None and communities is not None:
-        cross_reference(graph, communities, centralities)
-
-
-def print_link_predictions(graph: nx.Graph, top_n: int) -> None:
-    """Print the strongest predicted links and whether each pair shares a Louvain community."""
-    print(f"link-predict before: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges")
-    communities = louvain_communities(graph)
-    # Score one method at a time. Holding every method's pair list at once
-    # does not fit when tens of millions of pairs share a neighbor.
-    for name, scorer in (
-        ("adamic_adar", adamic_adar),
-        ("jaccard", jaccard),
-        ("preferential_attachment", preferential_attachment),
-    ):
-        rows = scorer(graph)
-        print(name)
-        for left, right, score in rows[:top_n]:
-            left_community = communities.get(left)
-            right_community = communities.get(right)
-            shared = left_community == right_community
-            print(
-                f"{score:.6f} {left} community {left_community} "
-                f"{right} community {right_community} shared={shared}"
-            )
-    print(f"link-predict after: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges")
-
-
 def _robust_cell(value: float, digits: int) -> str:
     return f"{value:.{digits}f}"
 
@@ -279,11 +188,9 @@ def _health_cell(value) -> str:
 
 
 def _health_payload(graph: nx.Graph) -> dict:
-    # JSON object keys are strings. rich_club's keys are the degree thresholds.
     return {
         "network": network_health(graph),
         "degree_distribution": degree_distribution(graph),
-        "rich_club": {str(k): value for k, value in rich_club(graph).items()},
     }
 
 
@@ -292,8 +199,6 @@ def print_health(run_id: str, payload: dict) -> None:
     print(f"health {run_id}")
     for key in _HEALTH_KEYS:
         print(f"{key} {_health_cell(network.get(key))}")
-    for key, value in payload["rich_club"].items():
-        print(f"rich_club {key} {_health_cell(value)}")
     distribution = payload["degree_distribution"]
     print(f"best_fit {_health_cell(distribution.get('best_fit'))}")
     for name in _FIT_NAMES:
@@ -318,13 +223,6 @@ def print_health_comparison(rows: list[tuple[str, dict]]) -> None:
     for key in _HEALTH_KEYS:
         # The default argument binds this iteration's key. A bare closure would keep the last one.
         line(key, lambda payload, key=key: payload["network"].get(key))
-    club_keys: list[str] = []
-    for _run_id, payload in rows:
-        for key in payload["rich_club"]:
-            if key not in club_keys:
-                club_keys.append(key)
-    for key in club_keys:
-        line(f"rich_club_{key}", lambda payload, key=key: payload["rich_club"].get(key))
     line("best_fit", lambda payload: payload["degree_distribution"].get("best_fit"))
     for name in _FIT_NAMES:
         line(
@@ -504,15 +402,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.health:
         _emit_health(args.load_run or args.save_run, graph)
-    if args.compare:
-        print_comparison(graph, args.compare)
     write_graph(graph, args.out)
-    if args.link_predict:
-        print_link_predictions(graph, args.link_predict)
-    if args.cpm:
-        print(f"cpm before: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges")
-        print_cpm_summary(cpm_communities(graph))
-        print(f"cpm after: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges")
     return 0
 
 

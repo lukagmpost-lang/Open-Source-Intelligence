@@ -4,17 +4,12 @@ import pytest
 
 from osi.analysis import (
     betweenness_centrality,
-    bootstrap_stability,
-    compare_centralities,
-    compare_communities,
-    cross_reference,
     degree_centrality,
     degree_distribution,
     leiden_communities,
     louvain_communities,
     network_health,
     pagerank,
-    rich_club,
 )
 
 
@@ -111,54 +106,6 @@ def test_louvain_and_leiden_split_the_barbell():
     assert louvain[0] != louvain[5]
 
 
-def test_bootstrap_stability_returns_mean_std_and_interval():
-    graph = _barbell()
-    # Five draws are enough to check the keys. The reported runs use the default of 100.
-    result = bootstrap_stability(graph, n_iterations=5, sample_fraction=0.9, seed=42)
-    low, high = result["95% CI"]
-    assert set(result) == {"mean", "std", "95% CI"}
-    assert low <= result["mean"] <= high
-    assert result["std"] >= 0.0
-
-
-def test_compare_centralities_ranks_every_node():
-    graph = _barbell()
-    compared = compare_centralities(graph)
-    assert set(compared["columns"]) == {"degree", "betweenness", "closeness", "pagerank", "eigenvector"}
-    assert compared["rank"][compared["order"]["pagerank"][0]]["pagerank"] == 1
-    assert len(compared["order"]["degree"]) == graph.number_of_nodes()
-
-
-def test_compare_communities_runs_girvan_newman_on_a_small_graph():
-    graph = _barbell()
-    compared = compare_communities(graph)
-    assert compared["louvain"]["count"] == 2
-    assert compared["louvain"]["modularity"] > 0.3
-    assert compared["girvan_newman"]["skipped"] is False
-    assert compared["girvan_newman"]["count"] >= 2
-    assert 0 in compared["girvan_newman"]["assignment"].values()
-
-
-def test_girvan_newman_skips_graphs_over_1000_nodes():
-    graph = nx.path_graph(1001)
-    nx.set_edge_attributes(graph, 1.0, "weight")
-    compared = compare_communities(graph)
-    assert compared["girvan_newman"]["skipped"] is True
-    assert "1001" in compared["girvan_newman"]["message"]
-    assert compared["louvain"]["count"] >= 1
-
-
-def test_cross_reference_prints_hub_communities(capsys):
-    graph = _barbell()
-    centralities = compare_centralities(graph)
-    communities = compare_communities(graph)
-    hubs = cross_reference(graph, communities, centralities, top_n=2)
-    output = capsys.readouterr().out
-    assert hubs
-    assert "COMMUNITY ASSIGNMENT OF TOP HUBS:" in output
-    assert "Top hubs" in output
-
-
 def test_leiden_falls_back_to_louvain(monkeypatch):
     import builtins
 
@@ -204,10 +151,34 @@ def test_degree_distribution_prefers_a_power_law_histogram():
     assert fit["best_fit"] in {"power_law", "lognormal", "exponential"}
 
 
-def test_rich_club_matches_networkx_below_the_default_thresholds():
-    graph = nx.Graph([(0, 1), (0, 2), (1, 2), (1, 3), (1, 4), (4, 5)])
-    expected = nx.rich_club_coefficient(graph, normalized=False)
-    assert rich_club(graph, [0])[0] == pytest.approx(expected[0])
-    assert rich_club(graph) == {10: None, 20: None, 50: None, 100: None}
-    graph.add_edge(0, 0)
-    assert rich_club(graph) == {10: None, 20: None, 50: None, 100: None}
+def _block_imports(monkeypatch, blocked: set[str]) -> None:
+    import builtins
+
+    real_import = builtins.__import__
+
+    def broken_import(name, *args, **kwargs):
+        if name in blocked:
+            raise ImportError(name)
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", broken_import)
+
+
+def test_robustness_falls_back_without_igraph(monkeypatch):
+    from osi.analysis import robustness
+
+    _block_imports(monkeypatch, {"igraph"})
+    graph = nx.star_graph(10)
+    nx.set_edge_attributes(graph, 1.0, "weight")
+    results = robustness(graph, strategies=["degree"], remove_ratio=[0.1], runs=1)
+    assert abs(results["baseline"]["efficiency"] - nx.global_efficiency(graph)) < 1e-9
+    assert results["degree"][0.1]["components"] == 10
+    assert results["degree"][0.1]["efficiency"] == 0.0
+
+
+def test_degree_distribution_is_blank_without_numpy(monkeypatch):
+    _block_imports(monkeypatch, {"numpy", "scipy"})
+    graph = nx.path_graph(4)
+    fit = degree_distribution(graph)
+    assert fit["best_fit"] is None
+    assert fit["power_law"] == {"params": {}, "r_squared": None}

@@ -1,9 +1,9 @@
 # Graphs, centrality, and node-link JSON.
 networkx==3.7
-# Exact betweenness and the Leiden graph backend.
-igraph==1.0.0
-# Leiden communities. analysis.py uses Louvain if this import fails.
-leidenalg==0.12.0
-# Degree-distribution fits for --health.
-numpy==2.4.4
-scipy==1.18.1
+
+# Optional extra "fast": faster betweenness and fragility, Leiden, and the power-law fit.
+# pip install igraph leidenalg numpy scipy
+# igraph==1.0.0
+# leidenalg==0.12.0
+# numpy==2.4.4
+# scipy==1.18.1
