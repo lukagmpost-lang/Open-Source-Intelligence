@@ -12,7 +12,7 @@ Local multi-layer graph of public social relations. Accounts are nodes, public r
 
 ```bash
 python3 main.py --source file --path examples/simple.csv --save-run simple-v1
-python3 query.py --run simple-v1 "top 5 by pagerank"
+python3 -m osi.ask --run simple-v1 "top 5 by pagerank"
 ```
 
 The same two commands work with `examples/simple.json` and `examples/simple.graphml`.
