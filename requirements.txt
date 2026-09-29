@@ -11,5 +11,3 @@ pyvis==0.3.2
 # Degree-distribution fits for --health.
 numpy==2.4.4
 scipy==1.18.1
-# Multislice modularity across graph snapshots. The import needs tkinter.
-networkx_temporal==1.4.4
