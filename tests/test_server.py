@@ -27,7 +27,8 @@ def test_post_ask_returns_an_answer():
     body = response.json()
     assert isinstance(body, dict)
     assert "answer" in body
-    assert "0.415481" in body["answer"]
+    assert "alice" in body["answer"]
+    assert "How sure:" in body["answer"]
     assert body["intent"] == "rank_nodes"
     assert body["method"] == "exact"
     assert body["trust"] == "stable"

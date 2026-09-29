@@ -123,12 +123,84 @@ def _metric_scores(run: str, metric: str, graph: nx.Graph) -> tuple[dict, str, i
     return _exact_metric(run, metric, graph), "exact", None
 
 
+def interpret_health(metrics: dict, graph: nx.Graph) -> list[str]:
+    """Convert raw metrics into 3-5 plain-language findings.
+
+    Never mention metric names. Never quote raw values unless the value
+    is itself interesting (for example a 759-degree hub). At most three
+    findings are returned, in the order a reader would care about them:
+    hubs, then how tightly people are connected, then groups, then
+    fragmentation, then who connects to whom.
+    """
+    ranked: list[tuple[int, str]] = []
+    average = float(metrics.get("avg_degree") or 0)
+    if average > 10:
+        ranked.append((5, "This is a dense network — most accounts are connected to dozens of others."))
+    elif average < 3:
+        ranked.append((5, "This is a sparse network — most accounts have only a few connections."))
+
+    max_degree = int(metrics.get("max_degree") or 0)
+    if max_degree > 100:
+        ranked.append((6, "A few accounts are connected to hundreds of others, far more than typical."))
+
+    modularity = metrics.get("modularity")
+    group_count = metrics.get("n_communities")
+    if modularity is None and graph.number_of_nodes() > 1 and graph.number_of_edges() > 0:
+        assignment = louvain_communities(graph)
+        modularity = _modularity_of(graph, assignment)
+        group_count = len(set(assignment.values()))
+    if isinstance(modularity, (int, float)) and not isinstance(modularity, bool):
+        groups = int(group_count or 0)
+        if float(modularity) > 0.5:
+            ranked.append((4, f"It breaks cleanly into {groups} groups."))
+        elif float(modularity) < 0.4:
+            ranked.append((4, "The groups are blurry — they overlap heavily."))
+
+    components = metrics.get("components", metrics.get("num_components"))
+    if isinstance(components, (int, float)) and not isinstance(components, bool) and int(components) > 10:
+        islands = int(components)
+        ranked.append((3, f"It's also fragmented — there are {islands} disconnected islands."))
+
+    assortativity = metrics.get("assortativity")
+    if isinstance(assortativity, (int, float)) and not isinstance(assortativity, bool):
+        mixing = float(assortativity)
+        if mixing < -0.5:
+            ranked.append((2, "The most connected people connect to the least connected, not to each other."))
+        elif mixing > 0.3:
+            ranked.append((2, "The most connected people cluster together."))
+
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    return [sentence for _priority, sentence in ranked[:3]]
+
+
+def interpret_rank(ranked: list[tuple], graph: nx.Graph, metric: str) -> list[str]:
+    """Turn a ranked list into 3 findings."""
+    if not ranked or graph.number_of_nodes() == 0:
+        return []
+    names = [str(node) for node, _score in ranked[:5]]
+    top_name = ranked[0][0]
+    top_degree = int(graph.degree(top_name))
+    average = sum(degree for _node, degree in graph.degree()) / graph.number_of_nodes()
+    findings = [f"The most central accounts are {', '.join(names)}."]
+    if top_degree > 5 * average:
+        findings.append(
+            f"{top_name} is connected to {top_degree} other "
+            f"accounts — far more than the average of "
+            f"{int(average)}."
+        )
+    if len(ranked) >= 5:
+        findings.append("These five are the hubs of the network.")
+    return findings
+
+
 def rank_nodes(run: str, metric: str = "pagerank", top: int = 10) -> ResultObject:
     """Top nodes by pagerank, degree, betweenness, or closeness."""
     graph = _load_graph(run)
     started = time.perf_counter()
     scores, method, sample_size = _metric_scores(run, metric, graph)
-    values = dict(list(scores.items())[:top])
+    ranked = list(scores.items())
+    values = dict(ranked[:top])
+    values["findings"] = interpret_rank(ranked, graph, metric)
     return _finish(
         "rank_nodes",
         {"run": run, "metric": metric, "top": top},
@@ -175,6 +247,23 @@ def network_health(run: str) -> ResultObject:
     started = time.perf_counter()
     health = _network_health(graph)
     fit = degree_distribution(graph)
+    assignment = load_communities(run, "louvain")
+    if not assignment and graph.number_of_nodes() > 0:
+        assignment = louvain_communities(graph)
+    if assignment and graph.number_of_edges() > 0:
+        modularity = _modularity_of(graph, assignment)
+        group_count = len(set(assignment.values()))
+    else:
+        modularity = None
+        group_count = 0
+    metrics = {
+        "assortativity": health["assortativity"],
+        "avg_degree": health["avg_degree"],
+        "max_degree": health["max_degree"],
+        "components": health["num_components"],
+        "modularity": modularity,
+        "n_communities": group_count,
+    }
     values = {
         "assortativity": health["assortativity"],
         "clustering": health["avg_clustering"],
@@ -183,6 +272,7 @@ def network_health(run: str) -> ResultObject:
         "avg_degree": health["avg_degree"],
         "max_degree": health["max_degree"],
         "power_law": fit["power_law"],
+        "findings": interpret_health(metrics, graph),
     }
     return _finish(
         "network_health",

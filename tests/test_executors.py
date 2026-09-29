@@ -4,6 +4,8 @@ from osi.analysis import degree_centrality
 from osi.executors import (
     connectivity,
     explain_node,
+    interpret_health,
+    interpret_rank,
     list_communities,
     network_health,
     rank_nodes,
@@ -60,7 +62,11 @@ def test_each_executor_fills_a_result(sample_run):
         "avg_degree",
         "max_degree",
         "power_law",
+        "findings",
     }
+    assert isinstance(health.values["findings"], list)
+    assert health.values["findings"]
+    assert all("modularity" not in item.lower() for item in health.values["findings"])
     assert set(critical.values) == {"random", "degree", "betweenness"}
     assert communities.trust in {"stable", "moderate", "unstable"}
     assert sum(communities.values["sizes"]) == _graph.number_of_nodes()
@@ -92,7 +98,10 @@ def test_rank_nodes_puts_the_hub_first(sample_run):
     expected = next(iter(degree_centrality(graph)))
     assert expected == "hub"
     assert next(iter(result.values)) == "hub"
-    assert len(result.values) == 3
+    scores = {key: value for key, value in result.values.items() if key != "findings"}
+    assert len(scores) == 3
+    assert result.values["findings"]
+    assert "hub" in result.values["findings"][0]
 
 
 def test_connectivity_path_and_disconnected(sample_run):
@@ -125,6 +134,52 @@ def test_large_criticality_uses_ten_trials(sample_run, monkeypatch):
     assert result.sample_size == 10
     assert result.params["runs"] == 10
     assert result.trust == "moderate"
+
+
+def test_interpret_health_keeps_the_three_strongest_findings():
+    import networkx as nx
+
+    graph = nx.Graph()
+    metrics = {
+        "avg_degree": 40,
+        "max_degree": 800,
+        "modularity": 0.2,
+        "n_communities": 96,
+        "components": 40,
+        "assortativity": -0.8,
+    }
+    findings = interpret_health(metrics, graph)
+    assert findings == [
+        "A few accounts are connected to hundreds of others, far more than typical.",
+        "This is a dense network — most accounts are connected to dozens of others.",
+        "The groups are blurry — they overlap heavily.",
+    ]
+
+
+def test_interpret_health_names_a_clean_split_and_a_sparse_network():
+    import networkx as nx
+
+    findings = interpret_health(
+        {"avg_degree": 1.5, "max_degree": 2, "modularity": 0.8, "n_communities": 4, "components": 1, "assortativity": 0.1},
+        nx.Graph(),
+    )
+    assert findings == [
+        "This is a sparse network — most accounts have only a few connections.",
+        "It breaks cleanly into 4 groups.",
+    ]
+
+
+def test_interpret_rank_names_a_hub_far_above_the_average():
+    import networkx as nx
+
+    graph = nx.star_graph(10)
+    graph = nx.relabel_nodes(graph, {0: "akdas", **{leaf: f"leaf{leaf}" for leaf in range(1, 11)}})
+    ranked = [("akdas", 0.5), ("leaf1", 0.1), ("leaf2", 0.1), ("leaf3", 0.1), ("leaf4", 0.1)]
+    findings = interpret_rank(ranked, graph, "pagerank")
+    assert findings[0] == "The most central accounts are akdas, leaf1, leaf2, leaf3, leaf4."
+    assert findings[1].startswith("akdas is connected to 10 other accounts")
+    assert "far more than the average of 1." in findings[1]
+    assert findings[2] == "These five are the hubs of the network."
 
 
 def test_explain_node_has_six_fields(sample_run):

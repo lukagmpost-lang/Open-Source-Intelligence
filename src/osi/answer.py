@@ -87,13 +87,27 @@ SYSTEM_PROMPT = (
 )
 
 
-def _chat_request(prompt: str, settings: dict[str, str]) -> urllib.request.Request:
+# Used when the executor already translated the numbers into findings.
+FINDINGS_SYSTEM_PROMPT = (
+    "You receive 3-5 findings about a network. Write them as 2-3 "
+    "sentences of plain English. Do not add any numbers or metrics "
+    "that are not in the findings. Do not describe the graph. "
+    "Do not use words like density, modularity, clustering, or "
+    "component."
+)
+
+
+def _chat_request(
+    prompt: str,
+    settings: dict[str, str],
+    system: str | None = None,
+) -> urllib.request.Request:
     url = settings["base_url"].rstrip("/") + "/chat/completions"
     payload = json.dumps(
         {
             "model": settings["model"],
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system or SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
             "temperature": 0,
@@ -123,6 +137,7 @@ def call_llm(
     n_nodes: int | None = None,
     n_edges: int | None = None,
     question: str = "",
+    system: str | None = None,
 ) -> str:
     """Send the system rules plus one user message and return the assistant text.
 
@@ -134,7 +149,7 @@ def call_llm(
             f'with {n_nodes} nodes and {n_edges} edges. The question was: "{question}".'
         )
         prompt = context + "\n\n" + prompt
-    request = _chat_request(prompt, llm_settings())
+    request = _chat_request(prompt, llm_settings(), system)
     try:
         with urllib.request.urlopen(request, timeout=60) as response:
             body = json.loads(response.read().decode("utf-8"))
@@ -316,8 +331,19 @@ def _explain_template(result: ResultObject) -> str:
     )
 
 
+def _findings_template(result: ResultObject) -> str:
+    body = " ".join(str(item) for item in result.values.get("findings") or [])
+    reason = _trust_reason(result)
+    if not reason.endswith("."):
+        reason += "."
+    return f"{body} How sure: {reason}"
+
+
 def templated_fallback(result: ResultObject) -> str:
     """Plain-language sentence used when the model is off or its reply is rejected."""
+    findings = result.values.get("findings")
+    if isinstance(findings, list) and findings and result.intent in {"network_health", "rank_nodes"}:
+        return _findings_template(result)
     if result.intent == "rank_nodes" and result.params.get("metric"):
         return _rank_template(result)
     if result.intent == "list_communities":
@@ -426,6 +452,12 @@ def verify_numbers(text: str, values: dict) -> bool:
     stored: list = []
     keys: list = []
     _walk_values(values, stored, keys)
+    findings = values.get("findings")
+    if isinstance(findings, list):
+        for item in findings:
+            if isinstance(item, str):
+                for match in _NUMBER.finditer(item):
+                    stored.append(float(match.group(0)))
     count = len(values)
     for match in _NUMBER.finditer(text):
         token = match.group(0)
@@ -447,7 +479,10 @@ def _numbers_match(prose: str, result: ResultObject) -> bool:
     Any digit it does use still has to be one of the measured values.
     """
     if not _NUMBER.search(prose):
-        return result.intent == "discuss"
+        if result.intent == "discuss":
+            return True
+        findings = result.values.get("findings")
+        return isinstance(findings, list) and bool(findings)
     return verify_numbers(prose, result.values)
 
 
@@ -535,6 +570,33 @@ def _result_json(result: ResultObject) -> str:
     return json.dumps(payload, default=str)
 
 
+_RECITED_METRICS = (
+    "density",
+    "modularity",
+    "clustering",
+    "triangles",
+    "betweenness",
+    "assortativity",
+    "degree distribution",
+    "power law",
+)
+
+
+def _recites_metrics(text: str) -> bool:
+    """True when the reply names a metric instead of the network."""
+    lowered = text.lower()
+    if re.search(r"\bcomponents?\b", lowered):
+        return True
+    for word in _RECITED_METRICS:
+        if " " in word:
+            if word in lowered:
+                return True
+            continue
+        if re.search(rf"\b{word}\b", lowered):
+            return True
+    return False
+
+
 def answer_cache_key(run_id: str, question: str, values: dict) -> str:
     """sha256 of the run, the question, and the sorted result values."""
     material = run_id + question + str(sorted(values.items()))
@@ -583,14 +645,26 @@ def write_answer(
     run_id = result.params.get("run")
     if not isinstance(run_id, str):
         run_id = ""
+    findings = result.values.get("findings")
+    send_findings = (
+        isinstance(findings, list)
+        and bool(findings)
+        and result.intent in {"network_health", "rank_nodes"}
+    )
     try:
-        prose = call_llm(
-            _result_json(result),
-            run_id=run_id,
-            n_nodes=_size(result, "n_nodes", "nodes"),
-            n_edges=_size(result, "n_edges", "edges"),
-            question=asked,
-        )
+        if send_findings:
+            prose = call_llm(
+                "\n".join(str(item) for item in findings),
+                system=FINDINGS_SYSTEM_PROMPT,
+            )
+        else:
+            prose = call_llm(
+                _result_json(result),
+                run_id=run_id,
+                n_nodes=_size(result, "n_nodes", "nodes"),
+                n_edges=_size(result, "n_edges", "edges"),
+                question=asked,
+            )
     except (OSError, TimeoutError, RuntimeError, KeyError, json.JSONDecodeError, ValueError):
         return text
     if (
@@ -598,11 +672,17 @@ def write_answer(
         or not _numbers_match(prose, result)
         or _misreads_one_community(prose, result)
         or not verify_style(prose)
+        or (result.intent != "discuss" and _recites_metrics(prose))
     ):
         return text
     missing = [caveat for caveat in result.caveats if caveat not in prose]
     if missing:
         prose = prose.rstrip() + " " + " ".join(missing)
+    if send_findings and "How sure:" not in prose:
+        reason = _trust_reason(result)
+        if not reason.endswith("."):
+            reason += "."
+        prose = prose.rstrip() + f" How sure: {reason}"
     if cached_as is not None:
         key, run_id = cached_as
         put_cached_answer(key, prose, run_id)

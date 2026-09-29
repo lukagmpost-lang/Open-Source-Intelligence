@@ -2,7 +2,14 @@ import json
 
 import pytest
 
-from osi.answer import SYSTEM_PROMPT, call_llm, verify_numbers, verify_style, write_answer
+from osi.answer import (
+    FINDINGS_SYSTEM_PROMPT,
+    SYSTEM_PROMPT,
+    call_llm,
+    verify_numbers,
+    verify_style,
+    write_answer,
+)
 from osi.result import ResultObject
 
 
@@ -162,7 +169,7 @@ def test_write_answer_rejects_zero_communities_when_there_is_one(monkeypatch):
 def test_write_answer_keeps_a_community_sentence_that_names_the_zero_id(monkeypatch):
     _clear_llm_env(monkeypatch)
     monkeypatch.setenv("LLM_PROVIDER", "ollama")
-    prose = "There is 1 community. largest_community is 0 and largest_size is 4. modularity is 0.250000."
+    prose = "There is 1 community. The largest community id is 0 and its size is 4."
     _capture(monkeypatch, prose)
     text = write_answer(_communities(), use_llm=True)
     assert text.startswith(prose)
@@ -308,6 +315,65 @@ def test_write_answer_includes_run_context_in_the_prompt(monkeypatch):
         'with 4 nodes and 4 edges. The question was: "top 3 by pagerank".'
     ) in user
     assert body["messages"][0]["content"] == SYSTEM_PROMPT
+
+
+def test_network_health_sends_only_findings(monkeypatch):
+    seen: dict = {}
+
+    def fake(prompt, **kwargs):
+        seen["prompt"] = prompt
+        seen["system"] = kwargs.get("system")
+        return "This is a dense network — most accounts are connected to dozens of others."
+
+    monkeypatch.setattr("osi.answer.call_llm", fake)
+    result = ResultObject(
+        intent="network_health",
+        params={"run": "simple-v1"},
+        values={
+            "avg_degree": 34.2,
+            "modularity": 0.32,
+            "findings": [
+                "This is a dense network — most accounts are connected to dozens of others.",
+                "The groups are blurry — they overlap heavily.",
+            ],
+        },
+        method="exact",
+        sample_size=None,
+        trust="stable",
+        caveats=[],
+        runtime_ms=1,
+    )
+    text = write_answer(result, use_llm=True, question="how healthy is this network", use_cache=False)
+    assert seen["system"] == FINDINGS_SYSTEM_PROMPT
+    assert "34.2" not in seen["prompt"]
+    assert "modularity" not in seen["prompt"]
+    assert "dense network" in seen["prompt"]
+    assert "dense network" in text
+    assert "How sure: stable." in text
+
+
+def test_metric_recital_falls_back_to_the_findings(monkeypatch):
+    monkeypatch.setattr(
+        "osi.answer.call_llm",
+        lambda prompt, **kwargs: "The modularity is 0.32 and the clustering is high.",
+    )
+    result = ResultObject(
+        intent="network_health",
+        params={"run": "simple-v1"},
+        values={
+            "modularity": 0.32,
+            "findings": ["The groups are blurry — they overlap heavily."],
+        },
+        method="exact",
+        sample_size=None,
+        trust="stable",
+        caveats=[],
+        runtime_ms=1,
+    )
+    text = write_answer(result, use_llm=True, question="how healthy", use_cache=False)
+    assert "modularity" not in text.lower()
+    assert text.startswith("The groups are blurry")
+    assert "How sure: stable." in text
 
 
 def test_verify_style_rejects_the_graph_is():

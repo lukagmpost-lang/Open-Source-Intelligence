@@ -42,10 +42,9 @@ def test_ask_without_llm_returns_the_template(monkeypatch):
 
     monkeypatch.setattr("osi.answer.call_llm", fail)
     text = ask("simple-v1", "top 3 by pagerank", use_llm=False)
-    assert text.startswith("The most important nodes by ")
+    assert text.startswith("The most central accounts are ")
     assert "alice" in text
-    assert "0.415481" in text
-    assert "How sure: stable" in text
+    assert "How sure: stable." in text
 
 
 def test_no_cache_flag_skips_a_stored_answer(monkeypatch, capsys):
