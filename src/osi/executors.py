@@ -138,7 +138,7 @@ def rank_nodes(run: str, metric: str = "pagerank", top: int = 10) -> ResultObjec
 
 
 def list_communities(run: str, algorithm: str = "louvain") -> ResultObject:
-    """Community id to size. Trust follows modularity, not the exact/sampled rule."""
+    """Named community summary. Trust follows modularity, not the exact/sampled rule."""
     if algorithm not in _COMMUNITIES:
         raise ValueError(f"unknown algorithm {algorithm}")
     graph = _load_graph(run)
@@ -149,8 +149,8 @@ def list_communities(run: str, algorithm: str = "louvain") -> ResultObject:
     counts: dict[Any, int] = {}
     for community in assignment.values():
         counts[community] = counts.get(community, 0) + 1
-    values = dict(sorted(counts.items(), key=lambda item: (-item[1], str(item[0]))))
     modularity = _modularity_of(graph, assignment)
+    values = ResultObject.community_values(counts, modularity)
     return _finish(
         "list_communities",
         {"run": run, "algorithm": algorithm},

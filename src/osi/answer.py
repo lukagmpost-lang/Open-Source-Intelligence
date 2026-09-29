@@ -18,6 +18,8 @@ from osi.result import ResultObject
 
 _ROOT = Path(__file__).resolve().parents[2]
 _NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
+# "10 communities" is not this phrase. The zero has to be its own number.
+_ZERO_COMMUNITIES = re.compile(r"\b0\s+communities\b", re.IGNORECASE)
 
 # Local Ollama when .env does not choose a provider.
 _DEFAULT_PROVIDER = "ollama"
@@ -100,13 +102,38 @@ def _format_values(values: dict) -> str:
     return ", ".join(parts)
 
 
+def _communities_text(values: dict) -> str:
+    """Name each community field so an id of 0 is not read as a count."""
+    count = int(values["n_communities"])
+    noun = "community" if count == 1 else "communities"
+    sizes = ", ".join(str(size) for size in values["sizes"]) or "none"
+    modularity = values.get("modularity")
+    if modularity is None:
+        mod = "not available"
+    else:
+        mod = f"{float(modularity):.6f}"
+    largest = values.get("largest_community")
+    largest_text = "none" if largest is None else str(largest)
+    return (
+        f"n_communities is {count} ({noun}). "
+        f"modularity is {mod}. "
+        f"sizes are {sizes}. "
+        f"largest_community is {largest_text}. "
+        f"largest_size is {values['largest_size']}"
+    )
+
+
 def _plain(result: ResultObject) -> str:
     metric = result.params.get("metric")
-    if result.intent == "rank_nodes" and metric:
+    if result.intent == "list_communities":
+        head = "list_communities:"
+        body = _communities_text(result.values)
+    elif result.intent == "rank_nodes" and metric:
         head = f"Top {result.params.get('top', len(result.values))} by {metric}:"
+        body = _format_values(result.values)
     else:
         head = f"{result.intent}:"
-    body = _format_values(result.values)
+        body = _format_values(result.values)
     trust = f"This result is {result.method} and trust is {result.trust}."
     caveat = " ".join(result.caveats)
     return " ".join(part for part in (head, body + ".", trust, caveat) if part)
@@ -211,6 +238,15 @@ def _numbers_match(prose: str, result: ResultObject) -> bool:
     return verify_numbers(prose, result.values)
 
 
+def _misreads_one_community(prose: str, result: ResultObject) -> bool:
+    """A community id of 0 is not a count of zero communities."""
+    if result.intent != "list_communities":
+        return False
+    if result.values.get("n_communities") != 1:
+        return False
+    return _ZERO_COMMUNITIES.search(prose) is not None
+
+
 def write_answer(result: ResultObject, use_llm: bool = False) -> str:
     """Plain sentence from the result. A model may rephrase it, not change the numbers."""
     text = _plain(result)
@@ -225,7 +261,7 @@ def write_answer(result: ResultObject, use_llm: bool = False) -> str:
         prose = call_llm(prompt)
     except (OSError, TimeoutError, RuntimeError, KeyError, json.JSONDecodeError, ValueError):
         return text
-    if not prose or not _numbers_match(prose, result):
+    if not prose or not _numbers_match(prose, result) or _misreads_one_community(prose, result):
         return text
     missing = [caveat for caveat in result.caveats if caveat not in prose]
     if missing:

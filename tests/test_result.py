@@ -1,6 +1,26 @@
 from osi.result import ResultObject, estimate_memory, make_caveats, trust_from_nmi
 
 
+def test_community_values_names_the_largest_group():
+    values = ResultObject.community_values({2: 3, 0: 10, 1: 3}, modularity=0.42)
+    assert values == {
+        "n_communities": 3,
+        "modularity": 0.42,
+        "sizes": [10, 3, 3],
+        "largest_community": 0,
+        "largest_size": 10,
+    }
+
+
+def test_community_values_breaks_size_ties_by_id():
+    values = ResultObject.community_values({1: 4, 0: 4}, modularity=None)
+    assert values["n_communities"] == 2
+    assert values["sizes"] == [4, 4]
+    assert values["largest_community"] == 0
+    assert values["largest_size"] == 4
+    assert values["modularity"] is None
+
+
 def test_result_object_round_trips():
     original = ResultObject(
         intent="rank_nodes",

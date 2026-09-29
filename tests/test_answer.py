@@ -128,6 +128,47 @@ def test_verify_numbers_accepts_the_stored_score_in_a_sentence():
     assert verify_numbers("alice at 0.415481", _SCORES) is True
 
 
+def _communities() -> ResultObject:
+    return ResultObject(
+        intent="list_communities",
+        params={"run": "simple-v1", "algorithm": "louvain"},
+        values=ResultObject.community_values({0: 4}, 0.25),
+        method="exact",
+        sample_size=None,
+        trust="unstable",
+        caveats=["The graph has only 4 nodes, so one added or removed edge can change the result."],
+        runtime_ms=1,
+    )
+
+
+def test_write_answer_names_community_fields():
+    text = write_answer(_communities(), use_llm=False)
+    assert "n_communities is 1" in text
+    assert "modularity is 0.250000" in text
+    assert "sizes are 4" in text
+    assert "largest_community is 0" in text
+    assert "largest_size is 4" in text
+
+
+def test_write_answer_rejects_zero_communities_when_there_is_one(monkeypatch):
+    _clear_llm_env(monkeypatch)
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    _capture(monkeypatch, "There are 0 communities and the largest size is 4.")
+    text = write_answer(_communities(), use_llm=True)
+    assert "n_communities is 1" in text
+    assert "0 communities" not in text
+
+
+def test_write_answer_keeps_a_community_sentence_that_names_the_zero_id(monkeypatch):
+    _clear_llm_env(monkeypatch)
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    prose = "There is 1 community. largest_community is 0 and largest_size is 4. modularity is 0.250000."
+    _capture(monkeypatch, prose)
+    text = write_answer(_communities(), use_llm=True)
+    assert text.startswith(prose)
+    assert "only 4 nodes" in text
+
+
 def test_write_answer_uses_the_model_when_the_numbers_match(monkeypatch):
     _clear_llm_env(monkeypatch)
     monkeypatch.setenv("LLM_PROVIDER", "ollama")

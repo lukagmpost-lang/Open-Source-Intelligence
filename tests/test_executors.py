@@ -63,7 +63,27 @@ def test_each_executor_fills_a_result(sample_run):
     }
     assert set(critical.values) == {"random", "degree", "betweenness"}
     assert communities.trust in {"stable", "moderate", "unstable"}
-    assert sum(communities.values.values()) == _graph.number_of_nodes()
+    assert sum(communities.values["sizes"]) == _graph.number_of_nodes()
+
+
+def test_list_communities_uses_named_fields(sample_run):
+    run, graph = sample_run
+    result = list_communities(run)
+    values = result.values
+    assert set(values) == {
+        "n_communities",
+        "modularity",
+        "sizes",
+        "largest_community",
+        "largest_size",
+    }
+    assert values["n_communities"] == len(values["sizes"])
+    assert values["n_communities"] >= 1
+    assert sum(values["sizes"]) == graph.number_of_nodes()
+    assert values["sizes"] == sorted(values["sizes"], reverse=True)
+    assert values["largest_size"] == values["sizes"][0]
+    assert isinstance(values["largest_community"], int)
+    assert isinstance(values["modularity"], float)
 
 
 def test_rank_nodes_puts_the_hub_first(sample_run):

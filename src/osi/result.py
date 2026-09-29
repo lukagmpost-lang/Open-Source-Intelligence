@@ -46,6 +46,30 @@ class ResultObject:
             runtime_ms=int(d["runtime_ms"]),
         )
 
+    @staticmethod
+    def community_values(counts: dict, modularity: float | None = None) -> dict:
+        """Named fields for a list_communities result.
+
+        ``counts`` maps a community id to its size. ``sizes`` lists those
+        sizes, largest first. When two communities are the same size, the
+        id that sorts first as text is the largest. ``modularity`` may be None.
+        """
+        ordered = sorted(counts.items(), key=lambda item: (-int(item[1]), str(item[0])))
+        sizes = [int(size) for _community_id, size in ordered]
+        if ordered:
+            largest_community = ordered[0][0]
+            largest_size = sizes[0]
+        else:
+            largest_community = None
+            largest_size = 0
+        return {
+            "n_communities": len(ordered),
+            "modularity": None if modularity is None else float(modularity),
+            "sizes": sizes,
+            "largest_community": largest_community,
+            "largest_size": largest_size,
+        }
+
 
 def trust_from_nmi(mean_nmi: float, z: float) -> str:
     """stable if mean_nmi >= 0.9 and z >= 3
