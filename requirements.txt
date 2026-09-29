@@ -2,12 +2,8 @@
 networkx==3.7
 # Exact betweenness and the Leiden graph backend.
 igraph==1.0.0
-# Figures for later steps. Import is checked here so a missing wheel fails early.
-matplotlib==3.11.2
 # Leiden communities. analysis.py uses Louvain if this import fails.
 leidenalg==0.12.0
-# Standalone force-directed HTML. in_line resources need no extra download at view time.
-pyvis==0.3.2
 # Degree-distribution fits for --health.
 numpy==2.4.4
 scipy==1.18.1

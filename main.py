@@ -76,7 +76,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Print a side-by-side comparison. Omit this flag to keep the original report.",
     )
     parser.add_argument("--out", default="graph.json", help="Node-link JSON output path.")
-    parser.add_argument("--plot", action="store_true", help="Save graph.png after the analysis.")
     parser.add_argument("--link-predict", type=_parse_top, metavar="top=N")
     parser.add_argument("--cpm", action="store_true", help="Print overlapping k-clique communities.")
     parser.add_argument("--save-run", metavar="NAME", help="Save results under this run id.")
@@ -198,62 +197,6 @@ def print_comparison(graph: nx.Graph, mode: str) -> None:
         print_community_table(communities)
     if mode in ("all", "cross") and centralities is not None and communities is not None:
         cross_reference(graph, communities, centralities)
-
-
-def save_plot(graph: nx.Graph, path: str = "graph.png") -> None:
-    # PageRank sets the dot size and decides which few nodes get a name.
-    scores = pagerank(graph)
-    # Louvain community ids are the color key. tab20 cycles every 20 groups.
-    communities = louvain_communities(graph)
-    # Betweenness order is strongest first, so the first five are the bridges.
-    bridges = list(betweenness_centrality(graph))[:5]
-
-    # Draw without a window. Agg writes a file on a machine with no display.
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    # Same seed and spring settings every run, so the picture does not jump around.
-    positions = nx.spring_layout(graph, k=0.15, iterations=50, seed=42)
-    figure, axes = plt.subplots(figsize=(20, 20))
-
-    # Scale scores into pixel areas. 20000 makes hubs large and leaves the rest small.
-    node_size = [scores.get(node, 0.0) * 20000 for node in graph.nodes]
-    node_color = [communities.get(node, 0) for node in graph.nodes]
-    # Faint edges keep the communities visible without a solid gray sheet.
-    nx.draw_networkx_edges(graph, positions, ax=axes, alpha=0.15, width=0.3)
-    nx.draw_networkx_nodes(
-        graph,
-        positions,
-        ax=axes,
-        node_size=node_size,
-        node_color=node_color,
-        cmap=plt.cm.tab20,
-        linewidths=0,
-    )
-
-    # A red ring on the top 5 betweenness nodes, using the same size as the fill.
-    if bridges:
-        nx.draw_networkx_nodes(
-            graph,
-            positions,
-            nodelist=bridges,
-            ax=axes,
-            node_size=[scores.get(node, 0.0) * 20000 for node in bridges],
-            node_color="none",
-            edgecolors="red",
-            linewidths=2,
-        )
-
-    # Names only for the handful of nodes above 0.003, about the top five on SNAP.
-    labels = {node: str(node) for node, score in scores.items() if score > 0.003}
-    nx.draw_networkx_labels(graph, positions, labels=labels, ax=axes, font_size=10)
-    axes.set_axis_off()
-    figure.tight_layout()
-    figure.savefig(path, dpi=150)
-    plt.close(figure)
-    print("Saved graph.png")
 
 
 def print_link_predictions(graph: nx.Graph, top_n: int) -> None:
@@ -564,8 +507,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.compare:
         print_comparison(graph, args.compare)
     write_graph(graph, args.out)
-    if args.plot:
-        save_plot(graph)
     if args.link_predict:
         print_link_predictions(graph, args.link_predict)
     if args.cpm:
