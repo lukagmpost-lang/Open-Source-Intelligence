@@ -3,3 +3,9 @@ __pycache__/
 .pytest_cache/
 data/
 .env
+*.log
+graph.json
+graph.html
+graph.png
+*.egg-info/
+facebook_combined.txt

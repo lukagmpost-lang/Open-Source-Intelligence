@@ -9,7 +9,6 @@ import re
 
 # The four score names rank_nodes already accepts. Anything else is not a metric.
 _METRICS = {"pagerank", "degree", "betweenness", "closeness"}
-_DEFAULT_METRIC = "pagerank"
 _DEFAULT_TOP = 10
 
 _TOP_BY = re.compile(r"^top (\d+) by (\S+)$", re.IGNORECASE)
