@@ -169,6 +169,52 @@ def test_write_answer_keeps_a_community_sentence_that_names_the_zero_id(monkeypa
     assert "only 4 nodes" in text
 
 
+def _discuss_result() -> ResultObject:
+    return ResultObject(
+        intent="discuss",
+        params={"run": "simple-v1", "question": "why is the graph shaped this way"},
+        values={
+            "nodes": 4,
+            "edges": 4,
+            "components": 1,
+            "triangles": 1,
+            "structure": [
+                {
+                    "node": "alice",
+                    "degree": 3,
+                    "neighbors": [
+                        {"node": "bob", "weight": 2.0},
+                        {"node": "carol", "weight": 3.0},
+                        {"node": "dave", "weight": 1.0},
+                    ],
+                }
+            ],
+        },
+        method="exact",
+        sample_size=None,
+        trust="stable",
+        caveats=["The graph has only 4 nodes, so one added or removed edge can change the result."],
+        runtime_ms=1,
+    )
+
+
+def test_discuss_keeps_a_plain_explanation(monkeypatch):
+    monkeypatch.setattr(
+        "osi.answer.call_llm",
+        lambda prompt: "Alice, Bob, and Carol form a triangle, and Dave is only tied to Alice.",
+    )
+    text = write_answer(_discuss_result(), use_llm=True, question="why is the graph shaped this way")
+    assert "triangle" in text
+    assert "Dave" in text
+
+
+def test_discuss_drops_an_invented_count(monkeypatch):
+    monkeypatch.setattr("osi.answer.call_llm", lambda prompt: "The graph contains 99 separate cliques.")
+    text = write_answer(_discuss_result(), use_llm=True, question="why is the graph shaped this way")
+    assert "99" not in text
+    assert "4 nodes" in text
+
+
 def test_write_answer_uses_the_model_when_the_numbers_match(monkeypatch):
     _clear_llm_env(monkeypatch)
     monkeypatch.setenv("LLM_PROVIDER", "ollama")

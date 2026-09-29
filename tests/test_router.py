@@ -27,7 +27,8 @@ _CASES = (
     ("tell me about alice", "explain_node", {"node": "alice"}),
     ("who is jay.bsky.team", "explain_node", {"node": "jay.bsky.team"}),
     ("describe carol", "explain_node", {"node": "carol"}),
-    ("what is the weather", "unsupported", {}),
+    ("what is the weather", "discuss", {"question": "what is the weather"}),
+    ("why is the graph shaped this way", "discuss", {"question": "why is the graph shaped this way"}),
     ("", "unsupported", {}),
     ("TOP 5 BY PAGERANK", "rank_nodes", {"metric": "pagerank", "top": 5}),
     ("tell me about alice?", "explain_node", {"node": "alice"}),
@@ -39,7 +40,7 @@ _CASES = (
 def test_route_parses_the_question(question, intent, extra):
     parsed = route(question, "simple-v1")
     assert parsed["intent"] == intent
-    assert parsed["confidence"] == ("low" if intent == "unsupported" else "high")
+    assert parsed["confidence"] == ("low" if intent in {"unsupported", "discuss"} else "high")
     assert parsed["params"]["run"] == "simple-v1"
     for key, value in extra.items():
         assert parsed["params"][key] == value

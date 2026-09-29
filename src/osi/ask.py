@@ -12,6 +12,7 @@ import sys
 from osi.answer import write_answer
 from osi.executors import (
     connectivity,
+    discuss,
     explain_node,
     list_communities,
     network_health,
@@ -28,6 +29,7 @@ EXECUTORS = {
     "structural_criticality": structural_criticality,
     "connectivity": connectivity,
     "explain_node": explain_node,
+    "discuss": discuss,
 }
 
 _UNSUPPORTED = (

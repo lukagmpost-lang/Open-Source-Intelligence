@@ -125,9 +125,66 @@ def _communities_text(values: dict) -> str:
     )
 
 
+def _score_list(scores: dict) -> str:
+    parts = []
+    for key, value in scores.items():
+        if isinstance(value, float):
+            parts.append(f"{key} {value:.6f}")
+        else:
+            parts.append(f"{key} {value}")
+    return ", ".join(parts)
+
+
+def _num(value) -> str:
+    if isinstance(value, float):
+        return f"{value:.6f}"
+    if value is None:
+        return "unknown"
+    return str(value)
+
+
+def _discuss_notes(values: dict) -> str:
+    """A readable brief. The model answers from this, and it is also the fallback."""
+    nodes = values.get("nodes", 0)
+    edges = values.get("edges", 0)
+    components = values.get("components", 0)
+    component_word = "component" if components == 1 else "components"
+    sentences = [
+        f"The graph has {nodes} nodes and {edges} edges in {components} {component_word}.",
+        (
+            f"Density is {_num(values.get('density'))}, with {values.get('triangles')} triangles. "
+            f"Average clustering is {_num(values.get('clustering'))}. "
+            f"Average degree is {_num(values.get('avg_degree'))} and the highest degree is {_num(values.get('max_degree'))}."
+        ),
+        (
+            f"Louvain finds {values.get('communities')} communities "
+            f"(modularity {_num(values.get('modularity'))}, largest community {values.get('largest_community')} nodes)."
+        ),
+    ]
+    ranks = values.get("top_pagerank") or {}
+    if ranks:
+        sentences.append(f"Highest PageRank: {_score_list(ranks)}.")
+    links = []
+    for row in values.get("structure") or []:
+        neighbors = row.get("neighbors") or []
+        if not neighbors:
+            links.append(f"{row.get('node')} (degree {row.get('degree')}) has no neighbors")
+            continue
+        joined = ", ".join(
+            f"{item.get('node')} (weight {item.get('weight')})" for item in neighbors
+        )
+        links.append(f"{row.get('node')} (degree {row.get('degree')}) links to {joined}")
+    if links:
+        sentences.append("Adjacency: " + "; ".join(links) + ".")
+    return " ".join(sentences)
+
+
 def _plain(result: ResultObject) -> str:
     metric = result.params.get("metric")
-    if result.intent == "list_communities":
+    if result.intent == "discuss":
+        head = ""
+        body = _discuss_notes(result.values)
+    elif result.intent == "list_communities":
         head = "list_communities:"
         body = _communities_text(result.values)
     elif result.intent == "rank_nodes" and metric:
@@ -138,6 +195,8 @@ def _plain(result: ResultObject) -> str:
         body = _format_values(result.values)
     trust = f"This result is {result.method} and trust is {result.trust}."
     caveat = " ".join(result.caveats)
+    if result.intent == "discuss":
+        return " ".join(part for part in (body, trust, caveat) if part)
     return " ".join(part for part in (head, body + ".", trust, caveat) if part)
 
 
@@ -234,9 +293,13 @@ def verify_numbers(text: str, values: dict) -> bool:
 
 
 def _numbers_match(prose: str, result: ResultObject) -> bool:
-    """Every number in the reply has to come from result.values."""
+    """Every number in the reply has to come from result.values.
+
+    A discuss answer may explain the shape without quoting a score.
+    Any digit it does use still has to be one of the measured values.
+    """
     if not _NUMBER.search(prose):
-        return False
+        return result.intent == "discuss"
     return verify_numbers(prose, result.values)
 
 
@@ -292,11 +355,24 @@ def write_answer(
         stored = get_cached_answer(key)
         if stored is not None:
             return stored
-    prompt = (
-        "Rewrite this graph result in one or two sentences. "
-        "Use only the numbers written below. Do not invent scores, counts, or names.\n\n"
-        + text
-    )
+    if result.intent == "discuss":
+        asked = question or str(result.params.get("question") or "What is this graph like?")
+        prompt = (
+            "You are a student who has just measured one graph. "
+            "Answer the question in a few plain sentences, the way you would explain it to a classmate. "
+            "Explain the shape: who forms the core, who is only attached to that core, and why that follows from the edges. "
+            "Do not recite every statistic. "
+            "Use only nodes, edges, and numbers from the notes. Do not invent any. "
+            "If the question is not about this graph, say that in one sentence, then say what the graph is.\n\n"
+            f"Question: {asked}\n\n"
+            f"Notes:\n{_discuss_notes(result.values)}"
+        )
+    else:
+        prompt = (
+            "Rewrite this graph result in one or two sentences. "
+            "Use only the numbers written below. Do not invent scores, counts, or names.\n\n"
+            + text
+        )
     try:
         prose = call_llm(prompt)
     except (OSError, TimeoutError, RuntimeError, KeyError, json.JSONDecodeError, ValueError):

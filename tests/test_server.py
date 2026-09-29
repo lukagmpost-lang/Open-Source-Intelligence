@@ -45,13 +45,25 @@ def test_post_ask_missing_run_is_404():
 def test_post_ask_unsupported_question_returns_the_helpful_message():
     response = client.post(
         "/api/ask",
-        json={"run": "simple-v1", "question": "what is the weather", "use_llm": False},
+        json={"run": "simple-v1", "question": "   ", "use_llm": False},
     )
     assert response.status_code == 200
     body = response.json()
     assert body["intent"] == "unsupported"
     assert "I don't know how to answer that" in body["answer"]
     assert "top 10 by pagerank" in body["answer"]
+
+
+def test_post_ask_open_question_describes_the_graph():
+    response = client.post(
+        "/api/ask",
+        json={"run": "simple-v1", "question": "why is the graph shaped this way", "use_llm": False},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["intent"] == "discuss"
+    assert "4 nodes" in body["answer"]
+    assert "alice" in body["answer"]
 
 
 def test_index_returns_html():

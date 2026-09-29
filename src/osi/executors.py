@@ -257,6 +257,68 @@ def connectivity(run: str, source: Any, target: Any) -> ResultObject:
     )
 
 
+def _local_structure(graph: nx.Graph, limit: int = 40) -> list[dict]:
+    """Each node's neighbors. Large graphs keep the summary stats only."""
+    if graph.number_of_nodes() > limit or graph.number_of_nodes() == 0:
+        return []
+    rows = []
+    ranked = sorted(graph.degree(), key=lambda item: (-item[1], str(item[0])))
+    for node, degree in ranked:
+        neighbors = []
+        for other in sorted(graph.neighbors(node), key=str):
+            neighbors.append(
+                {"node": other, "weight": float(graph[node][other].get("weight", 1.0))}
+            )
+        rows.append({"node": node, "degree": int(degree), "neighbors": neighbors})
+    return rows
+
+
+def discuss(run: str, question: str = "") -> ResultObject:
+    """Facts a reader needs in order to explain the graph in plain language.
+
+    The notes are the measured structure: size, clustering, communities,
+    the highest PageRank scores, and, on a small graph, every adjacency.
+    """
+    graph = _load_graph(run)
+    started = time.perf_counter()
+    simple = graph.to_undirected() if graph.is_directed() else graph
+    health = _network_health(simple)
+    ranks = list(pagerank(simple).items())[:5]
+    assignment = louvain_communities(simple)
+    counts: dict[Any, int] = {}
+    for community in assignment.values():
+        counts[community] = counts.get(community, 0) + 1
+    communities = ResultObject.community_values(counts, _modularity_of(simple, assignment))
+    triangles = sum(nx.triangles(simple).values()) // 3
+    density = float(nx.density(simple)) if simple.number_of_nodes() else 0.0
+    values = {
+        "nodes": simple.number_of_nodes(),
+        "edges": simple.number_of_edges(),
+        "components": health["num_components"],
+        "density": round(density, 6),
+        "triangles": triangles,
+        "clustering": health["avg_clustering"],
+        "assortativity": health["assortativity"],
+        "avg_degree": health["avg_degree"],
+        "max_degree": health["max_degree"],
+        "communities": communities["n_communities"],
+        "modularity": communities["modularity"],
+        "largest_community": communities["largest_size"],
+        "top_pagerank": {str(node): score for node, score in ranks},
+        "structure": _local_structure(simple),
+    }
+    return _finish(
+        "discuss",
+        {"run": run, "question": question},
+        values,
+        "exact",
+        None,
+        "stable",
+        simple.number_of_nodes(),
+        started,
+    )
+
+
 def explain_node(run: str, node: Any) -> ResultObject:
     """Degree, three centralities, Louvain community, and the five heaviest neighbors."""
     graph = _load_graph(run)

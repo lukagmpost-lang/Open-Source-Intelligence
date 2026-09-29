@@ -14,10 +14,21 @@ def test_ask_returns_a_string_for_top_pagerank(monkeypatch):
 
 
 def test_ask_returns_a_helpful_message_for_an_unsupported_question():
-    text = ask("simple-v1", "what is the weather")
+    text = ask("simple-v1", "   ")
     assert "I don't know how to answer that" in text
     assert "top 10 by pagerank" in text
     assert "0.415481" not in text
+
+
+def test_ask_explains_an_open_question_from_the_graph(monkeypatch):
+    monkeypatch.setattr(
+        "osi.answer.call_llm",
+        lambda prompt: "Alice, Bob, and Carol form a triangle, and Dave is only tied to Alice.",
+    )
+    text = ask("simple-v1", "why is the graph shaped this way", use_cache=False)
+    assert "triangle" in text
+    assert "Dave" in text
+    assert "I don't know how to answer that" not in text
 
 
 def test_ask_missing_run_raises_value_error():

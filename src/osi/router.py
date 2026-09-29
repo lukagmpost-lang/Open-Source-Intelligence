@@ -52,7 +52,7 @@ def route(question: str, run_id: str) -> dict:
     Returns dict with:
       intent: rank_nodes | list_communities | network_health |
               structural_criticality | connectivity | explain_node |
-              unsupported
+              discuss | unsupported
       params: dict for that executor
       confidence: "high" | "low"
     Never calls an executor. Only parses.
@@ -64,14 +64,16 @@ def route(question: str, run_id: str) -> dict:
     parsed = (
         _rank_top(text)
         or _connectivity(text)
-        or         _explain(text)
+        or _explain(text)
         or _critical(text)
         or _phrase_rank(text)
         or _health(text)
         or _communities(text)
     )
     if parsed is None:
-        return _answer("unsupported", {}, "low", run_id)
+        # A question that is not a fixed report is still about this graph.
+        # discuss answers it from the measured structure.
+        return _answer("discuss", {"question": text}, "low", run_id)
     intent, params = parsed
     return _answer(intent, params, "high", run_id)
 
