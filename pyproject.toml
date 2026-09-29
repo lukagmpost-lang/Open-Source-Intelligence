@@ -17,6 +17,9 @@ dependencies = [
     "scipy",
 ]
 
+[project.scripts]
+osi = "osi.ask:main"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
