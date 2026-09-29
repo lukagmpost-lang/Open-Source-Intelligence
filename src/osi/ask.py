@@ -37,16 +37,17 @@ _UNSUPPORTED = (
 )
 
 
-def ask(run_id: str, question: str, use_llm: bool = True) -> str:
+def ask(run_id: str, question: str, use_llm: bool = True, *, use_cache: bool = True) -> str:
     """Full pipeline: route → executor → write_answer.
 
     Raises ValueError if run_id doesn't exist in the store.
+    ``use_cache=False`` skips a stored answer and does not write a new one.
     """
-    text, _query = _execute(run_id, question, use_llm)
+    text, _query = _execute(run_id, question, use_llm, use_cache=use_cache)
     return text
 
 
-def _execute(run_id: str, question: str, use_llm: bool) -> tuple[str, dict]:
+def _execute(run_id: str, question: str, use_llm: bool, use_cache: bool = True) -> tuple[str, dict]:
     if get_run(run_id) is None:
         raise ValueError(f"run {run_id} was not found")
     routed = route(question, run_id)
@@ -60,7 +61,7 @@ def _execute(run_id: str, question: str, use_llm: bool) -> tuple[str, dict]:
             "trust": "none",
         }
     result = EXECUTORS[intent](**params)
-    text = write_answer(result, use_llm=use_llm)
+    text = write_answer(result, use_llm=use_llm, question=question, use_cache=use_cache)
     return text, {
         "intent": result.intent,
         "params": result.params,
@@ -79,9 +80,9 @@ def _print_report(text: str, query: dict) -> None:
     print(f"  trust: {query['trust']}")
 
 
-def _emit(run_id: str, question: str, use_llm: bool) -> int:
+def _emit(run_id: str, question: str, use_llm: bool, use_cache: bool = True) -> int:
     try:
-        text, query = _execute(run_id, question, use_llm)
+        text, query = _execute(run_id, question, use_llm, use_cache=use_cache)
     except (ValueError, LookupError) as error:
         print(error, file=sys.stderr)
         return 1
@@ -89,7 +90,7 @@ def _emit(run_id: str, question: str, use_llm: bool) -> int:
     return 0
 
 
-def _interactive(run_id: str, use_llm: bool) -> int:
+def _interactive(run_id: str, use_llm: bool, use_cache: bool = True) -> int:
     while True:
         try:
             question = input("> ")
@@ -101,7 +102,7 @@ def _interactive(run_id: str, use_llm: bool) -> int:
         if not question.strip():
             continue
         try:
-            text, query = _execute(run_id, question, use_llm)
+            text, query = _execute(run_id, question, use_llm, use_cache=use_cache)
         except LookupError as error:
             print(error, file=sys.stderr)
             continue
@@ -118,6 +119,7 @@ def main(argv: list[str] | None = None) -> None:
     python3 -m osi.ask --run RUN_ID "question"
     python3 -m osi.ask --run RUN_ID              (interactive)
     python3 -m osi.ask --run RUN_ID --no-llm "q"
+    python3 -m osi.ask --run RUN_ID --no-cache "q"
 
     Prints the answer, a blank line, then a 'Query used:' section
     with intent, params, method, and trust.
@@ -132,18 +134,24 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="print the template instead of calling a model",
     )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="call the model even when this question was answered before",
+    )
     parser.add_argument("question", nargs="?", help="question; omit this to start an interactive session")
     args = parser.parse_args(argv)
     use_llm = not args.no_llm
+    use_cache = not args.no_cache
     if get_run(args.run) is None:
         print(f"run {args.run} was not found", file=sys.stderr)
         raise SystemExit(1)
     if args.question:
-        code = _emit(args.run, args.question, use_llm)
+        code = _emit(args.run, args.question, use_llm, use_cache=use_cache)
         if code:
             raise SystemExit(code)
         return
-    code = _interactive(args.run, use_llm)
+    code = _interactive(args.run, use_llm, use_cache=use_cache)
     if code:
         raise SystemExit(code)
 

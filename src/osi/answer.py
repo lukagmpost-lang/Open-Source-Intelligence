@@ -7,6 +7,7 @@ shape; only the base URL, model, and Authorization header change.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -15,6 +16,7 @@ import urllib.request
 from pathlib import Path
 
 from osi.result import ResultObject
+from osi.store import get_cached_answer, put_cached_answer
 
 _ROOT = Path(__file__).resolve().parents[2]
 _NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
@@ -247,11 +249,49 @@ def _misreads_one_community(prose: str, result: ResultObject) -> bool:
     return _ZERO_COMMUNITIES.search(prose) is not None
 
 
-def write_answer(result: ResultObject, use_llm: bool = False) -> str:
-    """Plain sentence from the result. A model may rephrase it, not change the numbers."""
+def answer_cache_key(run_id: str, question: str, values: dict) -> str:
+    """sha256 of the run, the question, and the sorted result values."""
+    material = run_id + question + str(sorted(values.items()))
+    return hashlib.sha256(material.encode()).hexdigest()
+
+
+def _cache_key(result: ResultObject, question: str | None) -> tuple[str, str] | None:
+    """Return (key, run id) when this answer can be stored. Otherwise None."""
+    if question is None:
+        return None
+    run_id = result.params.get("run")
+    if not isinstance(run_id, str) or not run_id:
+        return None
+    try:
+        key = answer_cache_key(run_id, question, result.values)
+    except TypeError:
+        return None
+    return key, run_id
+
+
+def write_answer(
+    result: ResultObject,
+    use_llm: bool = False,
+    *,
+    question: str | None = None,
+    use_cache: bool = True,
+) -> str:
+    """Plain sentence from the result. A model may rephrase it, not change the numbers.
+
+    When ``use_llm`` and ``use_cache`` are set and the question is known, a
+    repeated run, question, and result returns the stored sentence and does
+    not call the model. A sentence is stored only after the number check
+    accepts it. ``use_cache=False`` skips both the lookup and the store.
+    """
     text = _plain(result)
     if not use_llm:
         return text
+    cached_as = _cache_key(result, question) if use_cache else None
+    if cached_as is not None:
+        key, _run_id = cached_as
+        stored = get_cached_answer(key)
+        if stored is not None:
+            return stored
     prompt = (
         "Rewrite this graph result in one or two sentences. "
         "Use only the numbers written below. Do not invent scores, counts, or names.\n\n"
@@ -265,5 +305,8 @@ def write_answer(result: ResultObject, use_llm: bool = False) -> str:
         return text
     missing = [caveat for caveat in result.caveats if caveat not in prose]
     if missing:
-        return prose.rstrip() + " " + " ".join(missing)
+        prose = prose.rstrip() + " " + " ".join(missing)
+    if cached_as is not None:
+        key, run_id = cached_as
+        put_cached_answer(key, prose, run_id)
     return prose

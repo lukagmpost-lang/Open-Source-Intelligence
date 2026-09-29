@@ -176,3 +176,61 @@ def test_write_answer_uses_the_model_when_the_numbers_match(monkeypatch):
     text = write_answer(_result(), use_llm=True)
     assert text.startswith("Alice leads PageRank at 0.415481.")
     assert "only 4 nodes" in text
+
+
+def _cached_llm(monkeypatch, replies: list[str]) -> list[str]:
+    """Replace the model with a queue of sentences and record each call."""
+    sent: list[str] = []
+
+    def fake(prompt: str) -> str:
+        sent.append(replies[len(sent)])
+        return sent[-1]
+
+    monkeypatch.setattr("osi.answer.call_llm", fake)
+    return sent
+
+
+def test_second_call_returns_the_cached_answer(tmp_path, monkeypatch):
+    monkeypatch.setenv("OSI_STORE", str(tmp_path / "store.db"))
+    calls = _cached_llm(monkeypatch, ["Alice leads PageRank at 0.415481."])
+    result = _result()
+    first = write_answer(result, use_llm=True, question="top 3 by pagerank")
+    second = write_answer(result, use_llm=True, question="top 3 by pagerank")
+    assert second == first
+    assert second.startswith("Alice leads PageRank at 0.415481.")
+    assert len(calls) == 1
+
+
+def test_different_question_misses_the_cache(tmp_path, monkeypatch):
+    monkeypatch.setenv("OSI_STORE", str(tmp_path / "store.db"))
+    calls = _cached_llm(
+        monkeypatch,
+        ["Alice leads PageRank at 0.415481.", "Carol follows at 0.274590."],
+    )
+    result = _result()
+    first = write_answer(result, use_llm=True, question="top 3 by pagerank")
+    second = write_answer(result, use_llm=True, question="who leads")
+    assert first.startswith("Alice leads PageRank at 0.415481.")
+    assert second.startswith("Carol follows at 0.274590.")
+    assert len(calls) == 2
+
+
+def test_updating_a_run_invalidates_its_cache(tmp_path, monkeypatch):
+    import networkx as nx
+
+    from osi.store import create_run, save_graph
+
+    database = tmp_path / "store.db"
+    monkeypatch.setenv("OSI_STORE", str(database))
+    create_run("file", {"layer": "file"}, run_id="cache-v1", path=database)
+    calls = _cached_llm(monkeypatch, ["Alice leads PageRank at 0.415481.", "Alice leads PageRank at 0.415481."])
+    result = _result()
+    result.params = {**result.params, "run": "cache-v1"}
+    first = write_answer(result, use_llm=True, question="top 3 by pagerank")
+    graph = nx.Graph()
+    graph.add_edge("alice", "bob", weight=1.0)
+    save_graph("cache-v1", "file", graph, path=database)
+    second = write_answer(result, use_llm=True, question="top 3 by pagerank")
+    assert first.startswith("Alice leads PageRank at 0.415481.")
+    assert second.startswith("Alice leads PageRank at 0.415481.")
+    assert len(calls) == 2

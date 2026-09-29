@@ -75,6 +75,14 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             payload_json TEXT,
             PRIMARY KEY (run_id, source)
         );
+        -- key is the sha256 of run id, question, and result values.
+        -- run_id is stored beside it so a new graph can delete those rows.
+        CREATE TABLE IF NOT EXISTS answer_cache (
+            key TEXT PRIMARY KEY,
+            answer TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            run_id TEXT NOT NULL
+        );
         """
     )
 
@@ -132,6 +140,8 @@ def create_run(
             """,
             (run_id, source, created_at, config_json, notes),
         )
+        # Replacing a run drops answers written for the previous graph.
+        conn.execute("DELETE FROM answer_cache WHERE run_id = ?", (run_id,))
     return run_id
 
 
@@ -148,6 +158,7 @@ def save_graph(run_id: str, layer: str, graph: nx.Graph, path: str | Path | None
             """,
             (run_id, layer, encoded),
         )
+        conn.execute("DELETE FROM answer_cache WHERE run_id = ?", (run_id,))
 
 
 def load_graph(run_id: str, layer: str, path: str | Path | None = None) -> nx.Graph | None:
@@ -269,6 +280,7 @@ def delete_run(run_id: str, path: str | Path | None = None) -> None:
         conn.execute("DELETE FROM metrics WHERE run_id = ?", (run_id,))
         conn.execute("DELETE FROM communities WHERE run_id = ?", (run_id,))
         conn.execute("DELETE FROM results WHERE run_id = ?", (run_id,))
+        conn.execute("DELETE FROM answer_cache WHERE run_id = ?", (run_id,))
         conn.execute("DELETE FROM runs WHERE id = ?", (run_id,))
 
 
@@ -296,6 +308,31 @@ def load_result(run_id: str, source: str, path: str | Path | None = None) -> dic
     if row is None:
         return None
     return json.loads(row["payload_json"])
+
+
+def get_cached_answer(key: str, path: str | Path | None = None) -> str | None:
+    """Return a saved answer for this cache key, or None when it is missing."""
+    with _connection(path) as conn:
+        row = conn.execute("SELECT answer FROM answer_cache WHERE key = ?", (key,)).fetchone()
+    if row is None:
+        return None
+    return str(row["answer"])
+
+
+def put_cached_answer(key: str, answer: str, run_id: str, path: str | Path | None = None) -> None:
+    """Store one answer. The same key replaces the previous sentence."""
+    with _connection(path) as conn:
+        conn.execute(
+            """
+            INSERT INTO answer_cache (key, answer, run_id)
+            VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+                answer = excluded.answer,
+                run_id = excluded.run_id,
+                created_at = CURRENT_TIMESTAMP
+            """,
+            (key, answer, run_id),
+        )
 
 
 def list_results(source: str, path: str | Path | None = None) -> list[tuple[str, dict]]:

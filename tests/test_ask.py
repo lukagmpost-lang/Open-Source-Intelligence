@@ -8,7 +8,7 @@ def test_ask_returns_a_string_for_top_pagerank(monkeypatch):
         "osi.answer.call_llm",
         lambda prompt: "Alice leads PageRank at 0.415481.",
     )
-    text = ask("simple-v1", "top 3 by pagerank")
+    text = ask("simple-v1", "top 3 by pagerank", use_cache=False)
     assert isinstance(text, str)
     assert "0.415481" in text
 
@@ -34,6 +34,25 @@ def test_ask_without_llm_returns_the_template(monkeypatch):
     assert text.startswith("Top 3 by pagerank:")
     assert "0.415481" in text
     assert "trust is stable" in text
+
+
+def test_no_cache_flag_skips_a_stored_answer(monkeypatch, capsys):
+    seen: dict[str, bool] = {}
+
+    def fake_execute(run_id, question, use_llm, use_cache=True):
+        seen["use_cache"] = use_cache
+        return "Alice at 0.415481.", {
+            "intent": "rank_nodes",
+            "params": {"run": run_id},
+            "method": "exact",
+            "trust": "stable",
+        }
+
+    monkeypatch.setattr("osi.ask.get_run", lambda run_id: {"id": run_id})
+    monkeypatch.setattr("osi.ask._execute", fake_execute)
+    main(["--run", "simple-v1", "--no-cache", "top 3 by pagerank"])
+    assert seen["use_cache"] is False
+    assert "Alice at 0.415481." in capsys.readouterr().out
 
 
 def test_interactive_loop_terminates_on_exit(monkeypatch, capsys):
