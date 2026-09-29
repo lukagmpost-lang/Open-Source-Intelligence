@@ -54,3 +54,13 @@ Private Telegram channels, gifts that are not displayed, and anonymous page scra
 ```bash
 PYTHONPATH=src python3 -m pytest
 ```
+
+## LLM Provider
+
+The tool uses Groq's free tier by default. No credit card required.
+
+1. Get a free key at https://console.groq.com/keys
+2. Add it to .env:
+       LLM_API_KEY=your_key_here
+
+The default model is llama-3.3-70b-versatile. If you hit the 1,000 requests/day limit, switch to llama-3.1-8b-instant in .env for 14,400 requests/day.

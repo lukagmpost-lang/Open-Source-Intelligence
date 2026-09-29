@@ -1,8 +1,8 @@
 """Turn a ResultObject into a sentence.
 
-``call_llm`` posts to an OpenAI-compatible chat endpoint. Ollama is the
-default. A hosted provider such as Groq uses the same request and response
-shape; only the base URL, model, and Authorization header change.
+``call_llm`` posts to an OpenAI-compatible chat endpoint. Groq is the
+default. Another provider uses the same request and response shape; only
+the base URL, model, and Authorization header change.
 """
 
 from __future__ import annotations
@@ -23,10 +23,10 @@ _NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
 # "10 communities" is not this phrase. The zero has to be its own number.
 _ZERO_COMMUNITIES = re.compile(r"\b0\s+communities\b", re.IGNORECASE)
 
-# Local Ollama when .env does not choose a provider.
-_DEFAULT_PROVIDER = "ollama"
-_DEFAULT_BASE_URL = "http://localhost:11434/v1"
-_DEFAULT_MODEL = "phi4-mini"
+# Groq free tier when .env does not choose a provider.
+_DEFAULT_PROVIDER = "groq"
+_DEFAULT_BASE_URL = "https://api.groq.com/openai/v1"
+_DEFAULT_MODEL = "llama-3.3-70b-versatile"
 
 
 def _dotenv_path() -> Path:
@@ -52,7 +52,7 @@ def _load_dotenv() -> None:
 
 
 def llm_settings() -> dict[str, str]:
-    """Provider, base URL, model, and API key. Ollama is the default."""
+    """Provider, base URL, model, and API key. Groq is the default."""
     _load_dotenv()
     return {
         "provider": os.environ.get("LLM_PROVIDER", _DEFAULT_PROVIDER).strip().casefold(),
@@ -103,7 +103,11 @@ def _chat_request(prompt: str, settings: dict[str, str]) -> urllib.request.Reque
     # Hosted providers require a bearer token. Local Ollama does not.
     if settings["provider"] != "ollama":
         if not settings["api_key"]:
-            raise RuntimeError("LLM_API_KEY is required when LLM_PROVIDER is not ollama")
+            raise RuntimeError(
+                "LLM_API_KEY is not set. Get a free Groq key at "
+                "https://console.groq.com/keys and add it to .env as "
+                "LLM_API_KEY=your_key_here"
+            )
         headers["Authorization"] = f"Bearer {settings['api_key']}"
     return urllib.request.Request(url, data=payload, headers=headers, method="POST")
 

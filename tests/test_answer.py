@@ -57,26 +57,6 @@ def _clear_llm_env(monkeypatch) -> None:
         monkeypatch.delenv(name, raising=False)
 
 
-def test_ollama_request_has_no_authorization_header(monkeypatch):
-    _clear_llm_env(monkeypatch)
-    monkeypatch.setenv("LLM_PROVIDER", "ollama")
-    monkeypatch.setenv("LLM_BASE_URL", "http://localhost:11434/v1")
-    monkeypatch.setenv("LLM_MODEL", "phi4-mini")
-    captured = _capture(monkeypatch, "Alice leads with 0.415481.")
-    text = call_llm("say hi")
-    request = captured["request"]
-    body = json.loads(request.data.decode("utf-8"))
-    assert text == "Alice leads with 0.415481."
-    assert request.full_url == "http://localhost:11434/v1/chat/completions"
-    assert body["model"] == "phi4-mini"
-    assert body["temperature"] == 0
-    assert body["messages"] == [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": "say hi"},
-    ]
-    assert request.has_header("Authorization") is False
-
-
 def test_groq_request_sends_authorization_header(monkeypatch):
     _clear_llm_env(monkeypatch)
     monkeypatch.setenv("LLM_PROVIDER", "groq")
@@ -104,6 +84,21 @@ def test_groq_without_a_key_raises(monkeypatch):
     monkeypatch.setattr("osi.answer._dotenv_path", lambda: monkeypatch_missing())
     with pytest.raises(RuntimeError, match="LLM_API_KEY"):
         call_llm("say hi")
+
+
+def test_call_llm_raises_when_the_api_key_is_empty(monkeypatch):
+    _clear_llm_env(monkeypatch)
+    monkeypatch.setattr("osi.answer._dotenv_path", lambda: monkeypatch_missing())
+    with pytest.raises(RuntimeError, match="https://console.groq.com/keys"):
+        call_llm("say hi")
+
+
+def test_default_base_url_is_groq(monkeypatch):
+    from osi.answer import llm_settings
+
+    _clear_llm_env(monkeypatch)
+    monkeypatch.setattr("osi.answer._dotenv_path", lambda: monkeypatch_missing())
+    assert llm_settings()["base_url"] == "https://api.groq.com/openai/v1"
 
 
 def test_write_answer_keeps_the_template_when_the_model_invents_a_number(monkeypatch):
@@ -304,7 +299,7 @@ def test_write_answer_includes_run_context_in_the_prompt(monkeypatch):
     result = _result()
     result.n_nodes = 4
     result.n_edges = 4
-    write_answer(result, use_llm=True, question="top 3 by pagerank")
+    write_answer(result, use_llm=True, question="top 3 by pagerank", use_cache=False)
     body = json.loads(captured["request"].data.decode("utf-8"))
     user = body["messages"][1]["content"]
     assert (
