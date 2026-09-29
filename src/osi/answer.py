@@ -99,7 +99,11 @@ def _chat_request(prompt: str, settings: dict[str, str]) -> urllib.request.Reque
             "temperature": 0,
         }
     ).encode("utf-8")
-    headers = {"Content-Type": "application/json"}
+    headers = {
+        "Content-Type": "application/json",
+        # Cloudflare rejects urllib's default client signature with error 1010.
+        "User-Agent": "osi/0.1",
+    }
     # Hosted providers require a bearer token. Local Ollama does not.
     if settings["provider"] != "ollama":
         if not settings["api_key"]:

@@ -76,6 +76,7 @@ def test_groq_request_sends_authorization_header(monkeypatch):
     ]
     assert body["temperature"] == 0
     assert request.get_header("Authorization") == "Bearer test-key"
+    assert request.get_header("User-agent") == "osi/0.1"
 
 
 def test_groq_without_a_key_raises(monkeypatch):
