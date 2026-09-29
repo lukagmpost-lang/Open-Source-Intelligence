@@ -112,35 +112,103 @@ def _plain(result: ResultObject) -> str:
     return " ".join(part for part in (head, body + ".", trust, caveat) if part)
 
 
-def _collect_numbers(value, found: list[float]) -> None:
-    if isinstance(value, bool):
-        return
-    if isinstance(value, (int, float)):
-        found.append(float(value))
-        return
-    if isinstance(value, str):
-        found.extend(float(item) for item in _NUMBER.findall(value))
-        return
+def _walk_values(value, numbers: list, keys: list) -> None:
+    """Collect numeric values and keys. Strings are not scanned."""
     if isinstance(value, dict):
-        for item in value.values():
-            _collect_numbers(item, found)
+        for key, item in value.items():
+            keys.append(key)
+            _walk_values(item, numbers, keys)
         return
     if isinstance(value, list):
         for item in value:
-            _collect_numbers(item, found)
+            _walk_values(item, numbers, keys)
+        return
+    if isinstance(value, bool):
+        return
+    if isinstance(value, (int, float)):
+        numbers.append(value)
+
+
+def _is_whole(value) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return True
+    return isinstance(value, float) and value.is_integer()
+
+
+def _exactly(number: float, candidate) -> bool:
+    """True when candidate is the same number, not a nearby one."""
+    if isinstance(candidate, bool):
+        return False
+    if isinstance(candidate, (int, float)):
+        return number == candidate
+    if isinstance(candidate, str) and _NUMBER.fullmatch(candidate):
+        return number == float(candidate)
+    return False
+
+
+def _close_to_stored(token: str, number: float, stored: list) -> bool:
+    """Match a written decimal to a stored score at the precision it uses.
+
+    ``0.415`` is three digits, so the allowance is 1e-3.
+    ``0.4155`` is four digits, so the allowance is 1e-4.
+    A longer writing is tighter: ``0.999999`` is not 1.
+    Whole stored numbers (degree, community size, a score of exactly 1)
+    match only by equality.
+    """
+    if "." not in token:
+        return False
+    places = len(token.split(".", 1)[1])
+    tolerance = 10 ** (-places)
+    for value in stored:
+        if isinstance(value, bool):
+            continue
+        if _is_whole(value):
+            if number == value:
+                return True
+            continue
+        if abs(number - float(value)) < tolerance:
+            return True
+    return False
+
+
+def verify_numbers(text: str, values: dict) -> bool:
+    """Extract every number from text. For each number N:
+
+    - If N is a written decimal within one unit of its last digit of any
+      value in ``values``, ok. ``|0.415 - 0.415481| < 1e-3`` and
+      ``|0.4155 - 0.415481| < 1e-4``. A full-precision miss such as
+      0.999999 against 0.415481 fails. Integer counts match only exactly.
+    - Else if N equals ``len(values)`` or any key in ``values``, ok.
+    - Else, fail.
+
+    Numbers are matched by their numeric value, not by string.
+    This function only sees ``values``, so a run id or other params
+    cannot satisfy the check.
+    """
+    stored: list = []
+    keys: list = []
+    _walk_values(values, stored, keys)
+    count = len(values)
+    for match in _NUMBER.finditer(text):
+        token = match.group(0)
+        number = float(token)
+        if _close_to_stored(token, number, stored):
+            continue
+        if "." not in token and any(_is_whole(value) and number == value for value in stored):
+            continue
+        if number == count or any(_exactly(number, key) for key in keys):
+            continue
+        return False
+    return True
 
 
 def _numbers_match(prose: str, result: ResultObject) -> bool:
-    """Every number in the reply has to be one of the stored numbers."""
-    found = [float(item) for item in _NUMBER.findall(prose)]
-    if not found:
+    """Every number in the reply has to come from result.values."""
+    if not _NUMBER.search(prose):
         return False
-    allowed: list[float] = []
-    _collect_numbers(result.to_dict(), allowed)
-    for number in found:
-        if not any(abs(number - candidate) <= max(0.005, abs(candidate) * 0.05) for candidate in allowed):
-            return False
-    return True
+    return verify_numbers(prose, result.values)
 
 
 def write_answer(result: ResultObject, use_llm: bool = False) -> str:

@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from osi.answer import call_llm, write_answer
+from osi.answer import call_llm, verify_numbers, write_answer
 from osi.result import ResultObject
 
 
@@ -107,6 +107,25 @@ def test_write_answer_keeps_the_template_when_the_model_invents_a_number(monkeyp
     text = write_answer(_result(), use_llm=True)
     assert "9.9" not in text
     assert "0.415481" in text
+
+
+_SCORES = {"alice": 0.415481, "carol": 0.274590, "bob": 0.213570}
+
+
+def test_verify_numbers_rejects_a_score_that_is_not_stored():
+    assert verify_numbers("0.999999", _SCORES) is False
+
+
+def test_verify_numbers_accepts_three_decimal_places():
+    assert verify_numbers("0.415", _SCORES) is True
+
+
+def test_verify_numbers_accepts_four_decimal_places():
+    assert verify_numbers("0.4155", _SCORES) is True
+
+
+def test_verify_numbers_accepts_the_stored_score_in_a_sentence():
+    assert verify_numbers("alice at 0.415481", _SCORES) is True
 
 
 def test_write_answer_uses_the_model_when_the_numbers_match(monkeypatch):
