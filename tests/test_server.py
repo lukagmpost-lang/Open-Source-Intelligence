@@ -63,8 +63,9 @@ def test_post_ask_open_question_describes_the_graph():
     assert response.status_code == 200
     body = response.json()
     assert body["intent"] == "discuss"
-    assert "4 nodes" in body["answer"]
     assert "alice" in body["answer"]
+    assert "assortativity" not in body["answer"]
+    assert "clustering" not in body["answer"]
 
 
 def test_index_returns_html():

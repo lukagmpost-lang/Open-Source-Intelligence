@@ -163,14 +163,19 @@ def interpret_health(metrics: dict, graph: nx.Graph) -> list[str]:
 
     assortativity = metrics.get("assortativity")
     if isinstance(assortativity, (int, float)) and not isinstance(assortativity, bool):
-        mixing = float(assortativity)
-        if mixing < -0.5:
+        if float(assortativity) < -0.5:
             ranked.append((2, "The most connected people connect to the least connected, not to each other."))
-        elif mixing > 0.3:
-            ranked.append((2, "The most connected people cluster together."))
 
     ranked.sort(key=lambda item: item[0], reverse=True)
     return [sentence for _priority, sentence in ranked[:3]]
+
+
+def _name_list(names: list[str]) -> str:
+    if len(names) <= 1:
+        return names[0] if names else "nobody"
+    if len(names) == 2:
+        return f"{names[0]} and {names[1]}"
+    return ", ".join(names[:-1]) + ", and " + names[-1]
 
 
 def interpret_rank(ranked: list[tuple], graph: nx.Graph, metric: str) -> list[str]:
@@ -181,16 +186,56 @@ def interpret_rank(ranked: list[tuple], graph: nx.Graph, metric: str) -> list[st
     top_name = ranked[0][0]
     top_degree = int(graph.degree(top_name))
     average = sum(degree for _node, degree in graph.degree()) / graph.number_of_nodes()
-    findings = [f"The most central accounts are {', '.join(names)}."]
-    if top_degree > 5 * average:
+    findings = [f"The most central accounts are {_name_list(names)}."]
+    if average and top_degree > 5 * average:
+        ratio = top_degree / average
+        multiple = int(ratio // 10) * 10 if ratio >= 10 else int(ratio)
+        shown_degree = f"{top_degree:,}"
         findings.append(
-            f"{top_name} is connected to {top_degree} other "
-            f"accounts — far more than the average of "
-            f"{int(average)}."
+            f"{top_name} is connected to {shown_degree} other accounts — more than {multiple}x the average."
         )
     if len(ranked) >= 5:
         findings.append("These five are the hubs of the network.")
     return findings
+
+
+def interpret_communities(n_communities: int, largest_size: int, modularity: float | None) -> list[str]:
+    """Turn a community summary into plain findings."""
+    findings = [f"This network splits into about {int(n_communities)} groups."]
+    findings.append(f"The largest group contains {int(largest_size):,} accounts.")
+    if isinstance(modularity, (int, float)) and not isinstance(modularity, bool):
+        if float(modularity) < 0.4:
+            findings.append(f"The groups overlap heavily — modularity is only {float(modularity):.2f}.")
+        elif float(modularity) > 0.5:
+            findings.append("The groups separate cleanly.")
+    return findings
+
+
+def _shape_findings(metrics: dict, communities: dict, ranked: list[tuple], graph: nx.Graph) -> list[str]:
+    """The few sentences that describe the shape, with no metric names."""
+    lines: list[str] = []
+    for sentence in interpret_health(metrics, graph):
+        if sentence.startswith("This is a dense") or sentence.startswith("This is a sparse"):
+            lines.append(sentence)
+            break
+    for sentence in interpret_communities(
+        int(communities.get("n_communities") or 0),
+        int(communities.get("largest_size") or 0),
+        communities.get("modularity"),
+    ):
+        if "modularity" in sentence.lower():
+            lines.append("The groups overlap heavily.")
+        else:
+            lines.append(sentence)
+    rank_lines = interpret_rank(ranked, graph, "pagerank")
+    hub = next((sentence for sentence in rank_lines if "connected to" in sentence), None)
+    if hub:
+        lines.append(hub)
+    elif rank_lines:
+        lines.append(rank_lines[0])
+    if any(sentence.startswith("These five") for sentence in rank_lines) and len(lines) < 5:
+        lines.append("These five are the hubs of the network.")
+    return lines[:5]
 
 
 def rank_nodes(run: str, metric: str = "pagerank", top: int = 10) -> ResultObject:
@@ -228,6 +273,11 @@ def list_communities(run: str, algorithm: str = "louvain") -> ResultObject:
         counts[community] = counts.get(community, 0) + 1
     modularity = _modularity_of(graph, assignment)
     values = ResultObject.community_values(counts, modularity)
+    values["findings"] = interpret_communities(
+        int(values["n_communities"]),
+        int(values["largest_size"]),
+        values.get("modularity"),
+    )
     return _finish(
         "list_communities",
         {"run": run, "algorithm": algorithm},
@@ -373,39 +423,34 @@ def _local_structure(graph: nx.Graph, limit: int = 40) -> list[dict]:
 
 
 def discuss(run: str, question: str = "") -> ResultObject:
-    """Facts a reader needs in order to explain the graph in plain language.
+    """Plain findings about the shape: density, groups, and the main hub.
 
-    The notes are the measured structure: size, clustering, communities,
-    the highest PageRank scores, and, on a small graph, every adjacency.
+    The model receives those findings, not the raw metric dict.
     """
     graph = _load_graph(run)
     started = time.perf_counter()
     simple = graph.to_undirected() if graph.is_directed() else graph
     health = _network_health(simple)
-    ranks = list(pagerank(simple).items())[:5]
-    assignment = louvain_communities(simple)
+    scores = load_metrics(run, "pagerank")
+    if not scores:
+        scores = _sorted_scores(pagerank(simple))
+    ranked = list(scores.items())
+    assignment = load_communities(run, "louvain")
+    if not assignment:
+        assignment = louvain_communities(simple)
     counts: dict[Any, int] = {}
     for community in assignment.values():
         counts[community] = counts.get(community, 0) + 1
     communities = ResultObject.community_values(counts, _modularity_of(simple, assignment))
-    triangles = sum(nx.triangles(simple).values()) // 3
-    density = float(nx.density(simple)) if simple.number_of_nodes() else 0.0
-    values = {
-        "nodes": simple.number_of_nodes(),
-        "edges": simple.number_of_edges(),
-        "components": health["num_components"],
-        "density": round(density, 6),
-        "triangles": triangles,
-        "clustering": health["avg_clustering"],
+    metrics = {
         "assortativity": health["assortativity"],
         "avg_degree": health["avg_degree"],
         "max_degree": health["max_degree"],
-        "communities": communities["n_communities"],
+        "components": health["num_components"],
         "modularity": communities["modularity"],
-        "largest_community": communities["largest_size"],
-        "top_pagerank": {str(node): score for node, score in ranks},
-        "structure": _local_structure(simple),
+        "n_communities": communities["n_communities"],
     }
+    values = {"findings": _shape_findings(metrics, communities, ranked, simple)}
     return _finish(
         "discuss",
         {"run": run, "question": question},

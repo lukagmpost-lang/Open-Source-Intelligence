@@ -82,6 +82,7 @@ def test_list_communities_uses_named_fields(sample_run):
         "sizes",
         "largest_community",
         "largest_size",
+        "findings",
     }
     assert values["n_communities"] == len(values["sizes"])
     assert values["n_communities"] >= 1
@@ -176,9 +177,8 @@ def test_interpret_rank_names_a_hub_far_above_the_average():
     graph = nx.relabel_nodes(graph, {0: "akdas", **{leaf: f"leaf{leaf}" for leaf in range(1, 11)}})
     ranked = [("akdas", 0.5), ("leaf1", 0.1), ("leaf2", 0.1), ("leaf3", 0.1), ("leaf4", 0.1)]
     findings = interpret_rank(ranked, graph, "pagerank")
-    assert findings[0] == "The most central accounts are akdas, leaf1, leaf2, leaf3, leaf4."
-    assert findings[1].startswith("akdas is connected to 10 other accounts")
-    assert "far more than the average of 1." in findings[1]
+    assert findings[0] == "The most central accounts are akdas, leaf1, leaf2, leaf3, and leaf4."
+    assert findings[1] == "akdas is connected to 10 other accounts — more than 5x the average."
     assert findings[2] == "These five are the hubs of the network."
 
 

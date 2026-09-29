@@ -222,7 +222,7 @@ def test_discuss_drops_an_invented_count(monkeypatch):
     )
     text = write_answer(_discuss_result(), use_llm=True, question="why is the graph shaped this way")
     assert "99" not in text
-    assert "4 nodes" in text
+    assert "findings" not in text.lower()
 
 
 def test_write_answer_uses_the_model_when_the_numbers_match(monkeypatch):

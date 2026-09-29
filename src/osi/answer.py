@@ -333,16 +333,20 @@ def _explain_template(result: ResultObject) -> str:
 
 def _findings_template(result: ResultObject) -> str:
     body = " ".join(str(item) for item in result.values.get("findings") or [])
-    reason = _trust_reason(result)
-    if not reason.endswith("."):
-        reason += "."
-    return f"{body} How sure: {reason}"
+    trust = str(result.trust or "stable")
+    if not trust.endswith("."):
+        trust += "."
+    return f"{body} How sure: {trust}"
 
 
 def templated_fallback(result: ResultObject) -> str:
     """Plain-language sentence used when the model is off or its reply is rejected."""
     findings = result.values.get("findings")
-    if isinstance(findings, list) and findings and result.intent in {"network_health", "rank_nodes"}:
+    if (
+        isinstance(findings, list)
+        and findings
+        and result.intent in {"network_health", "rank_nodes", "list_communities", "discuss"}
+    ):
         return _findings_template(result)
     if result.intent == "rank_nodes" and result.params.get("metric"):
         return _rank_template(result)
@@ -649,40 +653,55 @@ def write_answer(
     send_findings = (
         isinstance(findings, list)
         and bool(findings)
-        and result.intent in {"network_health", "rank_nodes"}
+        and result.intent in {"network_health", "rank_nodes", "list_communities", "discuss"}
     )
-    try:
-        if send_findings:
-            prose = call_llm(
-                "\n".join(str(item) for item in findings),
-                system=FINDINGS_SYSTEM_PROMPT,
-            )
-        else:
-            prose = call_llm(
-                _result_json(result),
+
+    def _request(prompt: str) -> str | None:
+        try:
+            if send_findings:
+                return call_llm(prompt, system=FINDINGS_SYSTEM_PROMPT)
+            return call_llm(
+                prompt,
                 run_id=run_id,
                 n_nodes=_size(result, "n_nodes", "nodes"),
                 n_edges=_size(result, "n_edges", "edges"),
                 question=asked,
             )
-    except (OSError, TimeoutError, RuntimeError, KeyError, json.JSONDecodeError, ValueError):
+        except (OSError, TimeoutError, RuntimeError, KeyError, json.JSONDecodeError, ValueError):
+            return None
+
+    def _acceptable(prose: str | None) -> bool:
+        return bool(
+            prose
+            and _numbers_match(prose, result)
+            and not _misreads_one_community(prose, result)
+            and verify_style(prose)
+            and not _recites_metrics(prose)
+        )
+
+    if send_findings:
+        finding_text = "\n".join(str(item) for item in findings)
+        prose = _request(finding_text)
+        if prose and _recites_metrics(prose):
+            prose = _request(
+                finding_text
+                + "\n\nRewrite these findings in plain English. "
+                + "Do not use the words density, modularity, clustering, component, "
+                + "triangles, betweenness, assortativity, degree distribution, or power law."
+            )
+    else:
+        prose = _request(_result_json(result))
+    if not _acceptable(prose):
         return text
-    if (
-        not prose
-        or not _numbers_match(prose, result)
-        or _misreads_one_community(prose, result)
-        or not verify_style(prose)
-        or (result.intent != "discuss" and _recites_metrics(prose))
-    ):
-        return text
+    assert prose is not None
     missing = [caveat for caveat in result.caveats if caveat not in prose]
     if missing:
         prose = prose.rstrip() + " " + " ".join(missing)
     if send_findings and "How sure:" not in prose:
-        reason = _trust_reason(result)
-        if not reason.endswith("."):
-            reason += "."
-        prose = prose.rstrip() + f" How sure: {reason}"
+        trust = str(result.trust or "stable")
+        if not trust.endswith("."):
+            trust += "."
+        prose = prose.rstrip() + f" How sure: {trust}"
     if cached_as is not None:
         key, run_id = cached_as
         put_cached_answer(key, prose, run_id)
