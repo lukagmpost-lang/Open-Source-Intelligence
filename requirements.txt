@@ -7,3 +7,6 @@ networkx==3.7
 # leidenalg==0.12.0
 # numpy==2.4.4
 # scipy==1.18.1
+
+# Optional extra "web": the FastAPI page. The CLI does not import it.
+# pip install fastapi uvicorn

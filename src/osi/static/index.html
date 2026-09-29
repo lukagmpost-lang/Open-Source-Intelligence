@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ask a graph</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 40rem;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      line-height: 1.4;
+    }
+    label { display: block; margin: 1rem 0 0.25rem; }
+    select, textarea, button { font: inherit; }
+    select, textarea { width: 100%; box-sizing: border-box; }
+    textarea { min-height: 6rem; }
+    button { margin-top: 0.75rem; }
+    #answer { white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>Ask a graph</h1>
+  <label for="run">Run</label>
+  <select id="run"></select>
+  <label for="question">Question</label>
+  <textarea id="question" placeholder="top 3 by pagerank"></textarea>
+  <button id="ask" type="button">Ask</button>
+  <pre id="answer"></pre>
+  <details>
+    <summary>Query</summary>
+    <pre id="meta"></pre>
+  </details>
+  <script>
+    const runSelect = document.getElementById("run");
+    const questionBox = document.getElementById("question");
+    const answerBox = document.getElementById("answer");
+    const metaBox = document.getElementById("meta");
+
+    async function loadRuns() {
+      const response = await fetch("/api/runs");
+      const runs = await response.json();
+      runSelect.replaceChildren();
+      for (const id of runs) {
+        const option = document.createElement("option");
+        option.value = id;
+        option.textContent = id;
+        runSelect.append(option);
+      }
+    }
+
+    document.getElementById("ask").addEventListener("click", async () => {
+      answerBox.textContent = "Asking…";
+      metaBox.textContent = "";
+      const response = await fetch("/api/ask", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          run: runSelect.value,
+          question: questionBox.value,
+          use_llm: true,
+        }),
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        answerBox.textContent = body.detail || response.statusText;
+        return;
+      }
+      answerBox.textContent = body.answer;
+      metaBox.textContent = [
+        "intent: " + body.intent,
+        "params: " + JSON.stringify(body.params),
+        "method: " + body.method,
+        "trust: " + body.trust,
+        "runtime_ms: " + body.runtime_ms,
+      ].join("\n");
+    });
+
+    loadRuns();
+  </script>
+</body>
+</html>

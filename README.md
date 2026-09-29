@@ -17,6 +17,13 @@ python3 -m osi.ask --run simple-v1 "top 5 by pagerank"
 
 The same two commands work with `examples/simple.json` and `examples/simple.graphml`.
 
+## Web
+
+```bash
+pip install osi[web]
+uvicorn osi.server:app --host 0.0.0.0 --port 7860
+```
+
 ## What it will collect
 
 | Source | Relation | Access |
