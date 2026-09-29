@@ -85,6 +85,8 @@ def _finish(
     trust: str,
     graph_size: int,
     started: float,
+    *,
+    n_edges: int | None = None,
 ) -> ResultObject:
     runtime_ms = int((time.perf_counter() - started) * 1000)
     result = ResultObject(
@@ -96,6 +98,8 @@ def _finish(
         trust=trust,
         caveats=[],
         runtime_ms=runtime_ms,
+        n_nodes=graph_size,
+        n_edges=n_edges,
     )
     result.caveats = make_caveats(result, graph_size)
     return result
@@ -134,6 +138,7 @@ def rank_nodes(run: str, metric: str = "pagerank", top: int = 10) -> ResultObjec
         _trust_for_method(method),
         graph.number_of_nodes(),
         started,
+        n_edges=graph.number_of_edges(),
     )
 
 
@@ -160,6 +165,7 @@ def list_communities(run: str, algorithm: str = "louvain") -> ResultObject:
         _trust_from_modularity(modularity),
         graph.number_of_nodes(),
         started,
+        n_edges=graph.number_of_edges(),
     )
 
 
@@ -187,6 +193,7 @@ def network_health(run: str) -> ResultObject:
         "stable",
         graph.number_of_nodes(),
         started,
+        n_edges=graph.number_of_edges(),
     )
 
 
@@ -223,6 +230,7 @@ def structural_criticality(run: str) -> ResultObject:
         _trust_for_method(method),
         graph.number_of_nodes(),
         started,
+        n_edges=graph.number_of_edges(),
     )
 
 
@@ -254,6 +262,7 @@ def connectivity(run: str, source: Any, target: Any) -> ResultObject:
         "stable",
         graph.number_of_nodes(),
         started,
+        n_edges=graph.number_of_edges(),
     )
 
 
@@ -316,6 +325,7 @@ def discuss(run: str, question: str = "") -> ResultObject:
         "stable",
         simple.number_of_nodes(),
         started,
+        n_edges=simple.number_of_edges(),
     )
 
 
@@ -354,4 +364,5 @@ def explain_node(run: str, node: Any) -> ResultObject:
         "stable",
         graph.number_of_nodes(),
         started,
+        n_edges=graph.number_of_edges(),
     )

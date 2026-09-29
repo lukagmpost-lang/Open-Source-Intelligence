@@ -6,7 +6,7 @@ from osi.ask import ask, main
 def test_ask_returns_a_string_for_top_pagerank(monkeypatch):
     monkeypatch.setattr(
         "osi.answer.call_llm",
-        lambda prompt: "Alice leads PageRank at 0.415481.",
+        lambda prompt, **kwargs: "Alice leads PageRank at 0.415481.",
     )
     text = ask("simple-v1", "top 3 by pagerank", use_cache=False)
     assert isinstance(text, str)
@@ -23,7 +23,7 @@ def test_ask_returns_a_helpful_message_for_an_unsupported_question():
 def test_ask_explains_an_open_question_from_the_graph(monkeypatch):
     monkeypatch.setattr(
         "osi.answer.call_llm",
-        lambda prompt: "Alice, Bob, and Carol form a triangle, and Dave is only tied to Alice.",
+        lambda prompt, **kwargs: "Alice, Bob, and Carol form a triangle, and Dave is only tied to Alice.",
     )
     text = ask("simple-v1", "why is the graph shaped this way", use_cache=False)
     assert "triangle" in text
@@ -37,14 +37,15 @@ def test_ask_missing_run_raises_value_error():
 
 
 def test_ask_without_llm_returns_the_template(monkeypatch):
-    def fail(prompt):
+    def fail(prompt, **kwargs):
         raise AssertionError("call_llm should not run")
 
     monkeypatch.setattr("osi.answer.call_llm", fail)
     text = ask("simple-v1", "top 3 by pagerank", use_llm=False)
-    assert text.startswith("Top 3 by pagerank:")
+    assert text.startswith("The most important nodes by ")
+    assert "alice" in text
     assert "0.415481" in text
-    assert "trust is stable" in text
+    assert "How sure: stable" in text
 
 
 def test_no_cache_flag_skips_a_stored_answer(monkeypatch, capsys):

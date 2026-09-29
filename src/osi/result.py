@@ -19,6 +19,8 @@ class ResultObject:
     trust: str  # "stable" | "moderate" | "unstable" | "random"
     caveats: list[str]  # human-readable limitations
     runtime_ms: int
+    n_nodes: int | None = None
+    n_edges: int | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -30,6 +32,8 @@ class ResultObject:
             "trust": self.trust,
             "caveats": list(self.caveats),
             "runtime_ms": self.runtime_ms,
+            "n_nodes": self.n_nodes,
+            "n_edges": self.n_edges,
         }
 
     @classmethod
@@ -44,6 +48,8 @@ class ResultObject:
             trust=d["trust"],
             caveats=list(d["caveats"]),
             runtime_ms=int(d["runtime_ms"]),
+            n_nodes=None if d.get("n_nodes") is None else int(d["n_nodes"]),
+            n_edges=None if d.get("n_edges") is None else int(d["n_edges"]),
         )
 
     @staticmethod

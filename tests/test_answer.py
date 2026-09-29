@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from osi.answer import call_llm, verify_numbers, write_answer
+from osi.answer import SYSTEM_PROMPT, call_llm, verify_numbers, verify_style, write_answer
 from osi.result import ResultObject
 
 
@@ -70,7 +70,10 @@ def test_ollama_request_has_no_authorization_header(monkeypatch):
     assert request.full_url == "http://localhost:11434/v1/chat/completions"
     assert body["model"] == "phi4-mini"
     assert body["temperature"] == 0
-    assert body["messages"] == [{"role": "user", "content": "say hi"}]
+    assert body["messages"] == [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": "say hi"},
+    ]
     assert request.has_header("Authorization") is False
 
 
@@ -87,7 +90,10 @@ def test_groq_request_sends_authorization_header(monkeypatch):
     assert text == "Alice leads with 0.415481."
     assert request.full_url == "https://api.groq.com/openai/v1/chat/completions"
     assert body["model"] == "llama-3.3-70b-versatile"
-    assert body["messages"] == [{"role": "user", "content": "say hi"}]
+    assert body["messages"] == [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": "say hi"},
+    ]
     assert body["temperature"] == 0
     assert request.get_header("Authorization") == "Bearer test-key"
 
@@ -143,11 +149,9 @@ def _communities() -> ResultObject:
 
 def test_write_answer_names_community_fields():
     text = write_answer(_communities(), use_llm=False)
-    assert "n_communities is 1" in text
-    assert "modularity is 0.250000" in text
-    assert "sizes are 4" in text
-    assert "largest_community is 0" in text
-    assert "largest_size is 4" in text
+    assert text.startswith("This network has 1 communities.")
+    assert "The largest contains 4 nodes." in text
+    assert "How sure: unstable" in text
 
 
 def test_write_answer_rejects_zero_communities_when_there_is_one(monkeypatch):
@@ -155,7 +159,7 @@ def test_write_answer_rejects_zero_communities_when_there_is_one(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "ollama")
     _capture(monkeypatch, "There are 0 communities and the largest size is 4.")
     text = write_answer(_communities(), use_llm=True)
-    assert "n_communities is 1" in text
+    assert "This network has 1 communities." in text
     assert "0 communities" not in text
 
 
@@ -201,7 +205,7 @@ def _discuss_result() -> ResultObject:
 def test_discuss_keeps_a_plain_explanation(monkeypatch):
     monkeypatch.setattr(
         "osi.answer.call_llm",
-        lambda prompt: "Alice, Bob, and Carol form a triangle, and Dave is only tied to Alice.",
+        lambda prompt, **kwargs: "Alice, Bob, and Carol form a triangle, and Dave is only tied to Alice.",
     )
     text = write_answer(_discuss_result(), use_llm=True, question="why is the graph shaped this way")
     assert "triangle" in text
@@ -209,7 +213,10 @@ def test_discuss_keeps_a_plain_explanation(monkeypatch):
 
 
 def test_discuss_drops_an_invented_count(monkeypatch):
-    monkeypatch.setattr("osi.answer.call_llm", lambda prompt: "The graph contains 99 separate cliques.")
+    monkeypatch.setattr(
+        "osi.answer.call_llm",
+        lambda prompt, **kwargs: "The graph contains 99 separate cliques.",
+    )
     text = write_answer(_discuss_result(), use_llm=True, question="why is the graph shaped this way")
     assert "99" not in text
     assert "4 nodes" in text
@@ -228,7 +235,7 @@ def _cached_llm(monkeypatch, replies: list[str]) -> list[str]:
     """Replace the model with a queue of sentences and record each call."""
     sent: list[str] = []
 
-    def fake(prompt: str) -> str:
+    def fake(prompt: str, **kwargs) -> str:
         sent.append(replies[len(sent)])
         return sent[-1]
 
@@ -280,3 +287,37 @@ def test_updating_a_run_invalidates_its_cache(tmp_path, monkeypatch):
     assert first.startswith("Alice leads PageRank at 0.415481.")
     assert second.startswith("Alice leads PageRank at 0.415481.")
     assert len(calls) == 2
+
+
+def test_system_prompt_includes_plain_language_rules():
+    assert "does not know network science" in SYSTEM_PROMPT
+    assert "The first sentence must directly answer the question." in SYSTEM_PROMPT
+    assert "Do not start with" in SYSTEM_PROMPT
+    assert "How sure: " in SYSTEM_PROMPT
+    assert "modularity, betweenness, assortativity" in SYSTEM_PROMPT
+
+
+def test_write_answer_includes_run_context_in_the_prompt(monkeypatch):
+    _clear_llm_env(monkeypatch)
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    captured = _capture(monkeypatch, "Alice leads PageRank at 0.415481.")
+    result = _result()
+    result.n_nodes = 4
+    result.n_edges = 4
+    write_answer(result, use_llm=True, question="top 3 by pagerank")
+    body = json.loads(captured["request"].data.decode("utf-8"))
+    user = body["messages"][1]["content"]
+    assert (
+        'Context: this result is from a network called "simple-v1" '
+        'with 4 nodes and 4 edges. The question was: "top 3 by pagerank".'
+    ) in user
+    assert body["messages"][0]["content"] == SYSTEM_PROMPT
+
+
+def test_verify_style_rejects_the_graph_is():
+    assert verify_style("The graph is a triangle of three people.") is False
+
+
+def test_verify_style_rejects_three_or_more_jargon_words():
+    text = "Modularity, betweenness, and assortativity all look high."
+    assert verify_style(text) is False
