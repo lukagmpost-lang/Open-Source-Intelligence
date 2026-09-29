@@ -1,0 +1,8 @@
+{
+  "snap_facebook": {"nodes": 4039, "edges": 88234, "modularity": 0.835, "avg_degree": 43.7, "max_degree": 1045, "components": 1, "clustering": 0.606, "assortativity": 0.064},
+  "reddit_2008": {"nodes": 5110, "edges": 86268, "modularity": 0.325, "avg_degree": 33.8, "max_degree": 759, "components": 77, "clustering": 0.640, "assortativity": -0.017},
+  "reddit_2012": {"nodes": 54817, "edges": 556415, "modularity": 0.558, "avg_degree": 20.3, "max_degree": 1890, "components": 1082, "clustering": 0.740, "assortativity": 0.001},
+  "github_follows": {"nodes": 1247, "edges": 1542, "modularity": 0.649, "avg_degree": 2.5, "max_degree": 348, "components": 1, "clustering": 0.131, "assortativity": -0.865},
+  "bluesky_follows": {"nodes": 833, "edges": 915, "modularity": 0.699, "avg_degree": 2.2, "max_degree": 202, "components": 1, "clustering": 0.021, "assortativity": -0.953},
+  "github_co_contribution": {"nodes": 733, "edges": 5400, "modularity": 0.784, "avg_degree": 14.7, "max_degree": 246, "components": 3, "clustering": 0.879, "assortativity": -0.102}
+}

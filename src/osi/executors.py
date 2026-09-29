@@ -23,6 +23,7 @@ from osi.analysis import (
     pagerank,
     robustness,
 )
+from osi.findings import COMMUNITY_METRICS, HUB_METRICS, generate_findings, pick_top_findings
 from osi.result import ResultObject, make_caveats
 from osi.store import get_run, load_communities, load_graph, load_metrics
 
@@ -263,6 +264,14 @@ def _shape_findings(metrics: dict, communities: dict, ranked: list[tuple], graph
     return lines[:5]
 
 
+def _selected_findings(metrics: dict, allowed: set[str] | None = None, n: int = 4) -> list[str]:
+    """Plain sentences from the findings engine, highest score first."""
+    found = generate_findings(metrics, None)
+    if allowed is not None:
+        found = [item for item in found if item["metric"] in allowed]
+    return pick_top_findings(found, n)
+
+
 def rank_nodes(run: str, metric: str = "pagerank", top: int = 10) -> ResultObject:
     """Top nodes by pagerank, degree, betweenness, or closeness."""
     graph = _load_graph(run)
@@ -270,7 +279,25 @@ def rank_nodes(run: str, metric: str = "pagerank", top: int = 10) -> ResultObjec
     scores, method, sample_size = _metric_scores(run, metric, graph)
     ranked = list(scores.items())
     values = dict(ranked[:top])
-    values["findings"] = interpret_rank(ranked, graph, metric)
+    names = [node for node, _score in ranked[:5]]
+    node_count = graph.number_of_nodes()
+    average = sum(degree for _node, degree in graph.degree()) / node_count if node_count else 0.0
+    degrees = [int(graph.degree(node)) for node in names]
+    assignment = load_communities(run, "louvain")
+    hub_metrics = {
+        "nodes": node_count,
+        "avg_degree": average,
+        "max_degree": max((degree for _node, degree in graph.degree()), default=0),
+        "top_node": str(names[0]) if names else None,
+        "top_accounts": [str(node) for node in names],
+        "top_5_degree": min(degrees) if len(degrees) >= 5 else None,
+        "top_communities": (
+            [assignment.get(node) for node in names] if assignment and len(names) >= 5 else None
+        ),
+    }
+    base = interpret_rank(ranked, graph, metric)
+    extra = [text for text in _selected_findings(hub_metrics, HUB_METRICS) if text not in base]
+    values["findings"] = base + extra
     return _finish(
         "rank_nodes",
         {"run": run, "metric": metric, "top": top},
@@ -298,7 +325,13 @@ def list_communities(run: str, algorithm: str = "louvain") -> ResultObject:
         counts[community] = counts.get(community, 0) + 1
     modularity = _modularity_of(graph, assignment)
     values = ResultObject.community_values(counts, modularity)
-    values["findings"] = interpret_communities(
+    community_metrics = {
+        "nodes": graph.number_of_nodes(),
+        "modularity": modularity,
+        "n_communities": int(values["n_communities"]),
+        "largest_size": int(values["largest_size"]),
+    }
+    values["findings"] = _selected_findings(community_metrics, COMMUNITY_METRICS) or interpret_communities(
         int(values["n_communities"]),
         int(values["largest_size"]),
         values.get("modularity"),
@@ -339,6 +372,35 @@ def network_health(run: str) -> ResultObject:
         "modularity": modularity,
         "n_communities": group_count,
     }
+    ranked_degree = sorted(graph.degree(), key=lambda item: (-item[1], str(item[0])))
+    top = ranked_degree[:5]
+    largest_size = None
+    top_communities = None
+    if assignment:
+        counts: dict[Any, int] = {}
+        for community in assignment.values():
+            counts[community] = counts.get(community, 0) + 1
+        if counts:
+            largest_size = max(counts.values())
+        if len(top) >= 5:
+            top_communities = [assignment.get(node) for node, _degree in top]
+    power = fit.get("power_law") or {}
+    finding_metrics = {
+        "nodes": graph.number_of_nodes(),
+        "assortativity": health["assortativity"],
+        "avg_clustering": health["avg_clustering"],
+        "avg_degree": health["avg_degree"],
+        "max_degree": health["max_degree"],
+        "components": health["num_components"],
+        "modularity": modularity,
+        "n_communities": group_count,
+        "largest_size": largest_size,
+        "power_law_r_squared": power.get("r_squared"),
+        "top_node": str(top[0][0]) if top else None,
+        "top_accounts": [str(node) for node, _degree in top],
+        "top_5_degree": int(top[4][1]) if len(top) >= 5 else None,
+        "top_communities": top_communities,
+    }
     values = {
         "assortativity": health["assortativity"],
         "clustering": health["avg_clustering"],
@@ -347,7 +409,7 @@ def network_health(run: str) -> ResultObject:
         "avg_degree": health["avg_degree"],
         "max_degree": health["max_degree"],
         "power_law": fit["power_law"],
-        "findings": interpret_health(metrics, graph),
+        "findings": _selected_findings(finding_metrics) or interpret_health(metrics, graph),
     }
     return _finish(
         "network_health",

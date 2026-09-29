@@ -89,11 +89,10 @@ SYSTEM_PROMPT = (
 
 # Used when the executor already translated the numbers into findings.
 FINDINGS_SYSTEM_PROMPT = (
-    "You receive 3-5 findings about a network. Write them as 2-3 "
-    "sentences of plain English. Do not add any numbers or metrics "
-    "that are not in the findings. Do not describe the graph. "
-    "Do not use words like density, modularity, clustering, or "
-    "component."
+    "You receive 3-5 findings about a network. Rewrite them as "
+    "2-3 sentences of flowing prose. Do not invent numbers. Do "
+    "not add metrics. Do not use the words density, modularity, "
+    "clustering, or component."
 )
 
 
@@ -332,11 +331,8 @@ def _explain_template(result: ResultObject) -> str:
 
 
 def _findings_template(result: ResultObject) -> str:
-    body = " ".join(str(item) for item in result.values.get("findings") or [])
-    trust = str(result.trust or "stable")
-    if not trust.endswith("."):
-        trust += "."
-    return f"{body} How sure: {trust}"
+    findings = [str(item) for item in result.values.get("findings") or []]
+    return " ".join(findings) + f" How sure: {_trust_reason(result)}."
 
 
 def templated_fallback(result: ResultObject) -> str:
@@ -698,10 +694,7 @@ def write_answer(
     if missing:
         prose = prose.rstrip() + " " + " ".join(missing)
     if send_findings and "How sure:" not in prose:
-        trust = str(result.trust or "stable")
-        if not trust.endswith("."):
-            trust += "."
-        prose = prose.rstrip() + f" How sure: {trust}"
+        prose = prose.rstrip() + f" How sure: {_trust_reason(result)}."
     if cached_as is not None:
         key, run_id = cached_as
         put_cached_answer(key, prose, run_id)
