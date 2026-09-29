@@ -151,9 +151,9 @@ def test_interpret_health_keeps_the_three_strongest_findings():
     }
     findings = interpret_health(metrics, graph)
     assert findings == [
-        "A few accounts are connected to hundreds of others, far more than typical.",
         "This is a dense network — most accounts are connected to dozens of others.",
         "The groups are blurry — they overlap heavily.",
+        "Hubs connect to leaves, not to each other. This is a broadcast network, not a community.",
     ]
 
 
@@ -166,8 +166,27 @@ def test_interpret_health_names_a_clean_split_and_a_sparse_network():
     )
     assert findings == [
         "This is a sparse network — most accounts have only a few connections.",
-        "It breaks cleanly into 4 groups.",
+        "This network splits cleanly into groups.",
     ]
+
+
+def test_interpret_health_flags_a_dominant_hub_and_fragmentation():
+    import networkx as nx
+
+    graph = nx.Graph()
+    graph.add_nodes_from(range(1000))
+    findings = interpret_health(
+        {
+            "avg_degree": 2,
+            "max_degree": 250,
+            "modularity": 0.45,
+            "components": 20,
+            "assortativity": 0.0,
+        },
+        graph,
+    )
+    assert findings[0] == "A few hubs dominate — the top node has 250 connections vs an average of 2."
+    assert "It's fragmented — most nodes are in small disconnected pieces." in findings
 
 
 def test_interpret_rank_names_a_hub_far_above_the_average():

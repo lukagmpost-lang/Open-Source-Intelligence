@@ -127,10 +127,10 @@ def interpret_health(metrics: dict, graph: nx.Graph) -> list[str]:
     """Convert raw metrics into 3-5 plain-language findings.
 
     Never mention metric names. Never quote raw values unless the value
-    is itself interesting (for example a 759-degree hub). At most three
-    findings are returned, in the order a reader would care about them:
-    hubs, then how tightly people are connected, then groups, then
-    fragmentation, then who connects to whom.
+    is itself interesting (for example a hub with far more connections
+    than average). At most three findings are returned, in the order a
+    reader would care about them: hubs, then how tightly people are
+    connected, then groups, then fragmentation, then who connects to whom.
     """
     ranked: list[tuple[int, str]] = []
     average = float(metrics.get("avg_degree") or 0)
@@ -140,34 +140,59 @@ def interpret_health(metrics: dict, graph: nx.Graph) -> list[str]:
         ranked.append((5, "This is a sparse network — most accounts have only a few connections."))
 
     max_degree = int(metrics.get("max_degree") or 0)
-    if max_degree > 100:
-        ranked.append((6, "A few accounts are connected to hundreds of others, far more than typical."))
+    if average and max_degree > 100 * average:
+        ranked.append(
+            (
+                6,
+                "A few hubs dominate — the top node has "
+                f"{_shown_number(max_degree)} connections vs an average of {_shown_number(average)}.",
+            )
+        )
 
     modularity = metrics.get("modularity")
-    group_count = metrics.get("n_communities")
     if modularity is None and graph.number_of_nodes() > 1 and graph.number_of_edges() > 0:
         assignment = louvain_communities(graph)
         modularity = _modularity_of(graph, assignment)
-        group_count = len(set(assignment.values()))
     if isinstance(modularity, (int, float)) and not isinstance(modularity, bool):
-        groups = int(group_count or 0)
         if float(modularity) > 0.5:
-            ranked.append((4, f"It breaks cleanly into {groups} groups."))
+            ranked.append((4, "This network splits cleanly into groups."))
         elif float(modularity) < 0.4:
             ranked.append((4, "The groups are blurry — they overlap heavily."))
 
     components = metrics.get("components", metrics.get("num_components"))
-    if isinstance(components, (int, float)) and not isinstance(components, bool) and int(components) > 10:
-        islands = int(components)
-        ranked.append((3, f"It's also fragmented — there are {islands} disconnected islands."))
+    nodes = graph.number_of_nodes()
+    if nodes <= 0:
+        raw_nodes = metrics.get("nodes", metrics.get("n_nodes"))
+        if isinstance(raw_nodes, (int, float)) and not isinstance(raw_nodes, bool):
+            nodes = int(raw_nodes)
+    if (
+        nodes
+        and isinstance(components, (int, float))
+        and not isinstance(components, bool)
+        and int(components) > nodes * 0.01
+    ):
+        ranked.append((3, "It's fragmented — most nodes are in small disconnected pieces."))
 
     assortativity = metrics.get("assortativity")
     if isinstance(assortativity, (int, float)) and not isinstance(assortativity, bool):
         if float(assortativity) < -0.5:
-            ranked.append((2, "The most connected people connect to the least connected, not to each other."))
+            ranked.append(
+                (
+                    2,
+                    "Hubs connect to leaves, not to each other. "
+                    "This is a broadcast network, not a community.",
+                )
+            )
 
     ranked.sort(key=lambda item: item[0], reverse=True)
     return [sentence for _priority, sentence in ranked[:3]]
+
+
+def _shown_number(value: float) -> str:
+    number = float(value)
+    if number.is_integer():
+        return f"{int(number):,}"
+    return f"{number:,.1f}"
 
 
 def _name_list(names: list[str]) -> str:
