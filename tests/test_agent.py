@@ -1,6 +1,6 @@
 import re
 
-from osi.agent import _TOOLS, parse_agent_reply, run_agent
+from osi.agent import _TOOLS, expressions_for, parse_agent_reply, run_agent, used_tools
 from osi.answer import verify_numbers
 from osi.ask import ask, main
 from osi.result import ResultObject
@@ -218,7 +218,7 @@ def test_an_answer_that_uses_only_critical_nodes_asks_for_a_rewrite(monkeypatch)
     result = run_agent("simple-v1", "what should I be worried about", use_llm=True)
     rewrite = next(prompt for prompt in prompts if "did not use the results" in prompt)
     assert "structural_criticality" in rewrite
-    assert "The key numbers from that tool are: 5, 0.08." in rewrite
+    assert "The key numbers from that tool are: 5%, 0.05, 8%, 0.08." in rewrite
     assert "Rewrite the answer to include at least one number from each tool result." in rewrite
     assert "0.91" in result.answer
     assert "5%" in result.answer
@@ -261,9 +261,83 @@ def test_after_two_rewrites_the_answer_is_accepted_anyway(monkeypatch):
     result = run_agent("simple-v1", "what should I be worried about", use_llm=True)
     rewrites = [prompt for prompt in prompts if "did not use the results from structural_criticality" in prompt]
     assert len(rewrites) == 2
-    assert "The key numbers from that tool are: 5, 0.08." in rewrites[0]
+    assert "The key numbers from that tool are: 5%, 0.05, 8%, 0.08." in rewrites[0]
     assert "The bridge score is 0.91." in result.answer
     assert "5%" not in result.answer.split("While looking at this", 1)[0]
+    assert verify_numbers(result.answer, result.values)
+
+
+def _tool_results():
+    return {
+        "structural_criticality": _stub_result(
+            "structural_criticality",
+            {"halving_degree": 0.05, "findings": ["Removing 5% halves the network."]},
+        ),
+        "critical_nodes": _stub_result(
+            "critical_nodes",
+            {"removed": 342, "findings": ["342 accounts become unreachable."]},
+        ),
+        "rank_nodes": _stub_result(
+            "rank_nodes",
+            {"akdas": 759, "findings": ["akdas has 759 connections."]},
+        ),
+    }
+
+
+def test_percent_expression_uses_fragility_and_multiplier_does_not():
+    results = _tool_results()
+    assert used_tools("removing 5% halves the network", results) == {"structural_criticality"}
+    assert "structural_criticality" not in used_tools("5x more connected", results)
+    assert used_tools("342 accounts become unreachable", results) == {"critical_nodes"}
+    assert used_tools("759 connections", results) == {"rank_nodes"}
+
+
+def test_a_missing_unique_expression_is_not_marked_used():
+    results = _tool_results()
+    used = used_tools("759 connections", results)
+    assert "structural_criticality" not in used
+    assert "critical_nodes" not in used
+    shared = {
+        "structural_criticality": _stub_result("structural_criticality", {"halving_degree": 0.05, "also": 5}),
+        "rank_nodes": _stub_result("rank_nodes", {"score": 5}),
+    }
+    assert used_tools("the score is 5", shared) == set()
+    assert used_tools("removing 5% halves the network", shared) == {"structural_criticality"}
+
+
+def test_expressions_keep_the_suffix_with_the_number():
+    assert "5%" in expressions_for(0.05)
+    assert "0.05" in expressions_for(0.05)
+    assert "5 percent" in expressions_for(0.05)
+    assert "5x" not in expressions_for(0.05)
+    assert "5x" in expressions_for(5.0)
+    assert "5 times" in expressions_for(5.0)
+    assert "5×" in expressions_for(5.0)
+    assert expressions_for(342) == ["342"]
+    assert expressions_for(759) == ["759"]
+    assert expressions_for(1210) == ["1210", "1,210"]
+
+
+def test_rewrite_fires_when_the_fragility_expression_is_missing(monkeypatch):
+    prompts: list[str] = []
+    _install_worry_stubs(monkeypatch)
+
+    def cites_a_multiplier(prompt, **kwargs):
+        prompts.append(prompt)
+        if "did not use the results" in prompt:
+            return "ANSWER: The bridge score is 0.91 and removing 5% halves the network."
+        if "TOOL RESULT structural_criticality" in prompt:
+            return "ANSWER: The bridge score is 0.91. Accounts are 5x more connected."
+        if "TOOL RESULT critical_nodes" in prompt:
+            return "TOOL: structural_criticality\nPARAMS: {}"
+        return 'TOOL: critical_nodes\nPARAMS: {"top_n": 5}'
+
+    monkeypatch.setattr("osi.agent.call_llm", cites_a_multiplier)
+    result = run_agent("simple-v1", "what should I be worried about", use_llm=True)
+    rewrite = next(prompt for prompt in prompts if "did not use the results" in prompt)
+    assert "structural_criticality" in rewrite
+    assert "5%" in rewrite
+    assert "5%" in result.answer
     assert verify_numbers(result.answer, result.values)
 
 

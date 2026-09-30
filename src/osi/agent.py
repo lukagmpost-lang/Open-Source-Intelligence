@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 import networkx as nx
 
 from osi.analysis import _modularity_of
-from osi.answer import _NUMBER, call_llm, verify_numbers
+from osi.answer import call_llm, verify_numbers
 from osi.executors import (
     connectivity,
     explain_node,
@@ -355,70 +355,201 @@ def _rewrite_until_used(
     return answer
 
 
-def _top_numbers(result: ResultObject, limit: int = 3) -> list[str]:
-    """Up to three key numbers, preferring the ones written in the findings."""
-    found: list[str] = []
-    seen: set[str] = set()
+class _Times(float):
+    """A multiplier such as 5x, not the count 5 and not the share 5%."""
 
-    def add(token: str) -> None:
-        if token in seen:
-            return
-        seen.add(token)
-        found.append(token)
 
-    for item in result.values.get("findings") or []:
-        for match in _NUMBER.finditer(str(item)):
-            add(match.group(0))
-            if len(found) == limit:
-                return found
-    numbers: list[float] = []
-    _collect_numbers(result.values, numbers)
-    for number in sorted(numbers, key=lambda value: abs(value), reverse=True):
-        add(_plain_number(number))
-        if len(found) == limit:
-            break
+# Number plus an optional suffix. The suffix is part of the expression, so
+# "5%" and "5x" are different from a bare 5.
+_ANSWER_EXPR = re.compile(
+    r"\b\d{1,3}(?:,\d{3})+(?:\.\d+)?"
+    r"|\b\d+(?:\.\d+)?(?:\s*(?:%|x|×|times|percent|accounts|nodes))?",
+    re.IGNORECASE,
+)
+_VALUE_KEYS = ("halving_degree", "halving_betweenness", "halving_random", "frac_at_30_degree")
+
+
+def expressions_for(value) -> list[str]:
+    """Return the text forms a value could take in the answer."""
+    if isinstance(value, bool):
+        return []
+    if isinstance(value, _Times):
+        number = float(value)
+        label = str(int(number)) if number.is_integer() else _short_float(number)
+        return [f"{label}x", f"{label} times", f"{label}×"]
+    if isinstance(value, float) and 0 < value < 1:
+        pct = value * 100
+        return [f"{pct:.0f}%", f"{pct:.1f}%", f"{pct:.0f} percent", _short_float(value)]
+    if isinstance(value, float) and value >= 1:
+        forms = [_short_float(value)]
+        if value.is_integer():
+            label = str(int(value))
+            forms.extend([f"{label}x", f"{label} times", f"{label}×"])
+        return forms
+    if isinstance(value, int) and value >= 1000:
+        return [str(value), f"{value:,}"]
+    return [str(value)]
+
+
+def _short_float(value: float) -> str:
+    return f"{value:.10f}".rstrip("0").rstrip(".")
+
+
+def _normalize_expr(text: str) -> str:
+    token = re.sub(r"\s+", " ", text.strip().lower())
+    return re.sub(r"\s+(%|x|×)", r"\1", token)
+
+
+def _split_expr(token: str) -> tuple[str, str]:
+    match = re.fullmatch(
+        r"(\d[\d,]*(?:\.\d+)?)(?:\s*(%|x|×|times|percent|accounts|nodes))?",
+        token,
+        re.IGNORECASE,
+    )
+    if not match:
+        return token, ""
+    return match.group(1), (match.group(2) or "").lower()
+
+
+def _answer_expressions(answer: str) -> set[str]:
+    """Full numeric tokens in the answer, number and suffix together."""
+    found: set[str] = set()
+    for match in _ANSWER_EXPR.finditer(answer):
+        token = _normalize_expr(match.group(0))
+        found.add(token)
+        number, suffix = _split_expr(token)
+        if suffix in {"accounts", "nodes"}:
+            found.add(number)
+        if "," in number:
+            found.add(number.replace(",", ""))
     return found
 
 
-def _collect_numbers(value, found: list[float]) -> None:
+def _value_key(value) -> tuple:
+    if isinstance(value, _Times):
+        return ("times", float(value))
+    if isinstance(value, float):
+        return ("float", float(value))
+    if isinstance(value, int) and not isinstance(value, bool):
+        return ("int", int(value))
+    return ("other", str(value))
+
+
+def _collect_typed(value, found: list) -> None:
     if isinstance(value, dict):
         for key, item in value.items():
             if key == "findings":
                 continue
-            _collect_numbers(item, found)
+            _collect_typed(item, found)
         return
     if isinstance(value, list):
         for item in value:
-            _collect_numbers(item, found)
+            _collect_typed(item, found)
         return
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return
-    found.append(float(value))
+    found.append(value)
 
 
-def _plain_number(number: float) -> str:
-    if number.is_integer():
-        return str(int(number))
-    return str(number)
+def top_values(result: ResultObject, n: int = 5) -> list:
+    """Up to n salient numbers, keeping percent and multiplier suffixes."""
+    found: list = []
+    seen: set = set()
+
+    def add(value) -> None:
+        if value is None or isinstance(value, bool):
+            return
+        if isinstance(value, float) and not isinstance(value, _Times) and value.is_integer() and not (0 < value < 1):
+            value = int(value)
+        key = _value_key(value)
+        if key in seen:
+            return
+        seen.add(key)
+        found.append(value)
+
+    for item in result.values.get("findings") or []:
+        for match in _ANSWER_EXPR.finditer(str(item)):
+            number, suffix = _split_expr(_normalize_expr(match.group(0)))
+            add(_value_from_parts(number, suffix))
+            if len(found) == n:
+                return found
+    for key in _VALUE_KEYS:
+        if key in result.values:
+            add(result.values[key])
+            if len(found) == n:
+                return found
+    rest: list = []
+    _collect_typed(result.values, rest)
+    rest.sort(key=lambda item: abs(float(item)), reverse=True)
+    for value in rest:
+        add(value)
+        if len(found) == n:
+            break
+    return found
 
 
-def _answer_has_number(answer: str, token: str) -> bool:
-    target = float(token)
-    for match in _NUMBER.finditer(answer):
-        if float(match.group(0)) == target:
-            return True
-    return False
+def _value_from_parts(number: str, suffix: str):
+    parsed = float(number.replace(",", ""))
+    if suffix in {"%", "percent"}:
+        return parsed / 100.0
+    if suffix in {"x", "×", "times"}:
+        return _Times(parsed)
+    if parsed.is_integer():
+        return int(parsed)
+    return parsed
+
+
+def _key_expressions(result: ResultObject) -> list[str]:
+    shown: list[str] = []
+    seen: set[str] = set()
+    for value in top_values(result, n=5):
+        forms = expressions_for(value)
+        picks = [forms[0]] if forms else []
+        if len(forms) > 1:
+            picks.append(forms[-1])
+        for item in picks:
+            if item not in seen:
+                seen.add(item)
+                shown.append(item)
+    return shown
+
+
+def used_tools(answer: str, tool_results: dict[str, ResultObject]) -> set[str]:
+    """Return the tool names whose results are referenced in the answer.
+
+    A shared bare number does not count. ``5%`` credits the fragility tool,
+    and ``5x`` credits the tool that reported a fivefold ratio.
+    """
+    tokens = _answer_expressions(answer)
+    expr_by_tool: dict[str, set[str]] = {}
+    for tool_name, result in tool_results.items():
+        exprs: set[str] = set()
+        for value in top_values(result, n=5):
+            exprs.update(_normalize_expr(expr) for expr in expressions_for(value))
+        expr_by_tool[tool_name] = exprs
+    expr_owner: dict[str, list[str]] = {}
+    for tool_name, exprs in expr_by_tool.items():
+        for expr in exprs:
+            expr_owner.setdefault(expr, []).append(tool_name)
+    used: set[str] = set()
+    for expr, owners in expr_owner.items():
+        if len(owners) != 1:
+            continue
+        if expr in tokens:
+            used.add(owners[0])
+    return used
 
 
 def _ignored_tools(answer: str, tools: list[str], results: list[ResultObject]) -> list[tuple[str, list[str]]]:
-    ignored = []
+    paired: dict[str, ResultObject] = {}
     for name, result in zip(tools, results):
-        numbers = _top_numbers(result)
-        if not numbers:
+        paired.setdefault(name, result)
+    referenced = used_tools(answer, paired)
+    ignored = []
+    for name, result in paired.items():
+        if name in referenced or not top_values(result, n=5):
             continue
-        if any(_answer_has_number(answer, token) for token in numbers):
-            continue
-        ignored.append((name, numbers))
+        ignored.append((name, _key_expressions(result)))
     return ignored
 
 
