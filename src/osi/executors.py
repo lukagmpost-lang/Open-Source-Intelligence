@@ -6,6 +6,8 @@ times the call, and fills method, trust, caveats, and runtime.
 
 from __future__ import annotations
 
+import math
+import os
 import time
 from typing import Any, Callable
 
@@ -27,6 +29,7 @@ from osi.findings import (
     COMMUNITY_METRICS,
     HUB_METRICS,
     generate_findings,
+    load_baselines,
     pagerank_centrality_text,
     pick_top_findings,
 )
@@ -421,6 +424,19 @@ def network_health(run: str) -> ResultObject:
         "power_law": fit["power_law"],
         "findings": _selected_findings(finding_metrics) or interpret_health(metrics, graph),
     }
+    _remember_reference(
+        run,
+        {
+            "nodes": graph.number_of_nodes(),
+            "edges": graph.number_of_edges(),
+            "modularity": None if modularity is None else float(modularity),
+            "avg_degree": float(health["avg_degree"]),
+            "max_degree": int(health["max_degree"]),
+            "components": int(health["num_components"]),
+            "clustering": float(health["avg_clustering"]),
+            "assortativity": health["assortativity"],
+        },
+    )
     return _finish(
         "network_health",
         {"run": run},
@@ -690,4 +706,265 @@ def explain_node(run: str, node: Any) -> ResultObject:
         graph.number_of_nodes(),
         started,
         n_edges=graph.number_of_edges(),
+    )
+
+
+# Filled by network_health so a later comparison does not measure the graph again.
+_REFERENCE_CACHE: dict[tuple[str, str], dict] = {}
+_BASELINE_KEYS = (
+    "nodes",
+    "edges",
+    "modularity",
+    "avg_degree",
+    "max_degree",
+    "components",
+    "clustering",
+    "assortativity",
+)
+_BASELINE_LABELS = {
+    "nodes": "accounts",
+    "edges": "links",
+    "modularity": "group separation",
+    "avg_degree": "connections per account",
+    "max_degree": "connections on the largest account",
+    "components": "separate pieces",
+    "clustering": "tight local groups",
+    "assortativity": "similar accounts linking to each other",
+}
+_BASELINE_ALIASES = {
+    "snap": "snap_facebook",
+    "snap_facebook": "snap_facebook",
+    "facebook": "snap_facebook",
+    "reddit_2008": "reddit_2008",
+    "reddit2008": "reddit_2008",
+    "2008": "reddit_2008",
+    "reddit_2012": "reddit_2012",
+    "reddit2012": "reddit_2012",
+    "2012": "reddit_2012",
+    "github_follows": "github_follows",
+    "github": "github_follows",
+    "bluesky_follows": "bluesky_follows",
+    "bluesky": "bluesky_follows",
+    "github_co_contribution": "github_co_contribution",
+    "co_contribution": "github_co_contribution",
+    "forum": "reddit_2008",
+    "normal_forum": "reddit_2008",
+}
+
+
+def _cache_key(run: str) -> tuple[str, str]:
+    return (os.environ.get("OSI_STORE", ""), run)
+
+
+def _remember_reference(run: str, metrics: dict) -> None:
+    _REFERENCE_CACHE[_cache_key(run)] = dict(metrics)
+
+
+def _reference_metrics(run: str) -> dict:
+    """Metrics lined up with baselines.json. Reuse the health pass when it already ran."""
+    cached = _REFERENCE_CACHE.get(_cache_key(run))
+    if cached:
+        return cached
+    network_health(run)
+    return _REFERENCE_CACHE[_cache_key(run)]
+
+
+def _baseline_key(name: str) -> str:
+    token = (name or "snap_facebook").strip().lower().replace(" ", "_").replace("-", "_")
+    key = _BASELINE_ALIASES.get(token)
+    if key is None:
+        known = ", ".join(sorted(set(_BASELINE_ALIASES.values())))
+        raise ValueError(f"unknown baseline {name}. Choose one of: {known}")
+    return key
+
+
+def _same_network(current: dict, reference: dict) -> bool:
+    return int(current["nodes"]) == int(reference["nodes"]) and int(current["edges"]) == int(reference["edges"])
+
+
+def _median_rows(rows: list[dict]) -> dict[str, float]:
+    typical: dict[str, float] = {}
+    for key in _BASELINE_KEYS:
+        values = sorted(float(row[key]) for row in rows if row.get(key) is not None)
+        if not values:
+            continue
+        middle = len(values) // 2
+        if len(values) % 2:
+            typical[key] = values[middle]
+        else:
+            typical[key] = (values[middle - 1] + values[middle]) / 2
+    return typical
+
+
+def _other_networks(current: dict) -> dict[str, float]:
+    """Median of the stored baselines, leaving out a row that is this same graph."""
+    rows = [row for row in load_baselines().values() if not _same_network(current, row)]
+    if not rows:
+        rows = list(load_baselines().values())
+    return _median_rows(rows)
+
+
+def _fmt_number(value) -> str:
+    number = float(value)
+    if abs(number) >= 100 or abs(number - round(number)) < 1e-6:
+        return str(int(round(number)))
+    if abs(number) >= 10:
+        text = f"{number:.1f}"
+    else:
+        text = f"{number:.2f}"
+    return text.rstrip("0").rstrip(".")
+
+
+def _positive_ratio(current, reference) -> float | None:
+    if current is None or reference is None:
+        return None
+    current = float(current)
+    reference = float(reference)
+    if current <= 0 or reference <= 0:
+        return None
+    return current / reference
+
+
+def _fmt_ratio(ratio: float) -> str:
+    if abs(ratio - round(ratio)) < 0.05 or ratio >= 10:
+        return f"{int(round(ratio))}x"
+    return f"{ratio:.1f}x"
+
+
+def _distance(current, reference) -> float | None:
+    if current is None or reference is None:
+        return None
+    current = float(current)
+    reference = float(reference)
+    if current > 0 and reference > 0:
+        return abs(math.log(current / reference))
+    scale = max(abs(reference), 0.05)
+    return abs(current - reference) / scale
+
+
+def _comparison_sentence(label: str, current, reference, ratio: float | None) -> str:
+    if ratio is None:
+        return f"{label}: {_fmt_number(current)} here, {_fmt_number(reference)} on the reference."
+    return (
+        f"{label}: {_fmt_number(current)} here versus {_fmt_number(reference)} "
+        f"on the reference ({_fmt_ratio(ratio)})."
+    )
+
+
+def _hub_name(run: str) -> str | None:
+    graph = _load_graph(run)
+    ranked = sorted(graph.degree(), key=lambda item: (-item[1], str(item[0])))
+    if not ranked:
+        return None
+    return str(ranked[0][0])
+
+
+def baseline_compare(run: str, baseline: str = "snap_facebook") -> ResultObject:
+    """Return this graph, one stored baseline, and the ratio for each metric that differs."""
+    started = time.perf_counter()
+    current = _reference_metrics(run)
+    tables = load_baselines()
+    key = _baseline_key(baseline)
+    reference = dict(tables[key])
+    label = key
+    if _same_network(current, reference):
+        reference = _other_networks(current)
+        label = "the other stored networks"
+    ratios: dict[str, float] = {}
+    findings: list[str] = []
+    for metric in _BASELINE_KEYS:
+        if current.get(metric) is None or reference.get(metric) is None:
+            continue
+        ratio = _positive_ratio(current[metric], reference[metric])
+        if ratio is None or ratio >= 1.5 or ratio <= (1 / 1.5):
+            if ratio is not None:
+                ratios[metric] = ratio
+            findings.append(
+                _comparison_sentence(_BASELINE_LABELS[metric], current[metric], reference[metric], ratio)
+            )
+    hub = _hub_name(run)
+    if hub and current.get("max_degree") is not None:
+        findings.insert(
+            0,
+            f"The largest account is {hub}, with {_fmt_number(current['max_degree'])} connections.",
+        )
+    if not findings:
+        findings.append(f"This network is close to {label} on every stored metric.")
+    else:
+        findings.insert(0, f"Compared with {label}.")
+    values = {
+        "baseline": label,
+        "graph": {metric: current.get(metric) for metric in _BASELINE_KEYS},
+        "reference": {metric: reference.get(metric) for metric in _BASELINE_KEYS},
+        "ratios": ratios,
+        "findings": findings[:6],
+    }
+    graph_size = int(current["nodes"])
+    return _finish(
+        "baseline_compare",
+        {"run": run, "baseline": baseline},
+        values,
+        "exact",
+        None,
+        "stable",
+        graph_size,
+        started,
+        n_edges=int(current["edges"]),
+    )
+
+
+def anomaly_scan(run: str) -> ResultObject:
+    """Compare every metric with the baselines and return the three largest departures."""
+    started = time.perf_counter()
+    current = _reference_metrics(run)
+    typical = _other_networks(current)
+    ranked: list[tuple[float, str, float | None]] = []
+    for metric in _BASELINE_KEYS:
+        distance = _distance(current.get(metric), typical.get(metric))
+        if distance is None:
+            continue
+        ranked.append((distance, metric, _positive_ratio(current.get(metric), typical.get(metric))))
+    ranked.sort(key=lambda item: (-item[0], item[1]))
+    top = ranked[:3]
+    deviations = []
+    findings = []
+    for distance, metric, ratio in top:
+        deviations.append(
+            {
+                "metric": metric,
+                "value": current.get(metric),
+                "typical": typical.get(metric),
+                "ratio": ratio,
+                "distance": distance,
+            }
+        )
+        sentence = _comparison_sentence(
+            _BASELINE_LABELS[metric],
+            current.get(metric),
+            typical.get(metric),
+            ratio,
+        )
+        findings.append(sentence)
+    hub = _hub_name(run)
+    if hub and current.get("max_degree") is not None:
+        findings.append(
+            f"The largest account is {hub}, with {_fmt_number(current['max_degree'])} connections."
+        )
+    if not findings:
+        findings.append("Nothing in the stored metrics stands far from a typical network.")
+    values = {
+        "typical": typical,
+        "deviations": deviations,
+        "findings": findings,
+    }
+    return _finish(
+        "anomaly_scan",
+        {"run": run},
+        values,
+        "exact",
+        None,
+        "stable",
+        int(current["nodes"]),
+        started,
+        n_edges=int(current["edges"]),
     )

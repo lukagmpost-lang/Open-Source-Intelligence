@@ -19,6 +19,8 @@ import networkx as nx
 from osi.analysis import _modularity_of, pagerank as compute_pagerank
 from osi.answer import call_llm, raw_centrality_problem, templated_fallback, verify_numbers
 from osi.executors import (
+    anomaly_scan,
+    baseline_compare,
     connectivity,
     explain_node,
     list_communities,
@@ -56,9 +58,9 @@ TOOLS = [
         "name": "rank_nodes",
         "description": "Rank nodes by pagerank, degree, betweenness, or closeness.",
         "when_to_use": (
-            "Use when the user asks WHO matters, WHO is important, WHO is central, "
-            "WHO are the hubs, WHO holds things together, or wants a TOP list of any kind. "
-            "Also use when the user asks for SPECIFIC NAMES in response to any question."
+            "The user asks WHO matters, WHO is important, WHO is central, WHO holds "
+            "things together, or wants a TOP list. Also use when the user asks for specific "
+            "names in response to any question."
         ),
         "params": {"metric": "pagerank|degree|betweenness|closeness", "top": "int"},
     },
@@ -66,9 +68,9 @@ TOOLS = [
         "name": "critical_nodes",
         "description": "Find nodes whose removal disconnects the most of the network.",
         "when_to_use": (
-            "Use when the user asks WHAT COULD GO WRONG, WHERE IS THIS VULNERABLE, "
-            "WHO IS A RISK, WHAT HAPPENS IF WE LOSE someone, WHAT ARE THE WEAKNESSES, "
-            "WHO IS A SINGLE POINT OF FAILURE, or asks about the CONSEQUENCES of removing something."
+            "The user asks WHAT COULD GO WRONG, WHERE IS THIS VULNERABLE, WHO IS AT RISK, "
+            "WHAT HAPPENS IF WE LOSE someone, WHO IS A SINGLE POINT OF FAILURE, "
+            "WHAT SHOULD I WORRY ABOUT, or any question about fragility or removal."
         ),
         "params": {"top_n": "int"},
     },
@@ -76,9 +78,8 @@ TOOLS = [
         "name": "structural_criticality",
         "description": "Measure how the network fragments as nodes are removed.",
         "when_to_use": (
-            "Use when the user asks HOW FRAGILE is this, HOW ROBUST, HOW RESILIENT, "
-            "WHAT HAPPENS IF WE REMOVE N% of the top, or any question about the network's "
-            "SURVIVAL under attack."
+            "The user asks HOW FRAGILE, HOW ROBUST, HOW RESILIENT, HOW HEALTHY, "
+            "or any question about survival under attack or node removal."
         ),
         "params": {},
     },
@@ -86,8 +87,10 @@ TOOLS = [
         "name": "network_health",
         "description": "Return the graph's density, clustering, modularity, components, assortativity.",
         "when_to_use": (
-            "Use when the user asks WHAT IS THE SHAPE, DESCRIBE THIS, HOW IS THIS STRUCTURED, "
-            "HOW MANY COMMUNITIES, HOW CONNECTED, or wants GENERAL STATISTICS."
+            "The user asks WHAT IS THE SHAPE, HOW MANY COMMUNITIES, HOW CONNECTED, "
+            "DESCRIBE THIS, WHAT IS THIS, or wants general statistics. Also use when the "
+            "user asks how this COMPARES to a normal network — run health and compare "
+            "against the stored baselines."
         ),
         "params": {},
     },
@@ -95,8 +98,8 @@ TOOLS = [
         "name": "list_communities",
         "description": "How the graph splits into groups.",
         "when_to_use": (
-            "Use when the user asks WHAT GROUPS EXIST, WHAT COMMUNITIES, HOW IS THIS SPLIT, "
-            "WHAT ARE THE CLUSTERS, or asks about the STRUCTURE of groups."
+            "The user asks WHAT GROUPS EXIST, WHAT COMMUNITIES, HOW IS THIS SPLIT, "
+            "or asks about the structure of groups."
         ),
         "params": {"algorithm": "louvain|leiden"},
     },
@@ -104,8 +107,8 @@ TOOLS = [
         "name": "explain_node",
         "description": "Details about one specific node.",
         "when_to_use": (
-            "Use when the user asks about a SPECIFIC account, WHAT IS X, TELL ME ABOUT X, "
-            "WHO IS X, or asks about one named node."
+            "The user asks about a SPECIFIC account by name. Also use when the user "
+            "asks for details about any named node."
         ),
         "params": {"node": "str"},
     },
@@ -113,10 +116,33 @@ TOOLS = [
         "name": "connectivity",
         "description": "Shortest path between two nodes.",
         "when_to_use": (
-            "Use when the user asks HOW IS X CONNECTED TO Y, WHAT'S THE PATH, "
-            "HOW CLOSE ARE X AND Y, or asks about a RELATIONSHIP between two specific nodes."
+            "The user asks HOW IS X CONNECTED TO Y, WHAT IS THE PATH, HOW CLOSE ARE X AND Y, "
+            "or about a relationship between two specific accounts."
         ),
         "params": {"source": "str", "target": "str"},
+    },
+    {
+        "name": "baseline_compare",
+        "description": "Compare this graph's metrics with one stored reference network.",
+        "when_to_use": (
+            "The user asks HOW DOES THIS COMPARE, IS THIS NORMAL, IS THIS TYPICAL, "
+            "or asks about how this network differs from other networks. Compares this "
+            "graph's metrics against the stored baselines (SNAP, Reddit 2008, Reddit 2012, "
+            "GitHub follows, Bluesky follows, GitHub co-contribution)."
+        ),
+        "params": {
+            "baseline": "snap_facebook|reddit_2008|reddit_2012|github_follows|bluesky_follows|github_co_contribution"
+        },
+    },
+    {
+        "name": "anomaly_scan",
+        "description": "Return the three metrics farthest from a typical network.",
+        "when_to_use": (
+            "The user asks WHAT IS UNUSUAL, WHAT STANDS OUT, WHAT IS DIFFERENT HERE, "
+            "WHAT IS THE OUTLIER, or asks about what makes this network distinct. "
+            "Returns the metrics farthest from baseline."
+        ),
+        "params": {},
     },
 ]
 
@@ -137,73 +163,19 @@ _TOOLS = {
     "critical_nodes": critical_nodes,
     "connectivity": connectivity,
     "explain_node": explain_node,
+    "baseline_compare": baseline_compare,
+    "anomaly_scan": anomaly_scan,
 }
 
-_AGENT_SYSTEM_TEMPLATE = """\
-You are an agent analyzing a graph. You drive the analysis by 
-requesting tool calls. You do not wait for tools to be run — 
-YOU request them.
-
-To request a tool, respond with EXACTLY this format:
-
+_FORMAT_RULES = """\
+To call a tool, use exactly this form:
 TOOL: <tool_name>
 PARAMS: <json_object>
 
-For example:
-TOOL: critical_nodes
-PARAMS: {"top_n": 10}
-
-Your response will be parsed. The tool will run automatically. 
-You will see the result in the next message. Then you can request 
-another tool or provide your final answer.
-
-To give your final answer, respond with:
-
+To answer, use exactly this form:
 ANSWER: <your synthesis>
 
-Do not ask the user to run tools. Do not wait for tools. Request 
-them yourself with the TOOL/PARAMS format.
-
-Available tools:
-{tool_descriptions}
-
-Precomputed findings about this graph:
-{findings}
-
-User question:
-{question}
-
-Rules:
-- Call at least 2 tools before answering.
-- Every number in your answer must appear in a tool result.
-- Never quote a raw centrality score (pagerank, betweenness, closeness, eigenvector). Always express importance as a ratio to the typical account: '36x more central than typical' or 'more connected than 99% of accounts'.
-- Keep the answer to 3-5 sentences.
-
-EXAMPLE CONVERSATION:
-
-User question: "what should I be worried about"
-
-Your response:
-TOOL: critical_nodes
-PARAMS: {"top_n": 10}
-
-[Tool runs. You see the result in the next message.]
-
-Your response:
-TOOL: structural_criticality
-PARAMS: {}
-
-[Tool runs. You see the result.]
-
-Your response:
-ANSWER: akdas has 759 connections, 22x the average. Removing 
-it disconnects 342 other accounts. The network halves after 
-removing 25% of the top accounts. The top 5 hubs sit in the 
-same community and hold the network together. How sure: stable.
-
-END EXAMPLE
-
-Now respond to the actual question.
+Do not ask the user to run tools. Never quote a raw centrality score (pagerank, betweenness, closeness, eigenvector). Express importance as a ratio to the typical account, such as '36x more central than typical' or 'more connected than 99% of accounts'.
 """
 
 _TOOL_LINE = re.compile(r"(?im)^TOOL:\s*([A-Za-z_]+)\s*$")
@@ -238,10 +210,11 @@ def run_agent(run_id: str, question: str, use_llm: bool = True) -> AgentResult:
     modes: list[dict] = []
     if use_llm:
         modes = _seed_failure_modes(run_id, graph, domain, snapshot, tools, results, scratchpad)
+        health_findings = _health_findings(results, finding_texts)
         answer = _react(
             question,
             domain,
-            finding_texts,
+            health_findings,
             hypotheses,
             run_id,
             scratchpad,
@@ -310,11 +283,20 @@ def _seed_failure_modes(run_id, graph, domain, snapshot, tools, results, scratch
     return apply_failure_modes(metrics, graph, domain)
 
 
+def _health_findings(results: list[ResultObject], finding_texts: list[str]) -> list[str]:
+    """Sentences from the health pass that opens the loop."""
+    if results and results[0].intent == "network_health":
+        lines = [str(item) for item in (results[0].values.get("findings") or [])]
+        if lines:
+            return lines
+    return list(finding_texts)
+
+
 def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tools, results, modes) -> str:
-    system = _system_prompt(question, finding_texts)
+    system = _system_prompt(question, domain, modes, finding_texts)
     chosen = 0
     for _step in range(MAX_STEPS):
-        prompt = _prompt(question, domain, modes, scratchpad)
+        prompt = _prompt(question, domain, modes, scratchpad, finding_texts)
         try:
             reply = call_llm(prompt, system=system)
         except (OSError, TimeoutError, RuntimeError, KeyError, json.JSONDecodeError, ValueError):
@@ -366,13 +348,8 @@ def _run_plan(run_id: str, tools: list[str], results: list[ResultObject], scratc
         scratchpad.append(f"TOOL RESULT {name}: {_summarize(result)}")
 
 
-def _system_prompt(question: str, finding_texts: list[str]) -> str:
-    findings = "\n".join(f"- {text}" for text in finding_texts) if finding_texts else "None yet."
-    return (
-        _AGENT_SYSTEM_TEMPLATE.replace("{tool_descriptions}", _render_tools())
-        .replace("{findings}", findings)
-        .replace("{question}", question)
-    )
+def _system_prompt(question: str, domain: str, modes: list[dict], finding_texts: list[str]) -> str:
+    return _brief(question, domain, modes, finding_texts) + "\n" + _FORMAT_RULES
 
 
 def _rewrite_until_used(
@@ -406,7 +383,10 @@ def _rewrite_until_used(
             _log_unused_tool(name, result, attempt)
         scratchpad.append(_rewrite_message(ignored))
         try:
-            reply = call_llm(_prompt(question, domain, modes, scratchpad), system=system)
+            reply = call_llm(
+                _prompt(question, domain, modes, scratchpad, finding_texts),
+                system=system,
+            )
         except (OSError, TimeoutError, RuntimeError, KeyError, json.JSONDecodeError, ValueError):
             return _revise_raw_centrality(
                 _with_fragility_note(answer, tools, results),
@@ -643,8 +623,12 @@ def _result_findings(result: ResultObject) -> list[str]:
 
 
 def _ignored_tools(answer: str, tools: list[str], results: list[ResultObject]) -> list[tuple[str, ResultObject]]:
+    pairs = list(zip(tools, results))
+    # The opening health pass is context. A tool the model asked for still has to show up.
+    if pairs and pairs[0][0] == "network_health":
+        pairs = pairs[1:]
     paired: dict[str, ResultObject] = {}
-    for name, result in zip(tools, results):
+    for name, result in pairs:
         paired.setdefault(name, result)
     referenced = used_tools(answer, paired)
     ignored = []
@@ -714,7 +698,10 @@ def _revise_raw_centrality(
         return answer
     scratchpad.append(problem)
     try:
-        reply = call_llm(_prompt(question, domain, modes, scratchpad), system=system)
+        reply = call_llm(
+            _prompt(question, domain, modes, scratchpad, finding_texts),
+            system=system,
+        )
     except (OSError, TimeoutError, RuntimeError, KeyError, json.JSONDecodeError, ValueError):
         return _fallback_answer(results, finding_texts)
     try:
@@ -762,22 +749,40 @@ def _render_tools() -> str:
     return "\n".join(blocks)
 
 
-def _prompt(question, domain, modes, scratchpad) -> str:
+def _brief(question, domain, modes, finding_texts) -> str:
     risks = [
         f"- {mode['name']} ({mode['severity']}): {mode['description']}"
         for mode in (modes or [])
     ]
+    observations = "\n".join(f"- {text}" for text in finding_texts) if finding_texts else "- none"
+    return "\n".join(
+        [
+            "You are analyzing a graph. Here are the tools available:",
+            "",
+            _render_tools(),
+            "",
+            f"This is a {domain} network. The following risks apply based on its structure:",
+            "\n".join(risks) if risks else "- none",
+            "",
+            "Precomputed observations:",
+            observations,
+            "",
+            f"User question: {question}",
+            "",
+            "Decide which tools to call. Call at least 2 before answering. Reply with TOOL/PARAMS or ANSWER.",
+            "",
+            "Every number in your answer must appear in a tool result. "
+            "When the user asks for specific names, call rank_nodes or explain_node. "
+            "When the user asks what could go wrong, call critical_nodes and structural_criticality. "
+            "When the user asks how this compares, call baseline_compare. "
+            "When the user asks what's unusual, call anomaly_scan.",
+        ]
+    )
+
+
+def _prompt(question, domain, modes, scratchpad, finding_texts=None) -> str:
     lines = [
-        f"This is a {domain} network. The following risks apply based on its structure:",
-        "",
-        "\n".join(risks) if risks else "- none",
-        "",
-        "Available tools:",
-        _render_tools(),
-        "",
-        f"Question: {question}",
-        "",
-        "Decide which tools to call. Call at least 2 before answering. Reply with TOOL/PARAMS or ANSWER.",
+        _brief(question, domain, modes, finding_texts or []),
     ]
     if scratchpad:
         lines.extend(["", "Results so far:", *scratchpad])

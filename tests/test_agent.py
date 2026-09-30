@@ -28,16 +28,18 @@ def test_system_prompt_names_the_question_and_the_tool_minimum(monkeypatch):
     run_agent("simple-v1", "what should I be worried about", use_llm=True)
     system = seen["system"]
     prompt = seen["prompt"]
-    assert "what should I be worried about" in prompt
-    assert "WHAT COULD GO WRONG" in prompt
-    assert "HOW FRAGILE" in prompt
-    assert "When to use:" in prompt
-    assert "Call at least 2 before answering" in prompt
-    assert "YOU request them" in system
+    assert "what should I be worried about" in system
+    assert "WHAT COULD GO WRONG" in system
+    assert "HOW FRAGILE" in system
+    assert "When to use:" in system
+    assert "baseline_compare" in system
+    assert "anomaly_scan" in system
+    assert "Call at least 2 before answering" in system
+    assert "how this compares, call baseline_compare" in system
+    assert "what's unusual, call anomaly_scan" in system
+    assert "Precomputed observations:" in system
     assert "Do not ask the user to run tools" in system
-    assert "Call at least 2 tools before answering." in system
-    assert "EXAMPLE CONVERSATION" in system
-    assert "Now respond to the actual question." in system
+    assert "Call at least 2 before answering" in prompt
 
 
 def _decimal(text: str) -> str:
@@ -87,7 +89,7 @@ def test_an_importance_question_calls_rank_nodes(monkeypatch):
 
 def test_an_account_question_calls_explain_node(monkeypatch):
     def choose(prompt, **kwargs):
-        assert "TELL ME ABOUT" in prompt
+        assert "SPECIFIC account" in prompt
         if "TOOL RESULT rank_nodes" in prompt:
             return "ANSWER: alice is more central than a typical account."
         if "TOOL RESULT explain_node" in prompt:
@@ -116,7 +118,7 @@ def test_a_path_question_calls_connectivity(monkeypatch):
 def test_a_novel_question_uses_a_tool_number(monkeypatch):
     def choose(prompt, **kwargs):
         assert "which accounts are toxic" in prompt
-        assert "Available tools:" in prompt
+        assert "tools available" in prompt
         if "TOOL RESULT critical_nodes" in prompt:
             section = _tool_section(prompt, "rank_nodes")
             match = re.search(r"\b(\d+)\b", section)
@@ -131,8 +133,55 @@ def test_a_novel_question_uses_a_tool_number(monkeypatch):
     monkeypatch.setattr("osi.agent.call_llm", choose)
     result = run_agent("simple-v1", "which accounts are toxic", use_llm=True)
     assert "rank_nodes" in result.tools
+    assert "critical_nodes" in result.tools
+    assert len(result.tools) >= 3
+    assert "alice" in result.answer
     assert verify_numbers(result.answer, result.values)
     assert re.search(r"\d", result.answer)
+
+
+def test_a_comparison_question_calls_baseline_compare(monkeypatch):
+    def choose(prompt, **kwargs):
+        assert "HOW DOES THIS COMPARE" in prompt
+        assert "baseline_compare" in prompt
+        if "TOOL RESULT rank_nodes" in prompt:
+            return "ANSWER: alice is more central than a typical account."
+        if "TOOL RESULT baseline_compare" in prompt:
+            return 'TOOL: rank_nodes\nPARAMS: {"metric": "degree", "top": 3}'
+        return 'TOOL: baseline_compare\nPARAMS: {"baseline": "reddit_2008"}'
+
+    monkeypatch.setattr("osi.agent.call_llm", choose)
+    result = run_agent("simple-v1", "how does this compare to a normal forum", use_llm=True)
+    assert "baseline_compare" in result.tools
+
+
+def test_an_unusual_question_calls_anomaly_scan(monkeypatch):
+    def choose(prompt, **kwargs):
+        assert "WHAT IS UNUSUAL" in prompt
+        assert "anomaly_scan" in prompt
+        if "TOOL RESULT rank_nodes" in prompt:
+            return "ANSWER: alice is more central than a typical account."
+        if "TOOL RESULT anomaly_scan" in prompt:
+            return 'TOOL: rank_nodes\nPARAMS: {"metric": "degree", "top": 3}'
+        return "TOOL: anomaly_scan\nPARAMS: {}"
+
+    monkeypatch.setattr("osi.agent.call_llm", choose)
+    result = run_agent("simple-v1", "what's the most unusual thing here", use_llm=True)
+    assert "anomaly_scan" in result.tools
+
+
+def test_a_moderator_question_uses_two_tools_and_names_an_account(monkeypatch):
+    def choose(prompt, **kwargs):
+        if "TOOL RESULT explain_node" in prompt:
+            return "ANSWER: alice is more central than a typical account."
+        if "TOOL RESULT rank_nodes" in prompt:
+            return 'TOOL: explain_node\nPARAMS: {"node": "alice"}'
+        return 'TOOL: rank_nodes\nPARAMS: {"metric": "degree", "top": 3}'
+
+    monkeypatch.setattr("osi.agent.call_llm", choose)
+    result = run_agent("simple-v1", "pretend I'm a moderator, what do I need to know", use_llm=True)
+    assert len([name for name in result.tools if name != "network_health"]) >= 2
+    assert "alice" in result.answer
 
 
 def test_an_early_answer_is_sent_back_for_another_tool(monkeypatch):

@@ -2,6 +2,8 @@ import pytest
 
 from osi.analysis import degree_centrality
 from osi.executors import (
+    anomaly_scan,
+    baseline_compare,
     connectivity,
     explain_node,
     interpret_health,
@@ -228,6 +230,23 @@ def test_interpret_rank_names_a_hub_far_above_the_average():
     wide = [("akdas", 0.5), *[(f"n{i}", 0.01) for i in range(20)]]
     assert "akdas is 50x more central than the typical account." in interpret_rank(wide, graph, "pagerank")
     assert "more central" not in " ".join(interpret_rank(wide, graph, "betweenness"))
+
+
+def test_baseline_compare_names_a_ratio(sample_run):
+    run, _graph = sample_run
+    result = baseline_compare(run, baseline="snap_facebook")
+    assert result.intent == "baseline_compare"
+    assert result.values["ratios"]
+    assert any("x" in line for line in result.values["findings"])
+    assert "hub" in " ".join(result.values["findings"])
+
+
+def test_anomaly_scan_returns_three_departures(sample_run):
+    run, _graph = sample_run
+    result = anomaly_scan(run)
+    assert result.intent == "anomaly_scan"
+    assert len(result.values["deviations"]) == 3
+    assert result.values["findings"]
 
 
 def test_explain_node_has_six_fields(sample_run):
