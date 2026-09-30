@@ -907,10 +907,19 @@ def _summarize(result: ResultObject) -> str:
 
 
 def _fallback_answer(results: list[ResultObject], finding_texts: list[str]) -> str:
-    """Join findings from every tool, then the precomputed sentences."""
+    """Join findings from every tool, then the precomputed sentences.
+
+    The opening health pass is context. Findings from the tools the model
+    asked for come first, so a comparison or an anomaly is not crowded out.
+    """
     if results:
-        scratchpad = {result.intent: result for result in results}
-        return templated_fallback(results[-1], scratchpad)
+        ordered = list(results)
+        if len(ordered) > 1 and ordered[0].intent == "network_health":
+            ordered = ordered[1:] + ordered[:1]
+        scratchpad = {}
+        for result in ordered:
+            scratchpad.setdefault(result.intent, result)
+        return templated_fallback(ordered[0], scratchpad)
     if finding_texts:
         return " ".join(finding_texts[:3])
     return "The measurements do not single out one account or one group."

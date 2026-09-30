@@ -127,6 +127,9 @@ def _metric_scores(run: str, metric: str, graph: nx.Graph) -> tuple[dict, str, i
         raise ValueError(f"unknown metric {metric}")
     # analysis.betweenness_centrality is exact. Above the cutoff, sample 500 sources instead.
     if metric == "betweenness" and graph.number_of_nodes() > BETWEENNESS_SAMPLE_NODES:
+        stored = load_metrics(run, metric)
+        if stored:
+            return _sorted_scores(stored), "exact", None
         sample_size = min(BETWEENNESS_SAMPLE_SIZE, graph.number_of_nodes())
         raw = nx.betweenness_centrality(graph, k=sample_size, weight="weight", seed=0)
         return _sorted_scores(raw), "sampled", sample_size

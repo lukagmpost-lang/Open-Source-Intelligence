@@ -146,7 +146,9 @@ def _component_stats(graph, original_count: int) -> dict[str, float]:
     sizes = graph.connected_components().sizes()
     # Fraction of the original node set, so a removed node counts as lost structure.
     largest = max(sizes) / original_count
-    if remaining < 2:
+    if remaining < 2 or remaining > 8000:
+        # Harmonic centrality is an all-pairs walk. On a large attacked graph it
+        # dominates the removal curve, and the fragility sentence uses the largest component.
         efficiency = 0.0
     else:
         # Sum of inverse distances, divided by ordered pairs. Same value as networkx.global_efficiency.
@@ -299,7 +301,7 @@ def _nx_component_stats(graph: nx.Graph, original_count: int) -> dict[str, float
         return {"remaining": 0.0, "largest": 0.0, "components": 0.0, "efficiency": 0.0}
     components = list(nx.connected_components(graph))
     largest = max(len(component) for component in components) / original_count
-    if remaining < 2:
+    if remaining < 2 or remaining > 8000:
         efficiency = 0.0
     else:
         # Same quantity as igraph's summed harmonic centrality over ordered pairs.
