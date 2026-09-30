@@ -68,8 +68,15 @@ def test_a_worry_question_ranks_severe_modes_and_drops_expected_ones():
 
 
 def test_reddit_2012_worry_answer_names_a_failure_mode_and_an_account(monkeypatch):
+    state = {"n": 0}
+
     def answer_from_the_modes(prompt, **kwargs):
-        assert "these failure modes apply" in prompt
+        assert "risks apply" in prompt
+        state["n"] += 1
+        if state["n"] == 1:
+            return 'TOOL: critical_nodes\nPARAMS: {"top_n": 5}'
+        if state["n"] == 2:
+            return "TOOL: structural_criticality\nPARAMS: {}"
         mode = next(
             name
             for name in (
@@ -88,7 +95,23 @@ def test_reddit_2012_worry_answer_names_a_failure_mode_and_an_account(monkeypatc
             f"If {account} stopped posting, the forum would lose its anchor."
         )
 
-    def _stub(run, **kwargs):
+    def _critical(run, **kwargs):
+        return ResultObject(
+            intent="critical_nodes",
+            params={"run": run},
+            values={
+                "top": ["CosmicBard"],
+                "degree": 1890,
+                "findings": ["CosmicBard has 1890 connections."],
+            },
+            method="exact",
+            sample_size=None,
+            trust="stable",
+            caveats=[],
+            runtime_ms=0,
+        )
+
+    def _fragility(run, **kwargs):
         return ResultObject(
             intent="structural_criticality",
             params={"run": run},
@@ -105,12 +128,8 @@ def test_reddit_2012_worry_answer_names_a_failure_mode_and_an_account(monkeypatc
             runtime_ms=0,
         )
 
-    monkeypatch.setitem(_TOOLS, "structural_criticality", _stub)
-    monkeypatch.setitem(_TOOLS, "critical_nodes", _stub)
-    monkeypatch.setattr(
-        "osi.agent.classify_intent",
-        lambda question: {"intents": ["diagnose", "target"], "scope": "whole", "scope_target": None},
-    )
+    monkeypatch.setitem(_TOOLS, "structural_criticality", _fragility)
+    monkeypatch.setitem(_TOOLS, "critical_nodes", _critical)
     monkeypatch.setattr("osi.agent.call_llm", answer_from_the_modes)
     result = run_agent("r2012-v2", "what should I be worried about", use_llm=True)
     assert "critical_nodes" in result.tools

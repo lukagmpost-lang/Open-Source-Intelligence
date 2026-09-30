@@ -26,14 +26,7 @@ from osi.executors import (
     rank_nodes,
     structural_criticality,
 )
-from osi.failure_modes import (
-    DOMAIN_MODELS,
-    apply_failure_modes,
-    quantifying_tools,
-    rank_by_question,
-    worry_prompt,
-)
-from osi.intent import classify_intent, required_tools
+from osi.failure_modes import apply_failure_modes
 from osi.findings import generate_findings, pick_top_findings
 from osi.hypotheses import find_unasked_observations, generate_hypotheses, infer_domain
 from osi.result import ResultObject
@@ -56,13 +49,76 @@ _FRAGILITY_NOTE = (
     "Run with --agent-full for the complete result."
 )
 
-_AUTO_PARAMS = {
-    "critical_nodes": {"top_n": 10},
-    "structural_criticality": {},
-    "network_health": {},
-    "list_communities": {"algorithm": "louvain"},
-    "rank_nodes": {"metric": "pagerank", "top": 10},
-}
+_MIN_MODEL_TOOLS = 2
+
+TOOLS = [
+    {
+        "name": "rank_nodes",
+        "description": "Rank nodes by pagerank, degree, betweenness, or closeness.",
+        "when_to_use": (
+            "Use when the user asks WHO matters, WHO is important, WHO is central, "
+            "WHO are the hubs, WHO holds things together, or wants a TOP list of any kind. "
+            "Also use when the user asks for SPECIFIC NAMES in response to any question."
+        ),
+        "params": {"metric": "pagerank|degree|betweenness|closeness", "top": "int"},
+    },
+    {
+        "name": "critical_nodes",
+        "description": "Find nodes whose removal disconnects the most of the network.",
+        "when_to_use": (
+            "Use when the user asks WHAT COULD GO WRONG, WHERE IS THIS VULNERABLE, "
+            "WHO IS A RISK, WHAT HAPPENS IF WE LOSE someone, WHAT ARE THE WEAKNESSES, "
+            "WHO IS A SINGLE POINT OF FAILURE, or asks about the CONSEQUENCES of removing something."
+        ),
+        "params": {"top_n": "int"},
+    },
+    {
+        "name": "structural_criticality",
+        "description": "Measure how the network fragments as nodes are removed.",
+        "when_to_use": (
+            "Use when the user asks HOW FRAGILE is this, HOW ROBUST, HOW RESILIENT, "
+            "WHAT HAPPENS IF WE REMOVE N% of the top, or any question about the network's "
+            "SURVIVAL under attack."
+        ),
+        "params": {},
+    },
+    {
+        "name": "network_health",
+        "description": "Return the graph's density, clustering, modularity, components, assortativity.",
+        "when_to_use": (
+            "Use when the user asks WHAT IS THE SHAPE, DESCRIBE THIS, HOW IS THIS STRUCTURED, "
+            "HOW MANY COMMUNITIES, HOW CONNECTED, or wants GENERAL STATISTICS."
+        ),
+        "params": {},
+    },
+    {
+        "name": "list_communities",
+        "description": "How the graph splits into groups.",
+        "when_to_use": (
+            "Use when the user asks WHAT GROUPS EXIST, WHAT COMMUNITIES, HOW IS THIS SPLIT, "
+            "WHAT ARE THE CLUSTERS, or asks about the STRUCTURE of groups."
+        ),
+        "params": {"algorithm": "louvain|leiden"},
+    },
+    {
+        "name": "explain_node",
+        "description": "Details about one specific node.",
+        "when_to_use": (
+            "Use when the user asks about a SPECIFIC account, WHAT IS X, TELL ME ABOUT X, "
+            "WHO IS X, or asks about one named node."
+        ),
+        "params": {"node": "str"},
+    },
+    {
+        "name": "connectivity",
+        "description": "Shortest path between two nodes.",
+        "when_to_use": (
+            "Use when the user asks HOW IS X CONNECTED TO Y, WHAT'S THE PATH, "
+            "HOW CLOSE ARE X AND Y, or asks about a RELATIONSHIP between two specific nodes."
+        ),
+        "params": {"source": "str", "target": "str"},
+    },
+]
 
 
 def critical_nodes(run: str, top: int = 5, top_n: int | None = None) -> ResultObject:
@@ -82,16 +138,6 @@ _TOOLS = {
     "connectivity": connectivity,
     "explain_node": explain_node,
 }
-
-_TOOL_DESCRIPTIONS = """\
-- rank_nodes: metric is pagerank, degree, betweenness, or closeness. top is an integer.
-- list_communities: algorithm is louvain or leiden.
-- network_health: no parameters.
-- structural_criticality: no parameters.
-- critical_nodes: accounts that hold the network together. top_n is an integer.
-- connectivity: source and target are account names.
-- explain_node: node is an account name. For a community question, pass one account from the largest community.
-"""
 
 _AGENT_SYSTEM_TEMPLATE = """\
 You are an agent analyzing a graph. You drive the analysis by 
@@ -127,12 +173,8 @@ Precomputed findings about this graph:
 User question:
 {question}
 
-Classified intent: {intents}
-Scope: {scope}{scope_target}
-
 Rules:
 - Call at least 2 tools before answering.
-- For worry questions, call critical_nodes and structural_criticality.
 - Every number in your answer must appear in a tool result.
 - Never quote a raw centrality score (pagerank, betweenness, closeness, eigenvector). Always express importance as a ratio to the typical account: '36x more central than typical' or 'more connected than 99% of accounts'.
 - Keep the answer to 3-5 sentences.
@@ -193,12 +235,9 @@ def run_agent(run_id: str, question: str, use_llm: bool = True) -> AgentResult:
     tools: list[str] = []
     scratchpad: list[str] = []
     answer = ""
-    classification = {"intents": ["describe"], "scope": "whole", "scope_target": None}
+    modes: list[dict] = []
     if use_llm:
-        classification = classify_intent(question)
-    if use_llm and str(domain).casefold() in DOMAIN_MODELS:
-        _prepare_failure_modes(run_id, graph, domain, question, snapshot, tools, results, scratchpad)
-    if use_llm:
+        modes = _seed_failure_modes(run_id, graph, domain, snapshot, tools, results, scratchpad)
         answer = _react(
             question,
             domain,
@@ -208,7 +247,7 @@ def run_agent(run_id: str, question: str, use_llm: bool = True) -> AgentResult:
             scratchpad,
             tools,
             results,
-            classification,
+            modes,
         )
     else:
         _run_plan(run_id, tools, results, scratchpad)
@@ -260,34 +299,22 @@ def parse_agent_reply(text: str) -> tuple[str, str, dict]:
     return "answer", body, {}
 
 
-def _prepare_failure_modes(run_id, graph, domain, question, snapshot, tools, results, scratchpad) -> bool:
-    """Measure health, match the domain's failure modes, then quantify the top ones."""
+def _seed_failure_modes(run_id, graph, domain, snapshot, tools, results, scratchpad) -> list[dict]:
+    """Measure health, then list the failure modes that match this domain."""
     _record_tool(run_id, "network_health", {}, tools, results, scratchpad)
     metrics = dict(snapshot.get("hypothesis_metrics") or {})
     if results and results[-1].intent == "network_health":
         for key, value in results[-1].values.items():
             if key != "findings":
                 metrics[key] = value
-    matched = apply_failure_modes(metrics, graph, domain)
-    ranked = rank_by_question(matched, question)[:3]
-    for name, params in quantifying_tools(ranked, graph):
-        _record_tool(run_id, name, params, tools, results, scratchpad)
-    text = str(question or "").casefold()
-    if "worried" in text or "worry" in text:
-        scratchpad.append(worry_prompt(domain, ranked))
-    elif ranked:
-        lines = [f"Failure modes for this {domain} network:"]
-        for mode in ranked:
-            lines.append(f"- {mode['name']} ({mode['severity']}): {mode['description']}")
-        scratchpad.append("\n".join(lines))
-    return True
+    return apply_failure_modes(metrics, graph, domain)
 
 
-def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tools, results, classification) -> str:
-    system = _system_prompt(question, finding_texts, classification)
-    needed = required_tools(classification.get("intents"), classification.get("scope"), domain)
+def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tools, results, modes) -> str:
+    system = _system_prompt(question, finding_texts)
+    chosen = 0
     for _step in range(MAX_STEPS):
-        prompt = _prompt(question, domain, finding_texts, hypotheses, scratchpad)
+        prompt = _prompt(question, domain, modes, scratchpad)
         try:
             reply = call_llm(prompt, system=system)
         except (OSError, TimeoutError, RuntimeError, KeyError, json.JSONDecodeError, ValueError):
@@ -298,38 +325,14 @@ def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tool
             scratchpad.append(f"The previous PARAMS could not be read ({error}). Call the tool again.")
             continue
         if kind == "answer":
-            called = _called_tools(scratchpad)
-            missing = [name for name in needed if name not in called]
-            if not missing:
-                return _rewrite_until_used(
-                    payload.strip(),
-                    question,
-                    domain,
-                    finding_texts,
-                    hypotheses,
-                    scratchpad,
-                    tools,
-                    results,
-                    system,
+            if chosen < _MIN_MODEL_TOOLS:
+                scratchpad.append(
+                    f"You called {chosen} tool(s). Call at least 2 before answering. "
+                    "What else would help you answer this question?"
                 )
-            rows = []
-            for name in missing:
-                summary = _auto_run(run_id, name, results, tools, scratchpad, classification)
-                rows.append(f"{name} → {summary}")
-            scratchpad.append(_auto_note(rows))
-            try:
-                follow = call_llm(_prompt(question, domain, finding_texts, hypotheses, scratchpad), system=system)
-            except (OSError, TimeoutError, RuntimeError, KeyError, json.JSONDecodeError, ValueError):
-                break
-            try:
-                follow_kind, follow_text, _params = parse_agent_reply(follow)
-            except ValueError:
-                follow_text = follow
-            else:
-                if follow_kind != "answer":
-                    follow_text = follow
+                continue
             return _rewrite_until_used(
-                follow_text.strip(),
+                payload.strip(),
                 question,
                 domain,
                 finding_texts,
@@ -338,12 +341,14 @@ def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tool
                 tools,
                 results,
                 system,
+                modes,
             )
         name = payload
         if name not in _TOOLS:
             scratchpad.append(f"Unknown tool {name}. Choose one from the tool list.")
             continue
         _record_tool(run_id, name, params, tools, results, scratchpad)
+        chosen += 1
     return ""
 
 
@@ -361,25 +366,12 @@ def _run_plan(run_id: str, tools: list[str], results: list[ResultObject], scratc
         scratchpad.append(f"TOOL RESULT {name}: {_summarize(result)}")
 
 
-def _system_prompt(question: str, finding_texts: list[str], classification: dict | None = None) -> str:
+def _system_prompt(question: str, finding_texts: list[str]) -> str:
     findings = "\n".join(f"- {text}" for text in finding_texts) if finding_texts else "None yet."
-    classification = classification or {}
-    intents = ", ".join(classification.get("intents") or []) or "describe"
-    scope = classification.get("scope") or "whole"
-    target = classification.get("scope_target")
-    if target is None or target == "":
-        target_line = ""
-    elif isinstance(target, list):
-        target_line = "\nScope target: " + ", ".join(str(item) for item in target)
-    else:
-        target_line = f"\nScope target: {target}"
     return (
-        _AGENT_SYSTEM_TEMPLATE.replace("{tool_descriptions}", _TOOL_DESCRIPTIONS.strip())
+        _AGENT_SYSTEM_TEMPLATE.replace("{tool_descriptions}", _render_tools())
         .replace("{findings}", findings)
         .replace("{question}", question)
-        .replace("{intents}", intents)
-        .replace("{scope_target}", target_line)
-        .replace("{scope}", scope)
     )
 
 
@@ -393,6 +385,7 @@ def _rewrite_until_used(
     tools: list[str],
     results: list[ResultObject],
     system: str,
+    modes: list[dict] | None = None,
 ) -> str:
     """Ask once or twice for a rewrite that cites every tool, then keep the reply."""
     for attempt in range(1, _REWRITE_ATTEMPTS + 1):
@@ -407,12 +400,13 @@ def _rewrite_until_used(
                 scratchpad,
                 results,
                 system,
+                modes,
             )
         for name, result in ignored:
             _log_unused_tool(name, result, attempt)
         scratchpad.append(_rewrite_message(ignored))
         try:
-            reply = call_llm(_prompt(question, domain, finding_texts, hypotheses, scratchpad), system=system)
+            reply = call_llm(_prompt(question, domain, modes, scratchpad), system=system)
         except (OSError, TimeoutError, RuntimeError, KeyError, json.JSONDecodeError, ValueError):
             return _revise_raw_centrality(
                 _with_fragility_note(answer, tools, results),
@@ -423,6 +417,7 @@ def _rewrite_until_used(
                 scratchpad,
                 results,
                 system,
+                modes,
             )
         try:
             kind, text, _params = parse_agent_reply(reply)
@@ -440,6 +435,7 @@ def _rewrite_until_used(
         scratchpad,
         results,
         system,
+        modes,
     )
 
 
@@ -710,6 +706,7 @@ def _revise_raw_centrality(
     scratchpad: list[str],
     results: list[ResultObject],
     system: str,
+    modes: list[dict] | None = None,
 ) -> str:
     """Ask once to replace a raw centrality score with the comparative finding."""
     problem = _centrality_problem(answer, results, finding_texts)
@@ -717,7 +714,7 @@ def _revise_raw_centrality(
         return answer
     scratchpad.append(problem)
     try:
-        reply = call_llm(_prompt(question, domain, finding_texts, hypotheses, scratchpad), system=system)
+        reply = call_llm(_prompt(question, domain, modes, scratchpad), system=system)
     except (OSError, TimeoutError, RuntimeError, KeyError, json.JSONDecodeError, ValueError):
         return _fallback_answer(results, finding_texts)
     try:
@@ -740,55 +737,6 @@ def _with_fragility_note(answer: str, tools: list[str], results: list[ResultObje
     return _FRAGILITY_NOTE + "\n\n" + answer.lstrip()
 
 
-def _called_tools(scratchpad: list[str]) -> set[str]:
-    """Tool names that already have a result line in the scratchpad."""
-    called = set()
-    for line in scratchpad:
-        if not line.startswith("TOOL RESULT "):
-            continue
-        called.add(line.split(":", 1)[0].removeprefix("TOOL RESULT ").strip())
-    return called
-
-
-def _auto_params(name: str, results: list[ResultObject], classification: dict | None = None) -> dict:
-    params = dict(_AUTO_PARAMS.get(name, {}))
-    target = (classification or {}).get("scope_target")
-    if name == "explain_node":
-        if isinstance(target, str) and target:
-            params["node"] = target
-        elif isinstance(target, list) and target:
-            params["node"] = str(target[0])
-        else:
-            params["node"] = _named_account(results)
-    if name == "connectivity" and isinstance(target, list) and len(target) >= 2:
-        params["source"] = str(target[0])
-        params["target"] = str(target[1])
-    return params
-
-
-def _named_account(results: list[ResultObject]) -> str:
-    for result in results:
-        for key in result.values:
-            if key != "findings":
-                return str(key)
-    return ""
-
-
-def _auto_run(run_id: str, name: str, results, tools, scratchpad, classification: dict | None = None) -> str:
-    summary = _record_tool(run_id, name, _auto_params(name, results, classification), tools, results, scratchpad)
-    return summary
-
-
-def _auto_note(rows: list[str]) -> str:
-    lines = [
-        "The following required tools were run automatically because you did not call them:",
-        *rows,
-        "",
-        "Now write your final answer using all the results in the scratchpad.",
-    ]
-    return "\n".join(lines)
-
-
 def _record_tool(run_id: str, name: str, params: dict | None, tools, results, scratchpad) -> str:
     try:
         result = _call_tool(run_id, name, params)
@@ -803,26 +751,36 @@ def _record_tool(run_id: str, name: str, params: dict | None, tools, results, sc
     return summary
 
 
-def _prompt(question, domain, finding_texts, hypotheses, scratchpad) -> str:
-    lines = [
-        f"Domain: {domain}",
-        f"Question: {question}",
-        "Findings already measured:",
+def _render_tools() -> str:
+    blocks = []
+    for tool in TOOLS:
+        blocks.append(
+            f"- {tool['name']}: {tool['description']} "
+            f"When to use: {tool['when_to_use']} "
+            f"Params: {json.dumps(tool['params'])}"
+        )
+    return "\n".join(blocks)
+
+
+def _prompt(question, domain, modes, scratchpad) -> str:
+    risks = [
+        f"- {mode['name']} ({mode['severity']}): {mode['description']}"
+        for mode in (modes or [])
     ]
-    if finding_texts:
-        lines.extend(f"- {text}" for text in finding_texts)
-    else:
-        lines.append("- none yet")
-    lines.append("Hypotheses worth testing:")
-    if hypotheses:
-        lines.extend(f"- {item['hypothesis']}" for item in hypotheses)
-    else:
-        lines.append("- none yet")
-    lines.append("Scratchpad:")
+    lines = [
+        f"This is a {domain} network. The following risks apply based on its structure:",
+        "",
+        "\n".join(risks) if risks else "- none",
+        "",
+        "Available tools:",
+        _render_tools(),
+        "",
+        f"Question: {question}",
+        "",
+        "Decide which tools to call. Call at least 2 before answering. Reply with TOOL/PARAMS or ANSWER.",
+    ]
     if scratchpad:
-        lines.extend(scratchpad)
-    else:
-        lines.append("(empty)")
+        lines.extend(["", "Results so far:", *scratchpad])
     return "\n".join(lines)
 
 

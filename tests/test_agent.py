@@ -1,27 +1,6 @@
 import re
 
-import pytest
-
 from osi.agent import _TOOLS, expressions_for, parse_agent_reply, run_agent, used_tools, uses_fragility
-
-
-@pytest.fixture(autouse=True)
-def _classify_without_calling_the_model(monkeypatch):
-    """Keep loop tests offline. Production classification goes through the model."""
-
-    def fake(question: str) -> dict:
-        text = question.casefold()
-        if any(part in text for part in ("worr", "risk", "vulnerab", "fragile", "at risk", "break", "fail", "collapse")):
-            return {"intents": ["diagnose"], "scope": "whole", "scope_target": None}
-        if any(part in text for part in ("shape", "structure", "how is", "healthy", "health")):
-            return {"intents": ["describe"], "scope": "whole", "scope_target": None}
-        if any(part in text for part in ("important", "central", "hubs", "who matters")):
-            return {"intents": ["rank", "explain"], "scope": "whole", "scope_target": None}
-        if any(part in text for part in ("communities", "groups", "clusters")):
-            return {"intents": ["describe", "explain"], "scope": "community", "scope_target": None}
-        return {"intents": ["describe"], "scope": "whole", "scope_target": None}
-
-    monkeypatch.setattr("osi.agent.classify_intent", fake)
 from osi.answer import verify_numbers
 from osi.ask import ask, main
 from osi.result import ResultObject
@@ -41,22 +20,24 @@ def test_system_prompt_names_the_question_and_the_tool_minimum(monkeypatch):
     seen: dict[str, str] = {}
 
     def too_soon(prompt, **kwargs):
+        seen["prompt"] = prompt
         seen["system"] = kwargs.get("system") or ""
         return "ANSWER: too soon"
 
     monkeypatch.setattr("osi.agent.call_llm", too_soon)
     run_agent("simple-v1", "what should I be worried about", use_llm=True)
     system = seen["system"]
-    assert "what should I be worried about" in system
+    prompt = seen["prompt"]
+    assert "what should I be worried about" in prompt
+    assert "WHAT COULD GO WRONG" in prompt
+    assert "HOW FRAGILE" in prompt
+    assert "When to use:" in prompt
+    assert "Call at least 2 before answering" in prompt
     assert "YOU request them" in system
     assert "Do not ask the user to run tools" in system
     assert "Call at least 2 tools before answering." in system
     assert "EXAMPLE CONVERSATION" in system
-    assert "TOOL: critical_nodes" in system
-    assert "TOOL: structural_criticality" in system
     assert "Now respond to the actual question." in system
-    assert "Classified intent: diagnose" in system
-    assert "Scope: whole" in system
 
 
 def _decimal(text: str) -> str:
@@ -71,53 +52,107 @@ def _tool_section(prompt: str, name: str) -> str:
     return prompt[start : start + 1500]
 
 
-def test_only_critical_nodes_auto_runs_structural_criticality(monkeypatch):
-    prompts: list[str] = []
-
-    def only_critical_nodes(prompt, **kwargs):
-        prompts.append(prompt)
-        if "run automatically" in prompt:
-            bridge = _decimal(_tool_section(prompt, "critical_nodes"))
-            fragile = _decimal(_tool_section(prompt, "structural_criticality"))
+def test_a_worry_question_calls_the_fragility_tools(monkeypatch):
+    def choose(prompt, **kwargs):
+        assert "WHAT COULD GO WRONG" in prompt
+        assert "HOW FRAGILE" in prompt
+        if "TOOL RESULT structural_criticality" in prompt:
             return (
-                f"ANSWER: The bridge score is {bridge} and the remaining share is {fragile}. "
-                "akdas is more central than a typical account."
+                "ANSWER: The network is fragile: removing 30% of the top accounts halves it. "
+                "alice is more central than a typical account."
             )
-        if "TOOL RESULT critical_nodes" not in prompt:
-            return 'TOOL: critical_nodes\nPARAMS: {"top_n": 10}'
-        return "ANSWER: One account sits on too many paths."
+        if "TOOL RESULT critical_nodes" in prompt:
+            return "TOOL: structural_criticality\nPARAMS: {}"
+        return 'TOOL: critical_nodes\nPARAMS: {"top_n": 5}'
 
-    monkeypatch.setattr("osi.agent.call_llm", only_critical_nodes)
+    monkeypatch.setattr("osi.agent.call_llm", choose)
     result = run_agent("simple-v1", "what should I be worried about", use_llm=True)
-    follow_up = next(prompt for prompt in prompts if "run automatically" in prompt)
-    assert "structural_criticality →" in follow_up
-    assert "TOOL RESULT structural_criticality:" in follow_up
-    assert "Now write your final answer using all the results in the scratchpad." in follow_up
-    assert all("Your answer was rejected" not in prompt for prompt in prompts)
-    assert result.tools == ["critical_nodes", "structural_criticality"]
-    assert "The bridge score is" in result.answer
-    assert "the remaining share is" in result.answer
+    assert "critical_nodes" in result.tools
+    assert "structural_criticality" in result.tools
+
+
+def test_an_importance_question_calls_rank_nodes(monkeypatch):
+    def choose(prompt, **kwargs):
+        assert "WHO is important" in prompt
+        if "TOOL RESULT explain_node" in prompt:
+            return "ANSWER: alice is more central than a typical account."
+        if "TOOL RESULT rank_nodes" in prompt:
+            return 'TOOL: explain_node\nPARAMS: {"node": "alice"}'
+        return 'TOOL: rank_nodes\nPARAMS: {"metric": "pagerank", "top": 3}'
+
+    monkeypatch.setattr("osi.agent.call_llm", choose)
+    result = run_agent("simple-v1", "who are the most important people", use_llm=True)
+    assert "rank_nodes" in result.tools
+
+
+def test_an_account_question_calls_explain_node(monkeypatch):
+    def choose(prompt, **kwargs):
+        assert "TELL ME ABOUT" in prompt
+        if "TOOL RESULT rank_nodes" in prompt:
+            return "ANSWER: alice is more central than a typical account."
+        if "TOOL RESULT explain_node" in prompt:
+            return 'TOOL: rank_nodes\nPARAMS: {"metric": "degree", "top": 3}'
+        return 'TOOL: explain_node\nPARAMS: {"node": "alice"}'
+
+    monkeypatch.setattr("osi.agent.call_llm", choose)
+    result = run_agent("simple-v1", "tell me about alice", use_llm=True)
+    assert "explain_node" in result.tools
+
+
+def test_a_path_question_calls_connectivity(monkeypatch):
+    def choose(prompt, **kwargs):
+        assert "CONNECTED TO" in prompt
+        if "TOOL RESULT rank_nodes" in prompt:
+            return "ANSWER: alice is more central than a typical account."
+        if "TOOL RESULT connectivity" in prompt:
+            return 'TOOL: rank_nodes\nPARAMS: {"metric": "degree", "top": 3}'
+        return 'TOOL: connectivity\nPARAMS: {"source": "alice", "target": "bob"}'
+
+    monkeypatch.setattr("osi.agent.call_llm", choose)
+    result = run_agent("simple-v1", "how is alice connected to bob", use_llm=True)
+    assert "connectivity" in result.tools
+
+
+def test_a_novel_question_uses_a_tool_number(monkeypatch):
+    def choose(prompt, **kwargs):
+        assert "which accounts are toxic" in prompt
+        assert "Available tools:" in prompt
+        if "TOOL RESULT critical_nodes" in prompt:
+            section = _tool_section(prompt, "rank_nodes")
+            match = re.search(r"\b(\d+)\b", section)
+            assert match, section
+            return (
+                f"ANSWER: alice has {match.group(1)} connections and is more central than a typical account."
+            )
+        if "TOOL RESULT rank_nodes" in prompt:
+            return 'TOOL: critical_nodes\nPARAMS: {"top_n": 3}'
+        return 'TOOL: rank_nodes\nPARAMS: {"metric": "degree", "top": 3}'
+
+    monkeypatch.setattr("osi.agent.call_llm", choose)
+    result = run_agent("simple-v1", "which accounts are toxic", use_llm=True)
+    assert "rank_nodes" in result.tools
     assert verify_numbers(result.answer, result.values)
+    assert re.search(r"\d", result.answer)
 
 
-def test_an_early_answer_auto_runs_every_required_tool(monkeypatch):
+def test_an_early_answer_is_sent_back_for_another_tool(monkeypatch):
     prompts: list[str] = []
 
-    def answer_immediately(prompt, **kwargs):
+    def answer_first(prompt, **kwargs):
         prompts.append(prompt)
-        if "run automatically" not in prompt:
+        if "You called" not in prompt:
             return "ANSWER: Nothing stands out yet."
-        bridge = _decimal(_tool_section(prompt, "critical_nodes"))
-        fragile = _decimal(_tool_section(prompt, "structural_criticality"))
-        return f"ANSWER: The bridge score is {bridge} and the remaining share is {fragile}."
+        if "TOOL RESULT list_communities" in prompt:
+            return "ANSWER: alice is more central than a typical account."
+        if "TOOL RESULT rank_nodes" in prompt:
+            return 'TOOL: list_communities\nPARAMS: {"algorithm": "louvain"}'
+        return 'TOOL: rank_nodes\nPARAMS: {"metric": "degree", "top": 3}'
 
-    monkeypatch.setattr("osi.agent.call_llm", answer_immediately)
+    monkeypatch.setattr("osi.agent.call_llm", answer_first)
     result = run_agent("simple-v1", "what should I be worried about", use_llm=True)
-    assert result.tools == ["critical_nodes", "structural_criticality"]
-    assert "critical_nodes →" in prompts[1]
-    assert "structural_criticality →" in prompts[1]
-    assert all("Your answer was rejected" not in prompt for prompt in prompts)
-    assert verify_numbers(result.answer, result.values)
+    assert any("You called 0 tool(s). Call at least 2 before answering." in prompt for prompt in prompts)
+    assert "rank_nodes" in result.tools
+    assert "list_communities" in result.tools
 
 
 def test_the_loop_stops_after_ten_tool_calls(monkeypatch):
@@ -126,8 +161,8 @@ def test_the_loop_stops_after_ten_tool_calls(monkeypatch):
 
     monkeypatch.setattr("osi.agent.call_llm", always_tool)
     result = run_agent("simple-v1", "describe the links", use_llm=True)
-    assert len(result.tools) == 10
-    assert result.tools == ["rank_nodes"] * 10
+    assert result.tools[0] == "network_health"
+    assert result.tools[1:] == ["rank_nodes"] * 10
     assert "While looking at this, I also noticed:" in result.answer
 
 
@@ -144,7 +179,7 @@ def test_nothing_is_auto_run_when_the_required_tools_were_called(monkeypatch):
 
     monkeypatch.setattr("osi.agent.call_llm", both_tools)
     result = run_agent("simple-v1", "what should I be worried about", use_llm=True)
-    assert result.tools == ["critical_nodes", "structural_criticality"]
+    assert result.tools == ["network_health", "critical_nodes", "structural_criticality"]
     assert all("run automatically" not in prompt for prompt in prompts)
     assert all("Your answer was rejected" not in prompt for prompt in prompts)
     assert "The hubs hold this network together." in result.answer
@@ -265,7 +300,9 @@ def test_an_answer_that_uses_both_tools_is_accepted(monkeypatch):
 
     monkeypatch.setattr("osi.agent.call_llm", both)
     result = run_agent("simple-v1", "what should I be worried about", use_llm=True)
-    assert all("did not use the results" not in prompt for prompt in prompts)
+    for prompt in prompts:
+        assert "did not use the results from structural_criticality" not in prompt
+        assert "did not use the results from critical_nodes" not in prompt
     assert "0.91" in result.answer
     assert "5%" in result.answer
     assert verify_numbers(result.answer, result.values)
