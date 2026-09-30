@@ -376,6 +376,87 @@ def test_metric_recital_falls_back_to_the_findings(monkeypatch):
     assert "How sure: stable." in text
 
 
+def test_agent_fallback_includes_findings_from_every_tool():
+    from osi.answer import templated_fallback
+
+    critical = ResultObject(
+        intent="critical_nodes",
+        params={},
+        values={"findings": ["akdas is connected to 759 other accounts."]},
+        method="exact",
+        sample_size=None,
+        trust="stable",
+        caveats=[],
+        runtime_ms=0,
+    )
+    structural = ResultObject(
+        intent="structural_criticality",
+        params={},
+        values={"findings": ["Removing 30% of the top accounts by degree halves the network."]},
+        method="exact",
+        sample_size=None,
+        trust="stable",
+        caveats=[],
+        runtime_ms=0,
+    )
+    text = templated_fallback(
+        structural,
+        {"critical_nodes": critical, "structural_criticality": structural},
+    )
+    assert "759" in text
+    assert "halves the network" in text
+    assert text.endswith("How sure: stable.")
+
+
+def test_agent_fallback_dedupes_findings():
+    from osi.answer import templated_fallback
+
+    shared = "akdas is connected to 759 other accounts."
+    first = ResultObject(
+        intent="critical_nodes",
+        params={},
+        values={"findings": [shared, "These five are the hubs of the network."]},
+        method="exact",
+        sample_size=None,
+        trust="moderate",
+        caveats=[],
+        runtime_ms=0,
+    )
+    second = ResultObject(
+        intent="structural_criticality",
+        params={},
+        values={"findings": [shared, "Removing 30% halves the network."]},
+        method="exact",
+        sample_size=None,
+        trust="moderate",
+        caveats=[],
+        runtime_ms=0,
+    )
+    text = templated_fallback(second, {"critical_nodes": first, "structural_criticality": second})
+    assert text.count(shared) == 1
+    assert "These five are the hubs" in text
+    assert "halves the network" in text
+
+
+def test_fallback_with_an_empty_scratchpad_uses_the_result_findings():
+    from osi.answer import templated_fallback
+
+    result = ResultObject(
+        intent="network_health",
+        params={"run": "simple-v1"},
+        values={"findings": ["This is a sparse network — most accounts have only a few connections."]},
+        method="exact",
+        sample_size=None,
+        trust="stable",
+        caveats=[],
+        runtime_ms=0,
+    )
+    text = templated_fallback(result, {})
+    assert text == templated_fallback(result)
+    assert text.startswith("This is a sparse network")
+    assert "How sure: stable." in text
+
+
 def test_verify_style_rejects_the_graph_is():
     assert verify_style("The graph is a triangle of three people.") is False
 

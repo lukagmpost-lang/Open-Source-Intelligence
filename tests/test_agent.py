@@ -1,6 +1,6 @@
 import re
 
-from osi.agent import _TOOLS, expressions_for, parse_agent_reply, run_agent, used_tools
+from osi.agent import _TOOLS, expressions_for, parse_agent_reply, run_agent, used_tools, uses_fragility
 from osi.answer import verify_numbers
 from osi.ask import ask, main
 from osi.result import ResultObject
@@ -292,6 +292,15 @@ def _tool_results():
             {"akdas": 759, "findings": ["akdas has 759 connections."]},
         ),
     }
+
+
+def test_fragmented_does_not_count_as_fragile():
+    assert uses_fragility("This network is far more fragmented than typical.") is False
+    assert "structural_criticality" not in used_tools(
+        "This network is far more fragmented than typical.",
+        _tool_results(),
+    )
+    assert uses_fragility("The network is fragile.") is True
 
 
 def test_connection_count_does_not_use_structural_criticality():

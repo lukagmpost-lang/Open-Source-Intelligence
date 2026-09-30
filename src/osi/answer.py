@@ -335,8 +335,17 @@ def _findings_template(result: ResultObject) -> str:
     return " ".join(findings) + f" How sure: {_trust_reason(result)}."
 
 
-def templated_fallback(result: ResultObject) -> str:
-    """Plain-language sentence used when the model is off or its reply is rejected."""
+def templated_fallback(result: ResultObject, scratchpad: dict | None = None) -> str:
+    """Plain-language sentence used when the model is off or its reply is rejected.
+
+    An agent scratchpad contributes findings from every tool, not only the last one.
+    """
+    if scratchpad:
+        findings = []
+        for _tool_name, tool_result in scratchpad.items():
+            findings.extend(tool_result.values.get("findings", []))
+        unique = list(dict.fromkeys(findings))
+        return " ".join(unique[:6]) + f" How sure: {result.trust}."
     findings = result.values.get("findings")
     if (
         isinstance(findings, list)

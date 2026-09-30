@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 import networkx as nx
 
 from osi.analysis import _modularity_of, pagerank as compute_pagerank
-from osi.answer import call_llm, verify_numbers
+from osi.answer import call_llm, templated_fallback, verify_numbers
 from osi.executors import (
     connectivity,
     explain_node,
@@ -33,15 +33,16 @@ from osi.store import get_run, load_communities, load_graph, load_metrics
 
 MAX_STEPS = 10
 _REWRITE_ATTEMPTS = 2
-_FRAGILITY_PHRASES = (
+FRAGILITY_WORDS = [
     "halves",
     "halving",
     "shatters",
+    "shatter",
     "% of the top",
     "targeted",
     "fragile",
     "fragility",
-)
+]
 _FRAGILITY_NOTE = (
     "Note: the fragility analysis did not make it into this answer. "
     "Run with --agent-full for the complete result."
@@ -554,16 +555,20 @@ def used_tools(answer: str, tool_results: dict[str, ResultObject]) -> set[str]:
         if expr in tokens:
             used.add(owners[0])
     if "structural_criticality" in tool_results:
-        if _uses_fragility_language(answer):
+        if uses_fragility(answer):
             used.add("structural_criticality")
         else:
             used.discard("structural_criticality")
     return used
 
 
-def _uses_fragility_language(answer: str) -> bool:
-    text = answer.casefold()
-    return any(phrase in text for phrase in _FRAGILITY_PHRASES)
+def uses_fragility(answer: str) -> bool:
+    """True when the answer uses a fragility word, not a longer word that contains one."""
+    for word in FRAGILITY_WORDS:
+        pattern = r"\b" + re.escape(word) + r"\b"
+        if re.search(pattern, answer, re.IGNORECASE):
+            return True
+    return False
 
 
 def _result_findings(result: ResultObject) -> list[str]:
@@ -744,18 +749,10 @@ def _summarize(result: ResultObject) -> str:
 
 
 def _fallback_answer(results: list[ResultObject], finding_texts: list[str]) -> str:
-    lines: list[str] = []
-    for result in results:
-        for item in result.values.get("findings") or []:
-            sentence = str(item)
-            if sentence not in lines:
-                lines.append(sentence)
-            if len(lines) == 3:
-                break
-        if len(lines) == 3:
-            break
-    if lines:
-        return " ".join(lines)
+    """Join findings from every tool, then the precomputed sentences."""
+    if results:
+        scratchpad = {result.intent: result for result in results}
+        return templated_fallback(results[-1], scratchpad)
     if finding_texts:
         return " ".join(finding_texts[:3])
     return "The measurements do not single out one account or one group."
