@@ -231,7 +231,7 @@ def run_agent(run_id: str, question: str, use_llm: bool = True) -> AgentResult:
     if not answer:
         answer = _fallback_answer(results, finding_texts)
     observations = find_unasked_observations(graph, snapshot["hypothesis_metrics"], domain, question)
-    text, values = _compose(answer, observations, results, finding_texts)
+    text, values = _compose(answer, observations, results, finding_texts, question, domain)
     return AgentResult(answer=text, tools=tools, values=values, results=results)
 
 
@@ -358,8 +358,11 @@ def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tool
                     scratchpad.append(
                         f"TOOL RESULT {name}: {_summarize(results[tools.index(name)])}"
                     )
-                else:
-                    _record_tool(run_id, name, params, tools, results, scratchpad)
+                    scratchpad.append(
+                        "That measurement is already done. Call a different tool."
+                    )
+                    continue
+                _record_tool(run_id, name, params, tools, results, scratchpad)
                 chosen += 1
             answer_match = _ANSWER_LINE.search(reply)
             if answer_match and chosen >= _MIN_MODEL_TOOLS and answer_match.group(1).strip():
@@ -854,8 +857,10 @@ def _brief(question, domain, modes, finding_texts) -> str:
             "",
             "Every number in your answer must appear in a tool result. "
             "When the user asks for specific names, call rank_nodes or explain_node. "
-            "When the user asks what could go wrong, call critical_nodes and structural_criticality. "
+            "When the user asks what should I be worried about, what could go wrong, "
+            "or what is fragile, call critical_nodes and structural_criticality. "
             "When the user asks how this compares, call baseline_compare. "
+            "A normal forum is the reddit_2008 baseline. "
             "When the user asks what is unusual, call anomaly_scan.",
         ]
     )
@@ -900,8 +905,10 @@ def _prompt(question, domain, modes, scratchpad, finding_texts=None, ready: bool
             "",
             "Call at least 2 before answering.",
             "When the user asks how this compares, call baseline_compare.",
+            'A normal forum uses PARAMS {"baseline": "reddit_2008"}.',
             "When the user asks what is unusual, call anomaly_scan.",
-            "When the user asks what could go wrong, call critical_nodes and structural_criticality.",
+            "When the user asks what should I be worried about, or what could go wrong, "
+            "call critical_nodes and structural_criticality.",
             "When the user asks for specific names, call rank_nodes or explain_node.",
         ]
     if scratchpad:
@@ -969,10 +976,49 @@ def _fallback_answer(results: list[ResultObject], finding_texts: list[str]) -> s
     return "The measurements do not single out one account or one group."
 
 
-def _compose(answer, observations, results, finding_texts) -> tuple[str, dict]:
+def _prose_from_findings(question: str, domain: str, values: dict) -> str | None:
+    """Ask for one explanation that uses only the measured findings."""
+    findings: list[str] = []
+    for item in values.get("findings") or []:
+        text = str(item).strip()
+        if text and text not in findings:
+            findings.append(text)
+    if not findings:
+        return None
+    system = "\n\n".join(
+        [
+            WRITING_RULES,
+            domain_context(domain),
+            "Use only the findings in the user message. "
+            "Do not mention a calendar year. "
+            "Do not add a number or an account name that is not written in those findings.",
+        ]
+    )
+    prompt = (
+        f"User question: {question}\n\n"
+        "Explain these findings in 3-5 sentences. Use one analogy. "
+        "End with what this means for someone who uses or runs this network.\n\n"
+        + "\n".join(f"- {line}" for line in findings[:8])
+    )
+    reply = _call_model(prompt, system)
+    if not reply:
+        return None
+    prose = reply.strip()
+    match = _ANSWER_LINE.search(prose)
+    if match and match.group(1).strip():
+        prose = match.group(1).strip()
+    if prose.upper().startswith("TOOL"):
+        return None
+    if not verify_numbers(prose, values):
+        return None
+    return prose
+
+
+def _compose(answer, observations, results, finding_texts, question="", domain="general") -> tuple[str, dict]:
     values = _base_values({}, results, finding_texts)
     if _FRAGILITY_NOTE not in answer and not verify_numbers(answer, values):
-        answer = _fallback_answer(results, finding_texts)
+        repaired = _prose_from_findings(question, domain, values)
+        answer = repaired if repaired else _fallback_answer(results, finding_texts)
     kept: list[str] = []
     for item in observations:
         trial = _with_notice(answer, kept + [item])
