@@ -228,10 +228,16 @@ def run_agent(run_id: str, question: str, use_llm: bool = True) -> AgentResult:
         )
     else:
         _run_plan(run_id, tools, results, scratchpad)
-    if not answer:
-        answer = _fallback_answer(results, finding_texts)
     observations = find_unasked_observations(graph, snapshot["hypothesis_metrics"], domain, question)
-    text, values = _compose(answer, observations, results, finding_texts, question, domain)
+    text, values = _compose(
+        answer,
+        observations,
+        results,
+        finding_texts,
+        question,
+        domain,
+        use_llm=use_llm,
+    )
     return AgentResult(answer=text, tools=tools, values=values, results=results)
 
 
@@ -1014,11 +1020,24 @@ def _prose_from_findings(question: str, domain: str, values: dict) -> str | None
     return prose
 
 
-def _compose(answer, observations, results, finding_texts, question="", domain="general") -> tuple[str, dict]:
+def _compose(
+    answer,
+    observations,
+    results,
+    finding_texts,
+    question="",
+    domain="general",
+    use_llm: bool = True,
+) -> tuple[str, dict]:
     values = _base_values({}, results, finding_texts)
-    if _FRAGILITY_NOTE not in answer and not verify_numbers(answer, values):
-        repaired = _prose_from_findings(question, domain, values)
-        answer = repaired if repaired else _fallback_answer(results, finding_texts)
+    missing = not answer.strip()
+    ungrounded = _FRAGILITY_NOTE not in answer and not verify_numbers(answer, values)
+    if missing or ungrounded:
+        repaired = _prose_from_findings(question, domain, values) if use_llm else None
+        if repaired:
+            answer = repaired
+        elif missing or not verify_numbers(answer, values):
+            answer = _fallback_answer(results, finding_texts)
     kept: list[str] = []
     for item in observations:
         trial = _with_notice(answer, kept + [item])

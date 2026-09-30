@@ -20,8 +20,8 @@ def test_system_prompt_names_the_question_and_the_tool_minimum(monkeypatch):
     seen: dict[str, str] = {}
 
     def too_soon(prompt, **kwargs):
-        seen["prompt"] = prompt
-        seen["system"] = kwargs.get("system") or ""
+        seen.setdefault("prompt", prompt)
+        seen.setdefault("system", kwargs.get("system") or "")
         return "ANSWER: too soon"
 
     monkeypatch.setattr("osi.agent.call_llm", too_soon)
