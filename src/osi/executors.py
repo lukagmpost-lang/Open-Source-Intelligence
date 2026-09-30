@@ -147,9 +147,21 @@ def interpret_health(metrics: dict, graph: nx.Graph) -> list[str]:
     ranked: list[tuple[int, str]] = []
     average = float(metrics.get("avg_degree") or 0)
     if average > 10:
-        ranked.append((5, "This is a dense network — most accounts are connected to dozens of others."))
+        ranked.append(
+            (
+                5,
+                "This is a dense network — most accounts are connected to dozens of others, "
+                "which means a message can cross the group in a few introductions.",
+            )
+        )
     elif average < 3:
-        ranked.append((5, "This is a sparse network — most accounts have only a few connections."))
+        ranked.append(
+            (
+                5,
+                "This is a sparse network — most accounts have only a few connections, "
+                "which means most people only ever hear from a couple of others.",
+            )
+        )
 
     max_degree = int(metrics.get("max_degree") or 0)
     if average and max_degree > 100 * average:
@@ -157,7 +169,8 @@ def interpret_health(metrics: dict, graph: nx.Graph) -> list[str]:
             (
                 6,
                 "A few hubs dominate — the top node has "
-                f"{_shown_number(max_degree)} connections vs an average of {_shown_number(average)}.",
+                f"{_shown_number(max_degree)} connections vs an average of {_shown_number(average)}, "
+                "which means a handful of accounts do almost all the connecting.",
             )
         )
 
@@ -167,9 +180,17 @@ def interpret_health(metrics: dict, graph: nx.Graph) -> list[str]:
         modularity = _modularity_of(graph, assignment)
     if isinstance(modularity, (int, float)) and not isinstance(modularity, bool):
         if float(modularity) > 0.5:
-            ranked.append((4, "This network splits cleanly into groups."))
+            ranked.append(
+                (4, "This network splits cleanly into groups, which means each crowd mostly talks to itself.")
+            )
         elif float(modularity) < 0.4:
-            ranked.append((4, "The groups are blurry — they overlap heavily."))
+            ranked.append(
+                (
+                    4,
+                    "The groups are blurry — they overlap heavily, "
+                    "which means the same people show up in several crowds at once.",
+                )
+            )
 
     components = metrics.get("components", metrics.get("num_components"))
     nodes = graph.number_of_nodes()
@@ -183,7 +204,13 @@ def interpret_health(metrics: dict, graph: nx.Graph) -> list[str]:
         and not isinstance(components, bool)
         and int(components) > nodes * 0.01
     ):
-        ranked.append((3, "It's fragmented — most nodes are in small disconnected pieces."))
+        ranked.append(
+            (
+                3,
+                "It's fragmented — most nodes are in small disconnected pieces, "
+                "which means most accounts never see each other.",
+            )
+        )
 
     assortativity = metrics.get("assortativity")
     if isinstance(assortativity, (int, float)) and not isinstance(assortativity, bool):
@@ -192,7 +219,8 @@ def interpret_health(metrics: dict, graph: nx.Graph) -> list[str]:
                 (
                     2,
                     "Hubs connect to leaves, not to each other. "
-                    "This is a broadcast network, not a community.",
+                    "This is a broadcast network, not a community, "
+                    "which means if those hubs leave, the audience has no way to reach each other.",
                 )
             )
 
@@ -223,16 +251,24 @@ def interpret_rank(ranked: list[tuple], graph: nx.Graph, metric: str) -> list[st
     top_name = ranked[0][0]
     top_degree = int(graph.degree(top_name))
     average = sum(degree for _node, degree in graph.degree()) / graph.number_of_nodes()
-    findings = [f"The most central accounts are {_name_list(names)}."]
+    findings = [
+        f"The most central accounts are {_name_list(names)}, "
+        "which means these are the people everyone else has to go through."
+    ]
     if average and top_degree > 5 * average:
         ratio = top_degree / average
         multiple = int(ratio // 10) * 10 if ratio >= 10 else int(ratio)
         shown_degree = f"{top_degree:,}"
         findings.append(
-            f"{top_name} is connected to {shown_degree} other accounts — more than {multiple}x the average."
+            f"{top_name} is connected to {shown_degree} other accounts — more than {multiple}x the average. "
+            "That's like knowing everyone in a small town, which means one person carries "
+            "connections the rest of the network does not."
         )
     if len(ranked) >= 5:
-        findings.append("These five are the hubs of the network.")
+        findings.append(
+            "These five are the hubs of the network, "
+            "which means a handful of accounts do almost all the connecting."
+        )
     if metric == "pagerank":
         central = pagerank_centrality_text(ranked)
         if central:
@@ -242,13 +278,21 @@ def interpret_rank(ranked: list[tuple], graph: nx.Graph, metric: str) -> list[st
 
 def interpret_communities(n_communities: int, largest_size: int, modularity: float | None) -> list[str]:
     """Turn a community summary into plain findings."""
-    findings = [f"This network splits into about {int(n_communities)} groups."]
-    findings.append(f"The largest group contains {int(largest_size):,} accounts.")
+    findings = [
+        f"This network splits into about {int(n_communities)} groups, "
+        "which means people mostly stay inside their own crowd."
+    ]
+    findings.append(
+        f"The largest group contains {int(largest_size):,} accounts, "
+        "which means that crowd sets the tone for everyone else."
+    )
     if isinstance(modularity, (int, float)) and not isinstance(modularity, bool):
         if float(modularity) < 0.4:
-            findings.append(f"The groups overlap heavily — modularity is only {float(modularity):.2f}.")
+            findings.append(
+                "The groups overlap heavily, which means the same people show up in several crowds at once."
+            )
         elif float(modularity) > 0.5:
-            findings.append("The groups separate cleanly.")
+            findings.append("The groups separate cleanly, which means each crowd mostly talks to itself.")
     return findings
 
 
@@ -265,7 +309,9 @@ def _shape_findings(metrics: dict, communities: dict, ranked: list[tuple], graph
         communities.get("modularity"),
     ):
         if "modularity" in sentence.lower():
-            lines.append("The groups overlap heavily.")
+            lines.append(
+                "The groups overlap heavily, which means the same people show up in several crowds at once."
+            )
         else:
             lines.append(sentence)
     rank_lines = interpret_rank(ranked, graph, "pagerank")
@@ -274,8 +320,9 @@ def _shape_findings(metrics: dict, communities: dict, ranked: list[tuple], graph
         lines.append(hub)
     elif rank_lines:
         lines.append(rank_lines[0])
-    if any(sentence.startswith("These five") for sentence in rank_lines) and len(lines) < 5:
-        lines.append("These five are the hubs of the network.")
+    hubs = next((sentence for sentence in rank_lines if sentence.startswith("These five")), None)
+    if hubs and len(lines) < 5:
+        lines.append(hubs)
     return lines[:5]
 
 
@@ -531,34 +578,40 @@ def _criticality_findings(
     findings: list[str] = []
     if halving_degree is None or halving_degree > 0.30:
         findings.append(
-            "The network is resilient: it survives removing 30% of the top accounts without halving."
+            "The network is resilient: it survives removing 30% of the top accounts without halving, "
+            "which means people would still find each other if the busiest accounts left."
         )
     elif halving_degree <= 0.05:
         findings.append(
             "The network is extremely fragile: removing just "
-            f"{halving_degree * 100:.0f}% of the top accounts by degree halves it."
+            f"{halving_degree * 100:.0f}% of the top accounts by degree halves it, "
+            "which means if those accounts leave, most people lose their connection to each other."
         )
     elif halving_degree <= 0.20:
         findings.append(
             "The network is fragile: removing "
-            f"{halving_degree * 100:.0f}% of the top accounts halves it."
+            f"{halving_degree * 100:.0f}% of the top accounts halves it, "
+            "which means if the top accounts leave, most people lose their connection to each other."
         )
     else:
         findings.append(
             "The network is moderately fragile: removing "
-            f"{halving_degree * 100:.0f}% halves it."
+            f"{halving_degree * 100:.0f}% halves it, "
+            "which means losing the busiest accounts would cut most people off from each other."
         )
     degree_breaks_sooner = halving_degree is not None and (
         halving_random is None or halving_random > halving_degree * 3
     )
     if degree_breaks_sooner:
         findings.append(
-            "Removing random accounts has much less effect — this is a targeted-vulnerability pattern."
+            "Removing random accounts has much less effect — this is a targeted-vulnerability pattern, "
+            "which means the risk sits in a few accounts rather than in the crowd."
         )
     if frac_at_30 is not None and frac_at_30 < 0.10 and n_components is not None:
         pieces = int(round(n_components))
         findings.append(
-            f"Removing 30% of the top accounts shatters the network into {pieces} disconnected pieces."
+            f"Removing 30% of the top accounts shatters the network into {pieces} disconnected pieces, "
+            "which means most people would lose their connection to each other."
         )
     return findings
 
@@ -723,16 +776,6 @@ _BASELINE_KEYS = (
     "clustering",
     "assortativity",
 )
-_BASELINE_LABELS = {
-    "nodes": "accounts",
-    "edges": "links",
-    "modularity": "group separation",
-    "avg_degree": "connections per account",
-    "max_degree": "connections on the largest account",
-    "components": "separate pieces",
-    "clustering": "tight local groups",
-    "assortativity": "similar accounts linking to each other",
-}
 _BASELINE_ALIASES = {
     "snap": "snap_facebook",
     "snap_facebook": "snap_facebook",
@@ -839,19 +882,90 @@ def _ratio_to(current, reference) -> float | None:
 
 
 def _baseline_finding(metric: str, current, reference, ratio: float, title: str) -> str:
-    label = _BASELINE_LABELS[metric]
-    if ratio > 0 and _fold(ratio) > 2 and ratio >= 1:
+    """Say what a large gap means for the people in the network."""
+    current_text = _fmt_number(current)
+    reference_text = _fmt_number(reference)
+    if ratio is None or ratio <= 0:
         return (
-            f"{metric}: This network has {_fmt_ratio(ratio)} more {label} "
-            f"than {title} ({_fmt_number(current)} vs {_fmt_number(reference)})."
+            f"This network does not mix people the way {title} does "
+            f"({current_text} vs {reference_text}), which means there is no inner circle "
+            "holding the rest of the accounts together."
         )
-    if ratio > 0 and _fold(ratio) > 2:
-        return (
-            f"{metric}: This network has {_fmt_ratio(1 / ratio)} fewer {label} "
-            f"than {title} ({_fmt_number(current)} vs {_fmt_number(reference)})."
-        )
+    bigger = ratio >= 1
+    times = _fmt_ratio(ratio if bigger else 1 / ratio)
+    sentences = {
+        ("nodes", True): (
+            f"There are {times} more accounts here than on {title} ({current_text} vs {reference_text}), "
+            "which means this is no longer a room where everyone can know each other."
+        ),
+        ("nodes", False): (
+            f"There are {times} fewer accounts here than on {title} ({current_text} vs {reference_text}), "
+            "which means it is small enough that people can still recognize each other."
+        ),
+        ("edges", True): (
+            f"People have formed {times} more links than on {title} ({current_text} vs {reference_text}), "
+            "which means the crowd is tied together much more tightly than usual."
+        ),
+        ("edges", False): (
+            f"People have formed {times} fewer links than on {title} ({current_text} vs {reference_text}), "
+            "which means most accounts barely know anyone here."
+        ),
+        ("modularity", True): (
+            f"The groups pull apart {times} more sharply than on {title}, "
+            "which means people mostly stay inside their own neighborhood."
+        ),
+        ("modularity", False): (
+            f"The groups blur together {times} more than on {title}, "
+            "which means the same people show up in several crowds."
+        ),
+        ("avg_degree", True): (
+            f"The average account knows about {current_text} people, {times} more than on {title}, "
+            "which means introductions travel much faster than usual."
+        ),
+        ("avg_degree", False): (
+            f"The average account knows about {current_text} people, {times} fewer than on {title}, "
+            "which means most people only ever hear from a couple of others."
+        ),
+        ("max_degree", True): (
+            f"One account is connected to {current_text} others — {times} more than on {title}. "
+            "That means one person knows more people than most people will ever meet."
+        ),
+        ("max_degree", False): (
+            f"The biggest account reaches {current_text} people, {times} fewer than on {title}, "
+            "which means no single person knows the whole room."
+        ),
+        ("components", True): (
+            f"The network is shattered into {current_text} disconnected fragments — "
+            f"{times} more pieces than {title} — which means most accounts never see each other."
+        ),
+        ("components", False): (
+            f"This network hangs together in {current_text} piece, {times} fewer fragments than {title}, "
+            "which means almost everyone can still reach everyone else."
+        ),
+        ("clustering", True): (
+            f"Friends of friends already know each other {times} more often than on {title}, "
+            "which means this feels like a tight neighborhood."
+        ),
+        ("clustering", False): (
+            f"Friends of friends rarely know each other — {times} less often than on {title} — "
+            "which means people hear one voice and do not talk among themselves."
+        ),
+        ("assortativity", True): (
+            f"Well-connected accounts stick together {times} more than on {title}, "
+            "which means an inner circle hears the news before everyone else."
+        ),
+        ("assortativity", False): (
+            f"Well-connected accounts do not stick together the way they do on {title}, "
+            f"{times} less, which means there is no inner circle holding the rest of the network."
+        ),
+    }
+    sentence = sentences.get((metric, bigger))
+    if sentence:
+        return sentence
+    direction = "more" if bigger else "less"
     return (
-        f"{metric} is {_fmt_number(current)} vs {_fmt_number(reference)} for {title}."
+        f"This network is {times} {direction} than {title} ({current_text} vs {reference_text}), "
+        "which means the two networks do not feel like the same kind of place."
     )
 
 
@@ -881,7 +995,10 @@ def baseline_compare(run: str, baseline: str = "snap_facebook") -> ResultObject:
         for _fold_value, metric in gaps[:4]
     ]
     if not findings:
-        findings.append(f"This network is within 2x of {title} on every stored metric.")
+        findings.append(
+            f"This network stays within twice of {title} on every comparison, "
+            "which means nothing here would surprise someone who already knows that network."
+        )
     values = {
         "this_graph": {metric: current.get(metric) for metric in _BASELINE_KEYS},
         "baseline_name": key,

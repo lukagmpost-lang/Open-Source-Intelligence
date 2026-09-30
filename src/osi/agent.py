@@ -18,7 +18,15 @@ from dataclasses import dataclass, field
 import networkx as nx
 
 from osi.analysis import _modularity_of, pagerank as compute_pagerank
-from osi.answer import call_llm, raw_centrality_problem, templated_fallback, verify_numbers
+from osi.answer import (
+    ANSWER_EXAMPLE,
+    WRITING_RULES,
+    call_llm,
+    domain_context,
+    raw_centrality_problem,
+    templated_fallback,
+    verify_numbers,
+)
 from osi.executors import (
     anomaly_scan,
     baseline_compare,
@@ -828,6 +836,13 @@ def _brief(question, domain, modes, finding_texts) -> str:
             "When the user asks what could go wrong, call critical_nodes and structural_criticality. "
             "When the user asks how this compares, call baseline_compare. "
             "When the user asks what is unusual, call anomaly_scan.",
+            "",
+            "When you write the answer, explain it the way a person would:",
+            WRITING_RULES,
+            "",
+            domain_context(domain),
+            "",
+            ANSWER_EXAMPLE,
         ]
     )
 

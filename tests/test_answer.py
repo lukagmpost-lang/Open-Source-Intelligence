@@ -1,5 +1,7 @@
 import json
+import re
 
+import networkx as nx
 import pytest
 
 from osi.answer import (
@@ -302,13 +304,21 @@ def test_updating_a_run_invalidates_its_cache(tmp_path, monkeypatch):
 
 
 def test_system_prompt_includes_plain_language_rules():
-    assert "does not know network science" in SYSTEM_PROMPT
-    assert "The first sentence must directly answer the question." in SYSTEM_PROMPT
-    assert "Do not start with" in SYSTEM_PROMPT
-    assert "How sure: " in SYSTEM_PROMPT
-    assert "modularity, betweenness, assortativity" in SYSTEM_PROMPT
+    assert "Lead with what happened, not what the numbers are." in SYSTEM_PROMPT
+    assert "Use one analogy per answer." in SYSTEM_PROMPT
+    assert "if the top accounts leave, most people lose their connection to each other." in SYSTEM_PROMPT
+    assert 'No "modularity", "clustering", "assortativity", "components", "density".' in SYSTEM_PROMPT
+    assert "Every number must appear in a tool result." in SYSTEM_PROMPT
     assert "Never quote a raw centrality score" in SYSTEM_PROMPT
     assert "36x more central than typical" in SYSTEM_PROMPT
+    assert "a small town with distinct neighborhoods" in SYSTEM_PROMPT
+    assert "an office where different teams work on different floors" in SYSTEM_PROMPT
+    assert "a neighborhood where people know each other by face" in SYSTEM_PROMPT
+    assert "a network of safe houses connected by trusted couriers" in SYSTEM_PROMPT
+    assert "a group of people connected by shared interests" in SYSTEM_PROMPT
+    assert "Reddit in 2012 was a completely different animal" in SYSTEM_PROMPT
+    assert "Write in this style." in SYSTEM_PROMPT
+    assert "This is a general network." in SYSTEM_PROMPT
 
 
 def test_write_answer_includes_run_context_in_the_prompt(monkeypatch):
@@ -515,3 +525,81 @@ def test_verify_style_rejects_the_graph_is():
 def test_verify_style_rejects_three_or_more_jargon_words():
     text = "Modularity, betweenness, and assortativity all look high."
     assert verify_style(text) is False
+
+
+_CONSEQUENCE = re.compile(r"\b(because|means)\b", re.IGNORECASE)
+_METRIC_WORDS = ("modularity", "assortativity", "components", "density")
+
+
+def _last_sentence(text: str) -> str:
+    body = re.sub(r"\s*How sure:.*\Z", "", text.strip(), flags=re.IGNORECASE | re.DOTALL)
+    parts = [part.strip() for part in re.split(r"(?<=[.!?])\s+", body) if part.strip()]
+    return parts[-1]
+
+
+def test_rank_nodes_answer_for_reddit_2008_uses_an_analogy():
+    from osi.executors import rank_nodes
+
+    result = rank_nodes("r2008-v2", metric="pagerank", top=5)
+    text = write_answer(result, use_llm=False, question="who matters here")
+    assert re.search(r"\b(like|as|imagine)\b", text, re.IGNORECASE)
+
+
+def test_network_health_answer_for_reddit_2012_skips_metric_names():
+    from osi.executors import network_health
+
+    result = network_health("r2012-v2")
+    text = write_answer(result, use_llm=False, question="how healthy is this network").lower()
+    for word in _METRIC_WORDS:
+        assert word not in text
+
+
+def test_answer_names_an_account_when_the_tools_name_one():
+    from osi.executors import rank_nodes
+
+    result = rank_nodes("r2008-v2", metric="pagerank", top=5)
+    text = write_answer(result, use_llm=False, question="who matters here")
+    names = [str(key) for key in result.values if key != "findings"]
+    assert names
+    assert any(name in text for name in names)
+
+
+def test_answer_ends_with_a_consequence_not_a_metric():
+    from osi.executors import rank_nodes
+
+    result = rank_nodes("r2008-v2", metric="pagerank", top=5)
+    text = write_answer(result, use_llm=False, question="who matters here")
+    last = _last_sentence(text).lower()
+    assert _CONSEQUENCE.search(last) or "if the" in last or "most people" in last
+    for word in _METRIC_WORDS:
+        assert word not in last
+
+
+def test_every_finding_states_a_consequence():
+    from osi.executors import _criticality_findings, interpret_communities, interpret_health, interpret_rank
+    from osi.findings import generate_findings, load_baselines
+
+    texts: list[str] = []
+    for graph in (nx.complete_graph(30), nx.path_graph(6), nx.empty_graph(120), nx.star_graph(10)):
+        texts.extend(item["text"] for item in generate_findings({}, graph))
+    texts.extend(item["text"] for item in generate_findings(load_baselines()["reddit_2012"]))
+    texts.extend(
+        interpret_health(
+            {
+                "avg_degree": 40,
+                "max_degree": 800,
+                "modularity": 0.2,
+                "components": 40,
+                "assortativity": -0.8,
+            },
+            nx.Graph(),
+        )
+    )
+    star = nx.relabel_nodes(nx.star_graph(10), {0: "akdas", **{leaf: f"leaf{leaf}" for leaf in range(1, 11)}})
+    ranked = [("akdas", 0.5), ("leaf1", 0.1), ("leaf2", 0.1), ("leaf3", 0.1), ("leaf4", 0.1)]
+    texts.extend(interpret_rank(ranked, star, "pagerank"))
+    texts.extend(interpret_communities(4, 12, 0.2))
+    texts.extend(_criticality_findings({0.0: 1.0, 0.05: 0.4, 0.30: 0.05}, {}, {0.0: 1.0, 0.30: 0.9}, 40))
+    assert texts
+    for text in texts:
+        assert _CONSEQUENCE.search(text), text

@@ -139,7 +139,8 @@ def _degree_rules(metrics: dict, graph) -> list[dict]:
     if average > 20:
         found.append(
             _finding(
-                "This is a dense network — most accounts connect to dozens of others.",
+                "This is a dense network — most accounts connect to dozens of others, "
+                "which means a message can cross the group in a few introductions.",
                 min(10, average / 5),
                 "avg_degree",
             )
@@ -147,7 +148,8 @@ def _degree_rules(metrics: dict, graph) -> list[dict]:
     if average < 3:
         found.append(
             _finding(
-                "This is a sparse network — most accounts have only a few connections.",
+                "This is a sparse network — most accounts have only a few connections, "
+                "which means most people only ever hear from a couple of others.",
                 6 if average < 2 else 4,
                 "avg_degree",
             )
@@ -159,7 +161,8 @@ def _degree_rules(metrics: dict, graph) -> list[dict]:
         ratio = maximum / average
         found.append(
             _finding(
-                f"{_top_node(metrics, graph)} is connected to {maximum} others — {ratio:.0f}x the average.",
+                f"{_top_node(metrics, graph)} is connected to {maximum:,} others — {ratio:.0f}x the average. "
+                "That means one person reaches far more people than anyone else.",
                 8,
                 "max_degree",
             )
@@ -167,7 +170,8 @@ def _degree_rules(metrics: dict, graph) -> list[dict]:
     if maximum > 500:
         found.append(
             _finding(
-                f"A single account has {maximum} connections, more than most networks ever produce.",
+                f"One account, {_top_node(metrics, graph)}, is connected to {maximum:,} others. "
+                "That means one person knows more people than most people will ever meet.",
                 9,
                 "max_degree",
             )
@@ -183,7 +187,7 @@ def _community_rules(metrics: dict, graph) -> list[dict]:
         if modularity > 0.6:
             found.append(
                 _finding(
-                    "The communities are clean and distinct — this is a well-structured network.",
+                    "The communities are clean and distinct, which means people mostly talk inside their own group.",
                     7,
                     "modularity",
                 )
@@ -191,7 +195,7 @@ def _community_rules(metrics: dict, graph) -> list[dict]:
         if modularity < 0.3:
             found.append(
                 _finding(
-                    "Communities overlap heavily — most accounts belong to several groups at once.",
+                    "Communities overlap heavily, which means most accounts belong to several groups at once.",
                     6,
                     "modularity",
                 )
@@ -203,7 +207,8 @@ def _community_rules(metrics: dict, graph) -> list[dict]:
         if count > 100 and nodes and count > nodes * 0.02:
             found.append(
                 _finding(
-                    f"The network fragments into {count} tiny groups, which usually means it's very fragmented.",
+                    f"The network fragments into {count:,} tiny groups, "
+                    "which means most people never meet anyone outside their own corner.",
                     7,
                     "n_communities",
                 )
@@ -212,7 +217,8 @@ def _community_rules(metrics: dict, graph) -> list[dict]:
     if largest is not None and nodes and int(largest) > nodes * 0.5:
         found.append(
             _finding(
-                f"One giant group contains {int(largest)} accounts — over half the network.",
+                f"One giant group contains {int(largest):,} accounts — over half the network — "
+                "which means that group sets the tone for everyone else.",
                 8,
                 "largest_size",
             )
@@ -227,7 +233,8 @@ def _component_rules(metrics: dict, graph) -> list[dict]:
     if components > 100:
         return [
             _finding(
-                f"The network is highly fragmented — it breaks into {components} disconnected islands.",
+                f"The network is highly fragmented — it breaks into {components:,} disconnected islands, "
+                "which means most accounts never see each other.",
                 9,
                 "components",
             )
@@ -235,7 +242,7 @@ def _component_rules(metrics: dict, graph) -> list[dict]:
     if components == 1:
         return [
             _finding(
-                "Everyone is reachable from everyone else — the network is fully connected.",
+                "Everyone is reachable from everyone else, which means a message can find any account.",
                 5,
                 "components",
             )
@@ -250,7 +257,8 @@ def _clustering_rules(metrics: dict, graph) -> list[dict]:
     if clustering > 0.7:
         return [
             _finding(
-                "Neighbors of each account are also connected to each other — this is a tight-knit network.",
+                "Neighbors of each account are also connected to each other, "
+                "which means friends of friends already know each other.",
                 7,
                 "clustering",
             )
@@ -258,7 +266,8 @@ def _clustering_rules(metrics: dict, graph) -> list[dict]:
     if clustering < 0.1:
         return [
             _finding(
-                "Accounts connect to hubs but not to each other — this is a broadcast pattern.",
+                "Accounts connect to hubs but not to each other — this is a broadcast pattern, "
+                "which means one voice reaches everyone and the audience does not talk back.",
                 8,
                 "clustering",
             )
@@ -273,8 +282,8 @@ def _assortativity_rules(metrics: dict, graph) -> list[dict]:
     if mixing < -0.5:
         return [
             _finding(
-                "Hubs connect to isolated accounts, not to each other. "
-                "Removing the top hubs would break the network.",
+                "Hubs connect to isolated accounts, not to each other, "
+                "which means removing the top hubs would break the network.",
                 9,
                 "assortativity",
             )
@@ -282,7 +291,7 @@ def _assortativity_rules(metrics: dict, graph) -> list[dict]:
     if mixing > 0.3:
         return [
             _finding(
-                "The most connected accounts cluster together — there's an inner circle.",
+                "The most connected accounts cluster together, which means there's an inner circle.",
                 7,
                 "assortativity",
             )
@@ -290,7 +299,7 @@ def _assortativity_rules(metrics: dict, graph) -> list[dict]:
     if -0.1 < mixing < 0.1:
         return [
             _finding(
-                "Connections are mixed — no clear elite or broadcast pattern.",
+                "Connections are mixed, which means there's no clear elite and no single voice everyone else depends on.",
                 3,
                 "assortativity",
             )
@@ -305,8 +314,8 @@ def _power_law_rules(metrics: dict, graph) -> list[dict]:
     if float(recorded) > 0.85:
         return [
             _finding(
-                "The degree distribution follows a power law — a few hubs, a long tail of small accounts. "
-                "Classic scale-free.",
+                "A few accounts have almost all the connections and everyone else has a handful, "
+                "which means the network depends on those few accounts.",
                 6,
                 "power_law",
             )
@@ -336,7 +345,10 @@ def pagerank_centrality_text(scores) -> str | None:
     median_pagerank = statistics.median([value for _node, value in rows])
     if top_pagerank > 10 * median_pagerank:
         ratio = top_pagerank / median_pagerank
-        return f"{top_node} is {ratio:.0f}x more central than the typical account."
+        return (
+            f"{top_node} is {ratio:.0f}x more central than the typical account. "
+            "That means one person sits on far more of the conversation than anyone else."
+        )
     return None
 
 
@@ -355,10 +367,13 @@ def _rank_rules(metrics: dict, graph) -> list[dict]:
     average = _avg_degree(metrics, graph)
     top_degree = _top_5_degree(metrics, graph)
     if average and top_degree is not None and top_degree > 5 * average:
+        names = _name_list(_top_accounts(metrics, graph))
+        who = f" — {names} —" if names and names != "nobody" else ""
         found.append(
             _finding(
-                f"The top accounts — {_name_list(_top_accounts(metrics, graph))} — "
-                "are 5x more connected than everyone else.",
+                f"The top five accounts{who} are each connected to at least {top_degree:,} people, "
+                f"while the average account knows around {average:.0f}. "
+                "That means a handful of accounts do almost all the connecting.",
                 7,
                 "top_degree",
             )
@@ -370,7 +385,7 @@ def _rank_rules(metrics: dict, graph) -> list[dict]:
     if len(distinct) == 5:
         found.append(
             _finding(
-                "The hubs are spread across communities — no single group dominates.",
+                "The hubs are spread across communities, which means no single group dominates.",
                 8,
                 "hub_communities",
             )
@@ -378,8 +393,8 @@ def _rank_rules(metrics: dict, graph) -> list[dict]:
     elif len(distinct) == 1:
         found.append(
             _finding(
-                f"The top {len(communities)} accounts all sit in the same community — "
-                "there's a clear inner circle.",
+                f"The top {len(communities)} accounts all sit in the same community, "
+                "which means there's a clear inner circle.",
                 9,
                 "hub_communities",
             )
@@ -414,8 +429,9 @@ def _comparison_rules(metrics: dict, graph) -> list[dict]:
         ratio = components / baseline["components"]
         found.append(
             _finding(
-                "This network is far more fragmented than typical — "
-                f"{ratio:.0f}x more disconnected pieces.",
+                f"The network is shattered into {components:,} disconnected fragments — "
+                f"{ratio:.0f}x more pieces than a typical network — "
+                "which means most accounts never see each other.",
                 9,
                 "baseline_components",
             )
@@ -424,7 +440,8 @@ def _comparison_rules(metrics: dict, graph) -> list[dict]:
     if modularity is not None and float(modularity) > baseline["modularity"] * 1.3:
         found.append(
             _finding(
-                "Communities are much more distinct than typical.",
+                "Communities are much more distinct than typical, "
+                "which means groups barely talk to each other.",
                 7,
                 "baseline_modularity",
             )
@@ -433,7 +450,8 @@ def _comparison_rules(metrics: dict, graph) -> list[dict]:
     if maximum is not None and maximum > baseline["max_degree"] * 2:
         found.append(
             _finding(
-                "The top hub is twice as large as typical.",
+                "The top hub is twice as large as typical, "
+                "which means one account reaches far more people than a normal network would.",
                 8,
                 "baseline_max_degree",
             )

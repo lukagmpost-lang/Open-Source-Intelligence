@@ -148,20 +148,34 @@ def test_structural_criticality_findings_name_the_halving_percentage():
     random = {0.0: 1.0, 0.30: 0.9}
     findings = _criticality_findings(degree, betweenness, random, n_components=40)
     assert findings[0] == (
-        "The network is extremely fragile: removing just 5% of the top accounts by degree halves it."
+        "The network is extremely fragile: removing just 5% of the top accounts by degree halves it, "
+        "which means if those accounts leave, most people lose their connection to each other."
     )
-    assert "Removing random accounts has much less effect — this is a targeted-vulnerability pattern." in findings
-    assert "Removing 30% of the top accounts shatters the network into 40 disconnected pieces." in findings
+    assert any(
+        "Removing random accounts has much less effect — this is a targeted-vulnerability pattern" in line
+        for line in findings
+    )
+    assert (
+        "Removing 30% of the top accounts shatters the network into 40 disconnected pieces, "
+        "which means most people would lose their connection to each other."
+    ) in findings
 
     fragile = _criticality_findings({0.0: 1.0, 0.10: 0.4, 0.30: 0.2}, {}, {0.0: 1.0, 0.20: 0.4}, None)
-    assert fragile[0] == "The network is fragile: removing 10% of the top accounts halves it."
+    assert fragile[0] == (
+        "The network is fragile: removing 10% of the top accounts halves it, "
+        "which means if the top accounts leave, most people lose their connection to each other."
+    )
 
     moderate = _criticality_findings({0.0: 1.0, 0.30: 0.4}, {}, {0.0: 1.0, 0.30: 0.4}, None)
-    assert moderate == ["The network is moderately fragile: removing 30% halves it."]
+    assert moderate == [
+        "The network is moderately fragile: removing 30% halves it, "
+        "which means losing the busiest accounts would cut most people off from each other."
+    ]
 
     resilient = _criticality_findings({0.0: 1.0, 0.30: 0.8}, {}, {0.0: 1.0, 0.30: 0.7}, None)
     assert resilient == [
-        "The network is resilient: it survives removing 30% of the top accounts without halving."
+        "The network is resilient: it survives removing 30% of the top accounts without halving, "
+        "which means people would still find each other if the busiest accounts left."
     ]
 
 
@@ -179,9 +193,12 @@ def test_interpret_health_keeps_the_three_strongest_findings():
     }
     findings = interpret_health(metrics, graph)
     assert findings == [
-        "This is a dense network — most accounts are connected to dozens of others.",
-        "The groups are blurry — they overlap heavily.",
-        "Hubs connect to leaves, not to each other. This is a broadcast network, not a community.",
+        "This is a dense network — most accounts are connected to dozens of others, "
+        "which means a message can cross the group in a few introductions.",
+        "The groups are blurry — they overlap heavily, "
+        "which means the same people show up in several crowds at once.",
+        "Hubs connect to leaves, not to each other. This is a broadcast network, not a community, "
+        "which means if those hubs leave, the audience has no way to reach each other.",
     ]
 
 
@@ -193,8 +210,9 @@ def test_interpret_health_names_a_clean_split_and_a_sparse_network():
         nx.Graph(),
     )
     assert findings == [
-        "This is a sparse network — most accounts have only a few connections.",
-        "This network splits cleanly into groups.",
+        "This is a sparse network — most accounts have only a few connections, "
+        "which means most people only ever hear from a couple of others.",
+        "This network splits cleanly into groups, which means each crowd mostly talks to itself.",
     ]
 
 
@@ -213,8 +231,14 @@ def test_interpret_health_flags_a_dominant_hub_and_fragmentation():
         },
         graph,
     )
-    assert findings[0] == "A few hubs dominate — the top node has 250 connections vs an average of 2."
-    assert "It's fragmented — most nodes are in small disconnected pieces." in findings
+    assert findings[0] == (
+        "A few hubs dominate — the top node has 250 connections vs an average of 2, "
+        "which means a handful of accounts do almost all the connecting."
+    )
+    assert (
+        "It's fragmented — most nodes are in small disconnected pieces, "
+        "which means most accounts never see each other."
+    ) in findings
 
 
 def test_interpret_rank_names_a_hub_far_above_the_average():
@@ -224,11 +248,24 @@ def test_interpret_rank_names_a_hub_far_above_the_average():
     graph = nx.relabel_nodes(graph, {0: "akdas", **{leaf: f"leaf{leaf}" for leaf in range(1, 11)}})
     ranked = [("akdas", 0.5), ("leaf1", 0.1), ("leaf2", 0.1), ("leaf3", 0.1), ("leaf4", 0.1)]
     findings = interpret_rank(ranked, graph, "pagerank")
-    assert findings[0] == "The most central accounts are akdas, leaf1, leaf2, leaf3, and leaf4."
-    assert findings[1] == "akdas is connected to 10 other accounts — more than 5x the average."
-    assert findings[2] == "These five are the hubs of the network."
+    assert findings[0] == (
+        "The most central accounts are akdas, leaf1, leaf2, leaf3, and leaf4, "
+        "which means these are the people everyone else has to go through."
+    )
+    assert findings[1] == (
+        "akdas is connected to 10 other accounts — more than 5x the average. "
+        "That's like knowing everyone in a small town, which means one person carries "
+        "connections the rest of the network does not."
+    )
+    assert findings[2] == (
+        "These five are the hubs of the network, "
+        "which means a handful of accounts do almost all the connecting."
+    )
     wide = [("akdas", 0.5), *[(f"n{i}", 0.01) for i in range(20)]]
-    assert "akdas is 50x more central than the typical account." in interpret_rank(wide, graph, "pagerank")
+    assert any(
+        "akdas is 50x more central than the typical account." in line
+        for line in interpret_rank(wide, graph, "pagerank")
+    )
     assert "more central" not in " ".join(interpret_rank(wide, graph, "betweenness"))
 
 

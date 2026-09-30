@@ -11,20 +11,11 @@ def test_reddit_2012_against_snap_returns_ratios_and_findings():
     assert values["this_graph"]["components"]
     assert values["baseline_metrics"]["components"] == 1
     assert values["findings"]
-    text = " ".join(values["findings"])
-    assert any(
-        name in text
-        for name in (
-            "nodes",
-            "edges",
-            "modularity",
-            "avg_degree",
-            "max_degree",
-            "components",
-            "clustering",
-            "assortativity",
-        )
-    )
+    text = " ".join(values["findings"]).lower()
+    assert "components" in values["ratios"]
+    assert all("means" in line or "because" in line for line in values["findings"])
+    for word in ("modularity", "assortativity", "components", "density"):
+        assert word not in text
 
 
 def test_an_unknown_baseline_names_the_problem():

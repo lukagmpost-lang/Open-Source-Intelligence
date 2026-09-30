@@ -38,7 +38,7 @@ def test_reddit_2012_metrics_produce_at_least_three_findings():
 def test_pagerank_far_above_the_median_names_the_top_account():
     scores = {"akdas": 0.5, **{f"n{i}": 0.01 for i in range(20)}}
     texts = _texts({"pagerank": scores})
-    assert "akdas is 50x more central than the typical account." in texts
+    assert any("akdas is 50x more central than the typical account." in text for text in texts)
 
 
 def test_pagerank_within_ten_times_the_median_adds_no_finding():

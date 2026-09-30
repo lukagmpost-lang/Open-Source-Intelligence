@@ -62,45 +62,89 @@ def llm_settings() -> dict[str, str]:
     }
 
 
-SYSTEM_PROMPT = (
-    "You are a graph analysis assistant. The user asks questions "
-    "about a network. You will receive a JSON result object from "
-    "a computation on that network. Write 2-4 sentences of plain "
-    "English answering the question.\n"
+_DOMAIN_ANALOGIES = {
+    "forum": "a small town with distinct neighborhoods",
+    "company": "an office where different teams work on different floors",
+    "community": "a neighborhood where people know each other by face",
+    "activist": "a network of safe houses connected by trusted couriers",
+    "general": "a group of people connected by shared interests",
+    "social": "a neighborhood where people know each other by face",
+}
+
+_DOMAIN_LIST = (
+    "   - forum: a small town with distinct neighborhoods\n"
+    "   - company: an office where different teams work on different floors\n"
+    "   - community: a neighborhood where people know each other by face\n"
+    "   - activist: a network of safe houses connected by trusted couriers\n"
+    "   - general: a group of people connected by shared interests"
+)
+
+WRITING_RULES = (
+    "Write 3-5 sentences that a non-expert could read and immediately understand.\n"
     "\n"
     "Rules:\n"
-    "- Write for someone who does not know network science.\n"
-    "- Lead with the answer, not the setup. The first sentence "
-    "must directly answer the question.\n"
-    "- Use concrete names and numbers, not abstractions. "
-    'Say "akdas is the most important account" not '
-    '"the top PageRank node is akdas."\n'
-    "- Never use these words without defining them in the same "
-    "sentence: modularity, betweenness, assortativity, "
-    "transitivity, rich-club, periphery, core-periphery.\n"
-    "- Do not describe the metrics. Describe the network.\n"
-    '- No preamble. Do not start with "The graph is..."\n'
-    "- Every number you write MUST appear in the JSON values. "
-    "Do not invent numbers.\n"
-    "- Never quote a raw centrality score (pagerank, betweenness, "
-    "closeness, eigenvector). Always express importance as a ratio "
-    "to the typical account: '36x more central than typical' or "
-    "'more connected than 99% of accounts'.\n"
-    "- If the trust field says unstable, say so explicitly.\n"
-    '- End with a line starting with "How sure: ".'
+    "- Lead with what happened, not what the numbers are.\n"
+    "- Use one analogy per answer. Compare the network to something concrete: "
+    "a small town, an office, a party, a neighborhood, a broadcast tower.\n"
+    "- End with what this means for someone who uses or runs this network. "
+    'Not "the network is fragile" but "if the top accounts leave, most people '
+    'lose their connection to each other."\n'
+    '- Do not use metric names. No "modularity", "clustering", "assortativity", '
+    '"components", "density".\n'
+    "- Do not quote raw numbers unless the number itself is the point. "
+    '"1,890 connections" is fine. "541x more pieces" is fine. "0.02494" is not.\n'
+    "- Every number must appear in a tool result.\n"
+    "- Never quote a raw centrality score (pagerank, betweenness, closeness, "
+    "eigenvector). Express importance as a ratio to the typical account: "
+    "'36x more central than typical' or 'more connected than 99% of accounts'."
+)
+
+ANSWER_EXAMPLE = (
+    "Example of a good answer for a Reddit 2012 network:\n"
+    "\n"
+    '"Reddit in 2012 was a completely different animal from what it was in 2008. '
+    "It went from a small, tightly-knit community to a sprawling platform with over "
+    "a thousand separate groups. The biggest account, CosmicBard, has 1,890 connections "
+    "— that's like knowing everyone in a small town. Meanwhile the platform itself is "
+    "shattered into pieces: 541× more disconnected fragments than a normal network. "
+    "Most forums have one cohesive community. This one has over a thousand, which means "
+    "most users never interact with each other. The platform isn't a community anymore "
+    "— it's a collection of micro-communities sharing a URL.\"\n"
+    "\n"
+    "Write in this style."
 )
 
 
-# Used when the executor already translated the numbers into findings.
-FINDINGS_SYSTEM_PROMPT = (
-    "You receive 3-5 findings about a network. Rewrite them as "
-    "2-3 sentences of flowing prose. Do not invent numbers. Do "
-    "not add metrics. Do not use the words density, modularity, "
-    "clustering, or component. Never quote a raw centrality score "
-    "(pagerank, betweenness, closeness, eigenvector). Always express "
-    "importance as a ratio to the typical account: '36x more central "
-    "than typical' or 'more connected than 99% of accounts'."
-)
+def domain_context(domain: str | None) -> str:
+    """The concrete picture the writer should use for this kind of network."""
+    key = (domain or "general").strip().casefold() or "general"
+    analogy = _DOMAIN_ANALOGIES.get(key, _DOMAIN_ANALOGIES["general"])
+    label = key if key in _DOMAIN_ANALOGIES else "general"
+    return (
+        f"This is a {label} network. A {label} is like {analogy}:\n"
+        f"{_DOMAIN_LIST}\n"
+        "\n"
+        "Use this frame when you write. When you describe a hub, "
+        'say what it would mean in this frame: "one person who knows everyone in the small town."'
+    )
+
+
+def answer_system_prompt(domain: str | None = "general") -> str:
+    """System prompt for a plain-language answer about one network."""
+    return "\n\n".join([WRITING_RULES, domain_context(domain), ANSWER_EXAMPLE])
+
+
+def findings_system_prompt(domain: str | None = "general") -> str:
+    """System prompt when the executor already wrote the findings."""
+    preface = (
+        "You receive findings about a network. Rewrite them as flowing prose. "
+        "Do not invent numbers. Do not add metrics."
+    )
+    return preface + "\n\n" + answer_system_prompt(domain)
+
+
+SYSTEM_PROMPT = answer_system_prompt("general")
+FINDINGS_SYSTEM_PROMPT = findings_system_prompt("general")
 
 
 def _chat_request(
@@ -725,6 +769,24 @@ def _cache_key(result: ResultObject, question: str | None) -> tuple[str, str] | 
     return key, run_id
 
 
+def run_domain(result: ResultObject) -> str:
+    """Forum, company, social, or general, from the saved run. Otherwise general."""
+    run_id = result.params.get("run")
+    if not isinstance(run_id, str) or not run_id:
+        return "general"
+    try:
+        from osi.hypotheses import infer_domain
+        from osi.store import get_run
+
+        meta = get_run(run_id)
+    except (LookupError, OSError, ValueError):
+        return "general"
+    if not meta:
+        return "general"
+    config = meta.get("config") or {}
+    return infer_domain(meta.get("source") or "", config.get("layer") or "")
+
+
 def write_answer(
     result: ResultObject,
     use_llm: bool = False,
@@ -753,6 +815,7 @@ def write_answer(
     run_id = result.params.get("run")
     if not isinstance(run_id, str):
         run_id = ""
+    domain = run_domain(result)
     findings = result.values.get("findings")
     send_findings = (
         isinstance(findings, list)
@@ -763,13 +826,14 @@ def write_answer(
     def _request(prompt: str) -> str | None:
         try:
             if send_findings:
-                return call_llm(prompt, system=FINDINGS_SYSTEM_PROMPT)
+                return call_llm(prompt, system=findings_system_prompt(domain))
             return call_llm(
                 prompt,
                 run_id=run_id,
                 n_nodes=_size(result, "n_nodes", "nodes"),
                 n_edges=_size(result, "n_edges", "edges"),
                 question=asked,
+                system=answer_system_prompt(domain),
             )
         except (OSError, TimeoutError, RuntimeError, KeyError, json.JSONDecodeError, ValueError):
             return None
