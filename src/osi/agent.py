@@ -884,6 +884,9 @@ def _prompt(question, domain, modes, scratchpad, finding_texts=None, ready: bool
         lines = [
             f"User question: {question}",
             "",
+            f"This is a {domain} network. The following risks apply based on its structure:",
+            "\n".join(risks) if risks else "- none",
+            "",
             WRITING_RULES,
             "",
             domain_context(domain),
