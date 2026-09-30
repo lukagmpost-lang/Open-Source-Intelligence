@@ -333,10 +333,11 @@ def _health_findings(results: list[ResultObject], finding_texts: list[str]) -> l
 
 
 def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tools, results, modes) -> str:
-    system = _system_prompt(question, domain, modes, finding_texts)
     chosen = 0
     for _step in range(MAX_STEPS):
-        prompt = _prompt(question, domain, modes, scratchpad, finding_texts)
+        ready = chosen >= _MIN_MODEL_TOOLS
+        system = _system_prompt(question, domain, modes, finding_texts, ready=ready)
+        prompt = _prompt(question, domain, modes, scratchpad, finding_texts, ready=ready)
         reply = _call_model(prompt, system)
         if reply is None:
             scratchpad.append(
@@ -416,7 +417,24 @@ def _run_plan(run_id: str, tools: list[str], results: list[ResultObject], scratc
         scratchpad.append(f"TOOL RESULT {name}: {_summarize(result)}")
 
 
-def _system_prompt(question: str, domain: str, modes: list[dict], finding_texts: list[str]) -> str:
+def _system_prompt(
+    question: str,
+    domain: str,
+    modes: list[dict],
+    finding_texts: list[str],
+    *,
+    ready: bool = False,
+) -> str:
+    if ready:
+        return "\n\n".join(
+            [
+                "Write the final answer. Start the reply with ANSWER:.",
+                WRITING_RULES,
+                domain_context(domain),
+                ANSWER_EXAMPLE,
+                "Every number in the answer must appear in a tool result already in the conversation.",
+            ]
+        )
     return _FORMAT_RULES + "\n" + _brief(question, domain, modes, finding_texts)
 
 
@@ -450,7 +468,10 @@ def _rewrite_until_used(
         for name, result in ignored:
             _log_unused_tool(name, result, attempt)
         scratchpad.append(_rewrite_message(ignored))
-        reply = _call_model(_prompt(question, domain, modes, scratchpad, finding_texts), system)
+        reply = _call_model(
+            _prompt(question, domain, modes, scratchpad, finding_texts, ready=True),
+            system,
+        )
         if reply is None:
             return _revise_raw_centrality(
                 _with_fragility_note(answer, tools, results),
@@ -836,42 +857,53 @@ def _brief(question, domain, modes, finding_texts) -> str:
             "When the user asks what could go wrong, call critical_nodes and structural_criticality. "
             "When the user asks how this compares, call baseline_compare. "
             "When the user asks what is unusual, call anomaly_scan.",
-            "",
-            "When you write the answer, explain it the way a person would:",
-            WRITING_RULES,
-            "",
-            domain_context(domain),
-            "",
-            ANSWER_EXAMPLE,
         ]
     )
 
 
-def _prompt(question, domain, modes, scratchpad, finding_texts=None) -> str:
-    # Observations stay in the system prompt. This turn asks for a tool call.
+def _prompt(question, domain, modes, scratchpad, finding_texts=None, ready: bool = False) -> str:
+    # Observations stay in the system prompt. This turn asks for a tool call
+    # until two tools have come back, then it asks for the explanation.
     del finding_texts
     risks = [
         f"- {mode['name']} ({mode['severity']}): {mode['description']}"
         for mode in (modes or [])
     ]
-    lines = [
-        f"User question: {question}",
-        "Reply with a tool call only.",
-        "TOOL: <tool_name>",
-        "PARAMS: <json_object>",
-        "",
-        "Here are the tools available:",
-        _render_tools(),
-        "",
-        f"This is a {domain} network. The following risks apply based on its structure:",
-        "\n".join(risks) if risks else "- none",
-        "",
-        "Call at least 2 before answering.",
-        "When the user asks how this compares, call baseline_compare.",
-        "When the user asks what is unusual, call anomaly_scan.",
-        "When the user asks what could go wrong, call critical_nodes and structural_criticality.",
-        "When the user asks for specific names, call rank_nodes or explain_node.",
-    ]
+    if ready:
+        lines = [
+            f"User question: {question}",
+            "",
+            WRITING_RULES,
+            "",
+            domain_context(domain),
+            "",
+            ANSWER_EXAMPLE,
+            "",
+            "Here are the tools available:",
+            _render_tools(),
+            "",
+            "You have enough measurements. Write the answer now. Do not call another tool.",
+            "Start the reply with ANSWER:.",
+        ]
+    else:
+        lines = [
+            f"User question: {question}",
+            "Reply with a tool call only.",
+            "TOOL: <tool_name>",
+            "PARAMS: <json_object>",
+            "",
+            "Here are the tools available:",
+            _render_tools(),
+            "",
+            f"This is a {domain} network. The following risks apply based on its structure:",
+            "\n".join(risks) if risks else "- none",
+            "",
+            "Call at least 2 before answering.",
+            "When the user asks how this compares, call baseline_compare.",
+            "When the user asks what is unusual, call anomaly_scan.",
+            "When the user asks what could go wrong, call critical_nodes and structural_criticality.",
+            "When the user asks for specific names, call rank_nodes or explain_node.",
+        ]
     if scratchpad:
         lines.extend(["", "Results so far:", *scratchpad])
     return "\n".join(lines)
