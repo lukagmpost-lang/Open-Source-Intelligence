@@ -1,7 +1,8 @@
 import networkx as nx
 
-from osi.agent import run_agent
+from osi.agent import _TOOLS, run_agent
 from osi.failure_modes import apply_failure_modes, rank_by_question
+from osi.result import ResultObject
 
 
 def test_a_forum_hub_matches_hub_departure():
@@ -87,8 +88,29 @@ def test_reddit_2012_worry_answer_names_a_failure_mode_and_an_account(monkeypatc
             f"If {account} stopped posting, the forum would lose its anchor."
         )
 
+    def _stub(run, **kwargs):
+        return ResultObject(
+            intent="structural_criticality",
+            params={"run": run},
+            values={
+                "largest": 0.42,
+                "findings": [
+                    "The network is fragile: removing 30% of the top accounts halves it."
+                ],
+            },
+            method="exact",
+            sample_size=None,
+            trust="stable",
+            caveats=[],
+            runtime_ms=0,
+        )
+
+    monkeypatch.setitem(_TOOLS, "structural_criticality", _stub)
+    monkeypatch.setitem(_TOOLS, "critical_nodes", _stub)
     monkeypatch.setattr("osi.agent.call_llm", answer_from_the_modes)
     result = run_agent("r2012-v2", "what should I be worried about", use_llm=True)
+    assert "critical_nodes" in result.tools
+    assert "structural_criticality" in result.tools
     assert any(
         name in result.answer
         for name in ("hub_departure", "bridge_loss", "moderation_concentration", "key_person_risk")

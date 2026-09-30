@@ -6,6 +6,23 @@ from osi.ask import ask, main
 from osi.result import ResultObject
 
 
+def test_question_types_select_the_required_tools():
+    from osi.agent import _required_tools
+
+    assert _required_tools("what should I be worried about") == [
+        "critical_nodes",
+        "structural_criticality",
+    ]
+    assert _required_tools("what is the shape of this network") == [
+        "network_health",
+        "list_communities",
+    ]
+    assert _required_tools("who are the most important people") == [
+        "rank_nodes",
+        "explain_node",
+    ]
+
+
 def test_parse_agent_reply_reads_a_tool_call_and_an_answer():
     kind, name, params = parse_agent_reply('TOOL: rank_nodes\nPARAMS: {"metric": "degree", "top": 5}')
     assert kind == "tool"

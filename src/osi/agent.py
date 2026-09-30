@@ -55,13 +55,23 @@ _FRAGILITY_NOTE = (
     "Run with --agent-full for the complete result."
 )
 
-WORRY_QUESTIONS = ("worry", "worried", "vulnerable", "fragile", "at risk", "should i worry")
+# Substrings, so "worried", "worrying", "vulnerable", and "vulnerability" all match.
+WORRY_PATTERNS = (
+    "worr",
+    "risk",
+    "vulnerab",
+    "fragile",
+    "at risk",
+    "break",
+    "fail",
+    "collapse",
+)
 HEALTH_QUESTIONS = ("healthy", "health", "shape", "structure", "how is")
 IMPORTANT_QUESTIONS = ("important", "central", "key", "hubs", "who matters")
 COMMUNITY_QUESTIONS = ("communities", "groups", "clusters")
 
 _REQUIRED_BY_TYPE = (
-    (WORRY_QUESTIONS, ("critical_nodes", "structural_criticality")),
+    (WORRY_PATTERNS, ("critical_nodes", "structural_criticality")),
     (HEALTH_QUESTIONS, ("network_health", "list_communities")),
     (IMPORTANT_QUESTIONS, ("rank_nodes", "explain_node")),
     (COMMUNITY_QUESTIONS, ("list_communities", "explain_node")),
@@ -201,23 +211,10 @@ def run_agent(run_id: str, question: str, use_llm: bool = True) -> AgentResult:
     tools: list[str] = []
     scratchpad: list[str] = []
     answer = ""
-    prepared = False
     if use_llm and str(domain).casefold() in DOMAIN_MODELS:
-        prepared = _prepare_failure_modes(
-            run_id, graph, domain, question, snapshot, tools, results, scratchpad
-        )
+        _prepare_failure_modes(run_id, graph, domain, question, snapshot, tools, results, scratchpad)
     if use_llm:
-        answer = _react(
-            question,
-            domain,
-            finding_texts,
-            hypotheses,
-            run_id,
-            scratchpad,
-            tools,
-            results,
-            prepared=prepared,
-        )
+        answer = _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tools, results)
     else:
         _run_plan(run_id, tools, results, scratchpad)
     if not answer:
@@ -291,17 +288,7 @@ def _prepare_failure_modes(run_id, graph, domain, question, snapshot, tools, res
     return True
 
 
-def _react(
-    question,
-    domain,
-    finding_texts,
-    hypotheses,
-    run_id,
-    scratchpad,
-    tools,
-    results,
-    prepared: bool = False,
-) -> str:
+def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tools, results) -> str:
     system = _system_prompt(question, finding_texts)
     for _step in range(MAX_STEPS):
         prompt = _prompt(question, domain, finding_texts, hypotheses, scratchpad)
@@ -316,11 +303,7 @@ def _react(
             continue
         if kind == "answer":
             called = _called_tools(scratchpad)
-            # Failure modes already chose the measurements. Do not add the old required set.
-            if prepared:
-                missing = []
-            else:
-                missing = [name for name in _required_tools(question) if name not in called]
+            missing = [name for name in _required_tools(question) if name not in called]
             if not missing:
                 return _rewrite_until_used(
                     payload.strip(),
