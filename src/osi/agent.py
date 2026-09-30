@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 
 import networkx as nx
 
-from osi.analysis import _modularity_of
+from osi.analysis import _modularity_of, pagerank as compute_pagerank
 from osi.answer import call_llm, verify_numbers
 from osi.executors import (
     connectivity,
@@ -702,7 +702,7 @@ def _fallback_answer(results: list[ResultObject], finding_texts: list[str]) -> s
 
 
 def _compose(answer, observations, results, finding_texts) -> tuple[str, dict]:
-    values = _base_values({}, results, [])
+    values = _base_values({}, results, finding_texts)
     if not verify_numbers(answer, values):
         answer = _fallback_answer(results, finding_texts)
     kept: list[str] = []
@@ -802,6 +802,11 @@ def _snapshot(run_id: str, graph: nx.Graph) -> dict:
         "top_5_degree": int(top[4][1]) if len(top) >= 5 else None,
         "top_communities": top_communities,
     }
+    pagerank_scores = load_metrics(run_id, "pagerank")
+    if not pagerank_scores and 0 < nodes <= 10000:
+        pagerank_scores = compute_pagerank(graph)
+    if pagerank_scores:
+        finding_metrics["pagerank"] = pagerank_scores
     betweenness = load_metrics(run_id, "betweenness")
     hypothesis_metrics = dict(finding_metrics)
     hypothesis_metrics["assignment"] = assignment

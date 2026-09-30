@@ -7,6 +7,7 @@ an interest score from 0 to 10, and the metric that triggered it.
 from __future__ import annotations
 
 import json
+import statistics
 from pathlib import Path
 
 import networkx as nx
@@ -313,6 +314,42 @@ def _power_law_rules(metrics: dict, graph) -> list[dict]:
     return []
 
 
+def _score_rows(scores) -> list[tuple[str, float]]:
+    pairs = scores.items() if isinstance(scores, dict) else scores
+    rows = []
+    for node, value in pairs or []:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            continue
+        rows.append((str(node), number))
+    return rows
+
+
+def pagerank_centrality_text(scores) -> str | None:
+    """Name the leader when its PageRank is more than 10x the median."""
+    rows = _score_rows(scores)
+    if not rows:
+        return None
+    rows.sort(key=lambda item: (-item[1], item[0]))
+    top_node, top_pagerank = rows[0]
+    median_pagerank = statistics.median([value for _node, value in rows])
+    if top_pagerank > 10 * median_pagerank:
+        ratio = top_pagerank / median_pagerank
+        return f"{top_node} is {ratio:.0f}x more central than the typical account."
+    return None
+
+
+def _pagerank_rules(metrics: dict, graph) -> list[dict]:
+    scores = metrics.get("pagerank") if isinstance(metrics, dict) else None
+    if not isinstance(scores, dict) or not scores:
+        return []
+    text = pagerank_centrality_text(scores)
+    if not text:
+        return []
+    return [_finding(text, 9, "pagerank")]
+
+
 def _rank_rules(metrics: dict, graph) -> list[dict]:
     found: list[dict] = []
     average = _avg_degree(metrics, graph)
@@ -413,6 +450,7 @@ _RULES = (
     _power_law_rules,
     _rank_rules,
     _comparison_rules,
+    _pagerank_rules,
 )
 
 
@@ -449,5 +487,5 @@ def pick_top_findings(findings: list[dict], n: int = 4) -> list[str]:
     return texts
 
 
-HUB_METRICS = {"max_degree", "top_degree", "hub_communities"}
+HUB_METRICS = {"max_degree", "top_degree", "hub_communities", "pagerank"}
 COMMUNITY_METRICS = {"modularity", "n_communities", "largest_size", "baseline_modularity"}

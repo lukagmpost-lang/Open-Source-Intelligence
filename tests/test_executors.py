@@ -225,6 +225,9 @@ def test_interpret_rank_names_a_hub_far_above_the_average():
     assert findings[0] == "The most central accounts are akdas, leaf1, leaf2, leaf3, and leaf4."
     assert findings[1] == "akdas is connected to 10 other accounts — more than 5x the average."
     assert findings[2] == "These five are the hubs of the network."
+    wide = [("akdas", 0.5), *[(f"n{i}", 0.01) for i in range(20)]]
+    assert "akdas is 50x more central than the typical account." in interpret_rank(wide, graph, "pagerank")
+    assert "more central" not in " ".join(interpret_rank(wide, graph, "betweenness"))
 
 
 def test_explain_node_has_six_fields(sample_run):

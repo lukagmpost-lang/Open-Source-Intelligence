@@ -35,6 +35,17 @@ def test_reddit_2012_metrics_produce_at_least_three_findings():
     assert findings == sorted(findings, key=lambda item: item["score"], reverse=True)
 
 
+def test_pagerank_far_above_the_median_names_the_top_account():
+    scores = {"akdas": 0.5, **{f"n{i}": 0.01 for i in range(20)}}
+    texts = _texts({"pagerank": scores})
+    assert "akdas is 50x more central than the typical account." in texts
+
+
+def test_pagerank_within_ten_times_the_median_adds_no_finding():
+    texts = _texts({"pagerank": {"akdas": 0.1, **{f"n{i}": 0.01 for i in range(20)}}})
+    assert not any("more central" in text for text in texts)
+
+
 def test_pick_top_findings_keeps_the_higher_score_for_one_metric():
     findings = [
         {"text": "lower", "score": 4, "metric": "components"},

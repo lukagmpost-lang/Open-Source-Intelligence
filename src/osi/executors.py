@@ -23,7 +23,13 @@ from osi.analysis import (
     pagerank,
     robustness,
 )
-from osi.findings import COMMUNITY_METRICS, HUB_METRICS, generate_findings, pick_top_findings
+from osi.findings import (
+    COMMUNITY_METRICS,
+    HUB_METRICS,
+    generate_findings,
+    pagerank_centrality_text,
+    pick_top_findings,
+)
 from osi.result import ResultObject, make_caveats
 from osi.store import get_run, load_communities, load_graph, load_metrics
 
@@ -222,6 +228,10 @@ def interpret_rank(ranked: list[tuple], graph: nx.Graph, metric: str) -> list[st
         )
     if len(ranked) >= 5:
         findings.append("These five are the hubs of the network.")
+    if metric == "pagerank":
+        central = pagerank_centrality_text(ranked)
+        if central:
+            findings.append(central)
     return findings
 
 
