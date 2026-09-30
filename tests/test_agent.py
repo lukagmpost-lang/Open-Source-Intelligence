@@ -218,7 +218,7 @@ def test_an_answer_that_uses_only_critical_nodes_asks_for_a_rewrite(monkeypatch)
     result = run_agent("simple-v1", "what should I be worried about", use_llm=True)
     rewrite = next(prompt for prompt in prompts if "did not use the results" in prompt)
     assert "structural_criticality" in rewrite
-    assert "The key numbers from that tool are: 5%, 0.05, 8%, 0.08." in rewrite
+    assert "The network is extremely fragile: removing just 5% of the top accounts by degree halves it." in rewrite
     assert "Rewrite the answer to include at least one number from each tool result." in rewrite
     assert "0.91" in result.answer
     assert "5%" in result.answer
@@ -245,7 +245,7 @@ def test_an_answer_that_uses_both_tools_is_accepted(monkeypatch):
     assert verify_numbers(result.answer, result.values)
 
 
-def test_after_two_rewrites_the_answer_is_accepted_anyway(monkeypatch):
+def test_after_two_rewrites_the_answer_is_accepted_anyway(monkeypatch, capsys):
     prompts: list[str] = []
     _install_worry_stubs(monkeypatch)
 
@@ -261,9 +261,19 @@ def test_after_two_rewrites_the_answer_is_accepted_anyway(monkeypatch):
     result = run_agent("simple-v1", "what should I be worried about", use_llm=True)
     rewrites = [prompt for prompt in prompts if "did not use the results from structural_criticality" in prompt]
     assert len(rewrites) == 2
-    assert "The key numbers from that tool are: 5%, 0.05, 8%, 0.08." in rewrites[0]
+    finding = "The network is extremely fragile: removing just 5% of the top accounts by degree halves it."
+    assert finding in rewrites[0]
+    assert result.answer.startswith(
+        "Note: the fragility analysis did not make it into this answer. "
+        "Run with --agent-full for the complete result."
+    )
     assert "The bridge score is 0.91." in result.answer
     assert "5%" not in result.answer.split("While looking at this", 1)[0]
+    logged = capsys.readouterr().err
+    assert "[agent] warning: tool structural_criticality ran but the answer did not use its findings." in logged
+    assert finding in logged
+    assert "Rewrite attempt 1 of 2." in logged
+    assert "Rewrite attempt 2 of 2." in logged
     assert verify_numbers(result.answer, result.values)
 
 
@@ -282,6 +292,16 @@ def _tool_results():
             {"akdas": 759, "findings": ["akdas has 759 connections."]},
         ),
     }
+
+
+def test_connection_count_does_not_use_structural_criticality():
+    results = _tool_results()
+    assert "structural_criticality" not in used_tools("759 connections", results)
+
+
+def test_halves_the_network_uses_structural_criticality():
+    results = _tool_results()
+    assert "structural_criticality" in used_tools("halves the network", results)
 
 
 def test_percent_expression_uses_fragility_and_multiplier_does_not():

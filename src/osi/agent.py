@@ -11,6 +11,7 @@ from __future__ import annotations
 import inspect
 import json
 import re
+import sys
 from dataclasses import dataclass, field
 
 import networkx as nx
@@ -32,6 +33,19 @@ from osi.store import get_run, load_communities, load_graph, load_metrics
 
 MAX_STEPS = 10
 _REWRITE_ATTEMPTS = 2
+_FRAGILITY_PHRASES = (
+    "halves",
+    "halving",
+    "shatters",
+    "% of the top",
+    "targeted",
+    "fragile",
+    "fragility",
+)
+_FRAGILITY_NOTE = (
+    "Note: the fragility analysis did not make it into this answer. "
+    "Run with --agent-full for the complete result."
+)
 
 WORRY_QUESTIONS = ("worry", "worried", "vulnerable", "fragile", "at risk", "should i worry")
 HEALTH_QUESTIONS = ("healthy", "health", "shape", "structure", "how is")
@@ -337,22 +351,24 @@ def _rewrite_until_used(
     system: str,
 ) -> str:
     """Ask once or twice for a rewrite that cites every tool, then keep the reply."""
-    for _attempt in range(_REWRITE_ATTEMPTS):
+    for attempt in range(1, _REWRITE_ATTEMPTS + 1):
         ignored = _ignored_tools(answer, tools, results)
         if not ignored:
             return answer
+        for name, result in ignored:
+            _log_unused_tool(name, result, attempt)
         scratchpad.append(_rewrite_message(ignored))
         try:
             reply = call_llm(_prompt(question, domain, finding_texts, hypotheses, scratchpad), system=system)
         except (OSError, TimeoutError, RuntimeError, KeyError, json.JSONDecodeError, ValueError):
-            return answer
+            return _with_fragility_note(answer, tools, results)
         try:
             kind, text, _params = parse_agent_reply(reply)
         except ValueError:
             answer = reply.strip()
             continue
         answer = text.strip() if kind == "answer" else reply.strip()
-    return answer
+    return _with_fragility_note(answer, tools, results)
 
 
 class _Times(float):
@@ -537,32 +553,76 @@ def used_tools(answer: str, tool_results: dict[str, ResultObject]) -> set[str]:
             continue
         if expr in tokens:
             used.add(owners[0])
+    if "structural_criticality" in tool_results:
+        if _uses_fragility_language(answer):
+            used.add("structural_criticality")
+        else:
+            used.discard("structural_criticality")
     return used
 
 
-def _ignored_tools(answer: str, tools: list[str], results: list[ResultObject]) -> list[tuple[str, list[str]]]:
+def _uses_fragility_language(answer: str) -> bool:
+    text = answer.casefold()
+    return any(phrase in text for phrase in _FRAGILITY_PHRASES)
+
+
+def _result_findings(result: ResultObject) -> list[str]:
+    return [str(item) for item in (result.values.get("findings") or [])]
+
+
+def _ignored_tools(answer: str, tools: list[str], results: list[ResultObject]) -> list[tuple[str, ResultObject]]:
     paired: dict[str, ResultObject] = {}
     for name, result in zip(tools, results):
         paired.setdefault(name, result)
     referenced = used_tools(answer, paired)
     ignored = []
     for name, result in paired.items():
-        if name in referenced or not top_values(result, n=5):
+        if name in referenced:
             continue
-        ignored.append((name, _key_expressions(result)))
+        if name != "structural_criticality" and not top_values(result, n=5):
+            continue
+        ignored.append((name, result))
     return ignored
 
 
-def _rewrite_message(ignored: list[tuple[str, list[str]]]) -> str:
+def _rewrite_message(ignored: list[tuple[str, ResultObject]]) -> str:
     sentences = []
-    for name, numbers in ignored:
-        shown = ", ".join(numbers)
+    for name, result in ignored:
+        if name == "structural_criticality":
+            lines = _result_findings(result)
+            shown = "\n".join(f"- {line}" for line in lines) if lines else "- (none)"
+            sentences.append(
+                "Your answer did not use the results from structural_criticality. "
+                f"The findings from that tool are:\n{shown}"
+            )
+            continue
+        shown = ", ".join(_key_expressions(result))
         sentences.append(
             f"Your answer did not use the results from {name}. "
             f"The key numbers from that tool are: {shown}."
         )
     sentences.append("Rewrite the answer to include at least one number from each tool result.")
-    return " ".join(sentences)
+    return "\n".join(sentences)
+
+
+def _log_unused_tool(name: str, result: ResultObject, attempt: int) -> None:
+    lines = _result_findings(result)
+    bullets = "\n".join(f"  - {line}" for line in lines) if lines else "  - (none)"
+    print(
+        f"[agent] warning: tool {name} ran but the answer did not use its findings. "
+        f"Findings were:\n{bullets}\n"
+        f"Rewrite attempt {attempt} of {_REWRITE_ATTEMPTS}.",
+        file=sys.stderr,
+    )
+
+
+def _with_fragility_note(answer: str, tools: list[str], results: list[ResultObject]) -> str:
+    ignored = _ignored_tools(answer, tools, results)
+    if not any(name == "structural_criticality" for name, _result in ignored):
+        return answer
+    if answer.startswith(_FRAGILITY_NOTE):
+        return answer
+    return _FRAGILITY_NOTE + "\n\n" + answer.lstrip()
 
 
 def _called_tools(scratchpad: list[str]) -> set[str]:
@@ -703,7 +763,7 @@ def _fallback_answer(results: list[ResultObject], finding_texts: list[str]) -> s
 
 def _compose(answer, observations, results, finding_texts) -> tuple[str, dict]:
     values = _base_values({}, results, finding_texts)
-    if not verify_numbers(answer, values):
+    if _FRAGILITY_NOTE not in answer and not verify_numbers(answer, values):
         answer = _fallback_answer(results, finding_texts)
     kept: list[str] = []
     for item in observations:
