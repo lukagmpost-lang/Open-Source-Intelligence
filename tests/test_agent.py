@@ -26,13 +26,13 @@ def test_system_prompt_names_the_question_and_the_tool_minimum(monkeypatch):
     run_agent("simple-v1", "what should I be worried about", use_llm=True)
     system = seen["system"]
     assert "what should I be worried about" in system
-    assert "calling at least" in system
-    assert "2 tools" in system
-    assert "critical_nodes" in system
-    assert "structural_criticality" in system
-    assert "how is this network" in system
-    assert "who is important" in system
-    assert "what communities" in system
+    assert "YOU request them" in system
+    assert "Do not ask the user to run tools" in system
+    assert "Call at least 2 tools before answering." in system
+    assert "EXAMPLE CONVERSATION" in system
+    assert "TOOL: critical_nodes" in system
+    assert "TOOL: structural_criticality" in system
+    assert "Now respond to the actual question." in system
 
 
 def test_a_worry_answer_waits_for_critical_nodes_and_criticality(monkeypatch):

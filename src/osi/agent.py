@@ -50,9 +50,10 @@ _CAVEAT = (
     "Install the full analysis with --agent-full."
 )
 
-def critical_nodes(run: str, top: int = 5) -> ResultObject:
+def critical_nodes(run: str, top: int = 5, top_n: int | None = None) -> ResultObject:
     """Accounts that sit on the most paths. Removing them breaks the network first."""
-    result = rank_nodes(run, metric="betweenness", top=int(top))
+    limit = top if top_n is None else top_n
+    result = rank_nodes(run, metric="betweenness", top=int(limit))
     result.intent = "critical_nodes"
     return result
 
@@ -72,49 +73,76 @@ _TOOL_DESCRIPTIONS = """\
 - list_communities: algorithm is louvain or leiden.
 - network_health: no parameters.
 - structural_criticality: no parameters.
-- critical_nodes: accounts that hold the network together. top is an integer.
+- critical_nodes: accounts that hold the network together. top_n is an integer.
 - connectivity: source and target are account names.
 - explain_node: node is an account name. For a community question, pass one account from the largest community.
 """
 
 _AGENT_SYSTEM_TEMPLATE = """\
-You are analyzing a graph. You have access to these tools:
+You are an agent analyzing a graph. You drive the analysis by 
+requesting tool calls. You do not wait for tools to be run — 
+YOU request them.
+
+To request a tool, respond with EXACTLY this format:
+
+TOOL: <tool_name>
+PARAMS: <json_object>
+
+For example:
+TOOL: critical_nodes
+PARAMS: {"top_n": 10}
+
+Your response will be parsed. The tool will run automatically. 
+You will see the result in the next message. Then you can request 
+another tool or provide your final answer.
+
+To give your final answer, respond with:
+
+ANSWER: <your synthesis>
+
+Do not ask the user to run tools. Do not wait for tools. Request 
+them yourself with the TOOL/PARAMS format.
+
+Available tools:
 {tool_descriptions}
 
-Here are precomputed findings about this graph:
+Precomputed findings about this graph:
 {findings}
 
-The user asked: {question}
+User question:
+{question}
 
-Decide whether you need to call more tools or answer.
+Rules:
+- Call at least 2 tools before answering.
+- For worry questions, call critical_nodes and structural_criticality.
+- Every number in your answer must appear in a tool result.
+- Keep the answer to 3-5 sentences.
 
-Before answering, verify your reasoning by calling at least 
-2 tools. For vulnerability or "what should I worry about" 
-questions, you MUST call critical_nodes and 
-structural_criticality before answering.
+EXAMPLE CONVERSATION:
 
-For health or "how is this network" questions, you MUST call 
-network_health and list_communities.
+User question: "what should I be worried about"
 
-For "who is important" questions, you MUST call rank_nodes and 
-explain_node on the top result.
+Your response:
+TOOL: critical_nodes
+PARAMS: {"top_n": 10}
 
-For "what communities" questions, you MUST call list_communities 
-and explain_node on the largest community.
+[Tool runs. You see the result in the next message.]
 
-Reply with either:
-  TOOL: <name>
-  PARAMS: <json>
+Your response:
+TOOL: structural_criticality
+PARAMS: {}
 
-or:
+[Tool runs. You see the result.]
 
-  ANSWER: <your synthesis>
+Your response:
+ANSWER: akdas has 759 connections, 22x the average. Removing 
+it disconnects 342 other accounts. The network halves after 
+removing 25% of the top accounts. The top 5 hubs sit in the 
+same community and hold the network together. How sure: stable.
 
-Cap at 10 tool calls. If you have not answered by then, respond 
-with your best synthesis.
+END EXAMPLE
 
-Do not invent numbers. Every number in the answer must appear 
-in one of the tool results.
+Now respond to the actual question.
 """
 
 _TOOL_LINE = re.compile(r"(?im)^TOOL:\s*([A-Za-z_]+)\s*$")
