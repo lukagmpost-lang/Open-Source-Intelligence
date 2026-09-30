@@ -2,7 +2,7 @@
 
 The model sees the tool list, the findings already on hand, and a scratchpad
 of every result so far. It answers with TOOL/PARAMS or with ANSWER. The loop
-stops at eight turns. Numbers in the final answer have to come from those
+stops at ten turns. Numbers in the final answer have to come from those
 results.
 """
 
@@ -30,7 +30,25 @@ from osi.hypotheses import find_unasked_observations, generate_hypotheses, infer
 from osi.result import ResultObject
 from osi.store import get_run, load_communities, load_graph, load_metrics
 
-MAX_STEPS = 8
+MAX_STEPS = 10
+_MAX_REJECTIONS = 3
+
+WORRY_QUESTIONS = ("worry", "worried", "vulnerable", "fragile", "at risk", "should i worry")
+HEALTH_QUESTIONS = ("healthy", "health", "shape", "structure", "how is")
+IMPORTANT_QUESTIONS = ("important", "central", "key", "hubs", "who matters")
+COMMUNITY_QUESTIONS = ("communities", "groups", "clusters")
+
+_REQUIRED_BY_TYPE = (
+    (WORRY_QUESTIONS, ("critical_nodes", "structural_criticality")),
+    (HEALTH_QUESTIONS, ("network_health", "list_communities")),
+    (IMPORTANT_QUESTIONS, ("rank_nodes", "explain_node")),
+    (COMMUNITY_QUESTIONS, ("list_communities", "explain_node")),
+)
+
+_CAVEAT = (
+    "Warning: this answer does not include structural_criticality. "
+    "Install the full analysis with --agent-full."
+)
 
 def critical_nodes(run: str, top: int = 5) -> ResultObject:
     """Accounts that sit on the most paths. Removing them breaks the network first."""
@@ -92,7 +110,7 @@ or:
 
   ANSWER: <your synthesis>
 
-Cap at 8 tool calls. If you have not answered by then, respond 
+Cap at 10 tool calls. If you have not answered by then, respond 
 with your best synthesis.
 
 Do not invent numbers. Every number in the answer must appear 
@@ -128,14 +146,19 @@ def run_agent(run_id: str, question: str, use_llm: bool = True) -> AgentResult:
     tools: list[str] = []
     scratchpad: list[str] = []
     answer = ""
+    incomplete = False
     if use_llm:
-        answer = _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tools, results)
+        answer, incomplete = _react(
+            question, domain, finding_texts, hypotheses, run_id, scratchpad, tools, results
+        )
     else:
         _run_plan(run_id, tools, results, scratchpad)
     if not answer:
         answer = _fallback_answer(results, finding_texts)
     observations = find_unasked_observations(graph, snapshot["hypothesis_metrics"], domain, question)
     text, values = _compose(answer, observations, results, finding_texts)
+    if incomplete:
+        text = text.rstrip() + "\n\n" + _CAVEAT
     return AgentResult(answer=text, tools=tools, values=values, results=results)
 
 
@@ -180,8 +203,9 @@ def parse_agent_reply(text: str) -> tuple[str, str, dict]:
     return "answer", body, {}
 
 
-def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tools, results) -> str:
+def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tools, results) -> tuple[str, bool]:
     accepted = ""
+    rejections = 0
     for _step in range(MAX_STEPS):
         prompt = _prompt(question, domain, finding_texts, hypotheses, scratchpad)
         try:
@@ -196,11 +220,10 @@ def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tool
         if kind == "answer":
             missing = _missing_tools(question, tools)
             if missing:
-                scratchpad.append(
-                    "Do not answer yet. Call at least 2 tools first. Still required: "
-                    + ", ".join(missing)
-                    + "."
-                )
+                if rejections >= _MAX_REJECTIONS:
+                    return payload.strip(), True
+                rejections += 1
+                scratchpad.append(_rejection_message(missing))
                 continue
             candidate = payload.strip()
             values = _base_values({}, results, [])
@@ -224,7 +247,7 @@ def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tool
         tools.append(name)
         results.append(result)
         scratchpad.append(f"TOOL RESULT {name}: {_summarize(result)}")
-    return accepted
+    return accepted, False
 
 
 def _run_plan(run_id: str, tools: list[str], results: list[ResultObject], scratchpad: list[str]) -> None:
@@ -251,24 +274,26 @@ def _system_prompt(question: str, finding_texts: list[str]) -> str:
 
 
 def _required_tools(question: str) -> list[str]:
-    """Tools a question type must call before an answer is accepted."""
+    """Tools the question type must call before an answer is accepted."""
     text = question.casefold()
-    if "vulnerab" in text or "worr" in text:
-        return ["critical_nodes", "structural_criticality"]
-    if "how is this network" in text or "how healthy" in text or "network health" in text:
-        return ["network_health", "list_communities"]
-    if "who is important" in text or "who are important" in text or "most important" in text:
-        return ["rank_nodes", "explain_node"]
-    if "what communities" in text or "which communities" in text or "communities exist" in text:
-        return ["list_communities", "explain_node"]
+    for phrases, required in _REQUIRED_BY_TYPE:
+        if any(phrase in text for phrase in phrases):
+            return list(required)
     return []
 
 
 def _missing_tools(question: str, tools: list[str]) -> list[str]:
-    missing = [name for name in _required_tools(question) if name not in tools]
-    if len(tools) >= 2 or missing:
-        return missing
-    return ["a second tool" if tools else "two tools"]
+    """Required tools that are not yet in the scratchpad."""
+    return [name for name in _required_tools(question) if name not in tools]
+
+
+def _rejection_message(missing: list[str]) -> str:
+    names = ", ".join(missing)
+    return (
+        "Your answer was rejected. Before answering, you must "
+        f"call: {names}. Please call the missing tool now "
+        "with appropriate parameters."
+    )
 
 
 def _prompt(question, domain, finding_texts, hypotheses, scratchpad) -> str:

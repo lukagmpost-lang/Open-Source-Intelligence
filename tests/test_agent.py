@@ -48,15 +48,80 @@ def test_a_worry_answer_waits_for_critical_nodes_and_criticality(monkeypatch):
     assert "structural_criticality" in prompts[1]
 
 
-def test_the_loop_stops_after_eight_tool_calls(monkeypatch):
+def test_the_loop_stops_after_ten_tool_calls(monkeypatch):
     def always_tool(prompt, **kwargs):
         return 'TOOL: rank_nodes\nPARAMS: {"metric": "degree", "top": 3}'
 
     monkeypatch.setattr("osi.agent.call_llm", always_tool)
-    result = run_agent("simple-v1", "who matters here", use_llm=True)
-    assert len(result.tools) == 8
-    assert result.tools == ["rank_nodes"] * 8
+    result = run_agent("simple-v1", "describe the links", use_llm=True)
+    assert len(result.tools) == 10
+    assert result.tools == ["rank_nodes"] * 10
     assert "While looking at this, I also noticed:" in result.answer
+
+
+def test_worry_answer_with_only_critical_nodes_is_rejected(monkeypatch):
+    prompts: list[str] = []
+
+    def only_critical_nodes(prompt, **kwargs):
+        prompts.append(prompt)
+        if len(prompts) == 1:
+            return 'TOOL: critical_nodes\nPARAMS: {"top": 3}'
+        return "ANSWER: One account sits on too many paths."
+
+    monkeypatch.setattr("osi.agent.call_llm", only_critical_nodes)
+    result = run_agent("simple-v1", "what should I be worried about", use_llm=True)
+    feedback = next(prompt for prompt in prompts if "Your answer was rejected." in prompt)
+    assert "call: structural_criticality." in feedback
+    assert "Please call the missing tool now" in feedback
+    assert "structural_criticality" not in result.tools
+    assert result.tools == ["critical_nodes"]
+
+
+def test_rejection_prompts_the_model_to_call_structural_criticality(monkeypatch):
+    prompts: list[str] = []
+
+    def answer_after_one_tool(prompt, **kwargs):
+        prompts.append(prompt)
+        if "TOOL RESULT" not in prompt:
+            return 'TOOL: critical_nodes\nPARAMS: {"top": 3}'
+        return "ANSWER: One account sits on too many paths."
+
+    monkeypatch.setattr("osi.agent.call_llm", answer_after_one_tool)
+    run_agent("simple-v1", "what should I be worried about", use_llm=True)
+    follow_up = next(prompt for prompt in prompts if "Your answer was rejected." in prompt)
+    assert "structural_criticality" in follow_up
+    assert "Please call the missing tool now with appropriate parameters." in follow_up
+
+
+def test_three_rejections_proceed_with_a_caveat(monkeypatch):
+    def keep_answering(prompt, **kwargs):
+        if "TOOL RESULT" not in prompt:
+            return 'TOOL: critical_nodes\nPARAMS: {"top": 3}'
+        return "ANSWER: One account sits on too many paths."
+
+    monkeypatch.setattr("osi.agent.call_llm", keep_answering)
+    result = run_agent("simple-v1", "what should I be worried about", use_llm=True)
+    assert "One account sits on too many paths." in result.answer
+    assert (
+        "Warning: this answer does not include structural_criticality. "
+        "Install the full analysis with --agent-full."
+    ) in result.answer
+    assert "structural_criticality" not in result.tools
+
+
+def test_worry_question_with_both_required_tools_passes(monkeypatch):
+    def both_tools(prompt, **kwargs):
+        if "TOOL RESULT structural_criticality" in prompt:
+            return "ANSWER: The hubs hold this network together."
+        if "TOOL RESULT critical_nodes" in prompt:
+            return "TOOL: structural_criticality\nPARAMS: {}"
+        return 'TOOL: critical_nodes\nPARAMS: {"top": 3}'
+
+    monkeypatch.setattr("osi.agent.call_llm", both_tools)
+    result = run_agent("simple-v1", "what should I be worried about", use_llm=True)
+    assert result.tools[:2] == ["critical_nodes", "structural_criticality"]
+    assert "The hubs hold this network together." in result.answer
+    assert "Warning:" not in result.answer
 
 
 def test_worry_question_on_reddit_2008_uses_three_tools(monkeypatch):
