@@ -163,6 +163,110 @@ def test_worry_question_on_reddit_2008_uses_three_tools(monkeypatch):
     assert len(bullets) >= 2
 
 
+def _stub_result(intent: str, values: dict) -> ResultObject:
+    return ResultObject(
+        intent=intent,
+        params={},
+        values=values,
+        method="exact",
+        sample_size=None,
+        trust="stable",
+        caveats=[],
+        runtime_ms=0,
+    )
+
+
+def _install_worry_stubs(monkeypatch):
+    monkeypatch.setitem(
+        _TOOLS,
+        "critical_nodes",
+        lambda run, **kwargs: _stub_result(
+            "critical_nodes",
+            {"hub": 0.91, "findings": ["The bridge score is 0.91."]},
+        ),
+    )
+    monkeypatch.setitem(
+        _TOOLS,
+        "structural_criticality",
+        lambda run, **kwargs: _stub_result(
+            "structural_criticality",
+            {
+                "largest": 0.08,
+                "findings": [
+                    "The network is extremely fragile: removing just 5% of the top accounts by degree halves it."
+                ],
+            },
+        ),
+    )
+
+
+def test_an_answer_that_uses_only_critical_nodes_asks_for_a_rewrite(monkeypatch):
+    prompts: list[str] = []
+    _install_worry_stubs(monkeypatch)
+
+    def only_the_bridge(prompt, **kwargs):
+        prompts.append(prompt)
+        if "did not use the results" in prompt:
+            return "ANSWER: The bridge score is 0.91 and removing 5% of the top accounts halves the network."
+        if "TOOL RESULT structural_criticality" in prompt:
+            return "ANSWER: The bridge score is 0.91."
+        if "TOOL RESULT critical_nodes" in prompt:
+            return "TOOL: structural_criticality\nPARAMS: {}"
+        return 'TOOL: critical_nodes\nPARAMS: {"top_n": 5}'
+
+    monkeypatch.setattr("osi.agent.call_llm", only_the_bridge)
+    result = run_agent("simple-v1", "what should I be worried about", use_llm=True)
+    rewrite = next(prompt for prompt in prompts if "did not use the results" in prompt)
+    assert "structural_criticality" in rewrite
+    assert "The key numbers from that tool are: 5, 0.08." in rewrite
+    assert "Rewrite the answer to include at least one number from each tool result." in rewrite
+    assert "0.91" in result.answer
+    assert "5%" in result.answer
+    assert verify_numbers(result.answer, result.values)
+
+
+def test_an_answer_that_uses_both_tools_is_accepted(monkeypatch):
+    prompts: list[str] = []
+    _install_worry_stubs(monkeypatch)
+
+    def both(prompt, **kwargs):
+        prompts.append(prompt)
+        if "TOOL RESULT structural_criticality" in prompt:
+            return "ANSWER: The bridge score is 0.91 and removing 5% of the top accounts halves the network."
+        if "TOOL RESULT critical_nodes" in prompt:
+            return "TOOL: structural_criticality\nPARAMS: {}"
+        return 'TOOL: critical_nodes\nPARAMS: {"top_n": 5}'
+
+    monkeypatch.setattr("osi.agent.call_llm", both)
+    result = run_agent("simple-v1", "what should I be worried about", use_llm=True)
+    assert all("did not use the results" not in prompt for prompt in prompts)
+    assert "0.91" in result.answer
+    assert "5%" in result.answer
+    assert verify_numbers(result.answer, result.values)
+
+
+def test_after_two_rewrites_the_answer_is_accepted_anyway(monkeypatch):
+    prompts: list[str] = []
+    _install_worry_stubs(monkeypatch)
+
+    def still_ignores_fragility(prompt, **kwargs):
+        prompts.append(prompt)
+        if "TOOL RESULT critical_nodes" not in prompt:
+            return 'TOOL: critical_nodes\nPARAMS: {"top_n": 5}'
+        if "TOOL RESULT structural_criticality" not in prompt:
+            return "TOOL: structural_criticality\nPARAMS: {}"
+        return "ANSWER: The bridge score is 0.91."
+
+    monkeypatch.setattr("osi.agent.call_llm", still_ignores_fragility)
+    result = run_agent("simple-v1", "what should I be worried about", use_llm=True)
+    rewrites = [prompt for prompt in prompts if "did not use the results from structural_criticality" in prompt]
+    assert len(rewrites) == 2
+    assert "The key numbers from that tool are: 5, 0.08." in rewrites[0]
+    assert "The bridge score is 0.91." in result.answer
+    assert "5%" not in result.answer.split("While looking at this", 1)[0]
+    assert verify_numbers(result.answer, result.values)
+
+
 def test_ask_agent_flag_returns_the_agent_answer(monkeypatch):
     monkeypatch.setattr(
         "osi.ask.run_agent",

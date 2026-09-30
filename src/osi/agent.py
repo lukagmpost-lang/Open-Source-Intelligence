@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 import networkx as nx
 
 from osi.analysis import _modularity_of
-from osi.answer import call_llm, verify_numbers
+from osi.answer import _NUMBER, call_llm, verify_numbers
 from osi.executors import (
     connectivity,
     explain_node,
@@ -31,6 +31,7 @@ from osi.result import ResultObject
 from osi.store import get_run, load_communities, load_graph, load_metrics
 
 MAX_STEPS = 10
+_REWRITE_ATTEMPTS = 2
 
 WORRY_QUESTIONS = ("worry", "worried", "vulnerable", "fragile", "at risk", "should i worry")
 HEALTH_QUESTIONS = ("healthy", "health", "shape", "structure", "how is")
@@ -246,7 +247,17 @@ def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tool
             called = _called_tools(scratchpad)
             missing = [name for name in _required_tools(question) if name not in called]
             if not missing:
-                return payload.strip()
+                return _rewrite_until_used(
+                    payload.strip(),
+                    question,
+                    domain,
+                    finding_texts,
+                    hypotheses,
+                    scratchpad,
+                    tools,
+                    results,
+                    system,
+                )
             rows = []
             for name in missing:
                 summary = _auto_run(run_id, name, results, tools, scratchpad)
@@ -259,10 +270,21 @@ def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tool
             try:
                 follow_kind, follow_text, _params = parse_agent_reply(follow)
             except ValueError:
-                return follow.strip()
-            if follow_kind == "answer":
-                return follow_text.strip()
-            return follow.strip()
+                follow_text = follow
+            else:
+                if follow_kind != "answer":
+                    follow_text = follow
+            return _rewrite_until_used(
+                follow_text.strip(),
+                question,
+                domain,
+                finding_texts,
+                hypotheses,
+                scratchpad,
+                tools,
+                results,
+                system,
+            )
         name = payload
         if name not in _TOOLS:
             scratchpad.append(f"Unknown tool {name}. Choose one from the tool list.")
@@ -301,6 +323,115 @@ def _required_tools(question: str) -> list[str]:
         if any(phrase in text for phrase in phrases):
             return list(required)
     return []
+
+
+def _rewrite_until_used(
+    answer: str,
+    question: str,
+    domain: str,
+    finding_texts: list[str],
+    hypotheses: list[dict],
+    scratchpad: list[str],
+    tools: list[str],
+    results: list[ResultObject],
+    system: str,
+) -> str:
+    """Ask once or twice for a rewrite that cites every tool, then keep the reply."""
+    for _attempt in range(_REWRITE_ATTEMPTS):
+        ignored = _ignored_tools(answer, tools, results)
+        if not ignored:
+            return answer
+        scratchpad.append(_rewrite_message(ignored))
+        try:
+            reply = call_llm(_prompt(question, domain, finding_texts, hypotheses, scratchpad), system=system)
+        except (OSError, TimeoutError, RuntimeError, KeyError, json.JSONDecodeError, ValueError):
+            return answer
+        try:
+            kind, text, _params = parse_agent_reply(reply)
+        except ValueError:
+            answer = reply.strip()
+            continue
+        answer = text.strip() if kind == "answer" else reply.strip()
+    return answer
+
+
+def _top_numbers(result: ResultObject, limit: int = 3) -> list[str]:
+    """Up to three key numbers, preferring the ones written in the findings."""
+    found: list[str] = []
+    seen: set[str] = set()
+
+    def add(token: str) -> None:
+        if token in seen:
+            return
+        seen.add(token)
+        found.append(token)
+
+    for item in result.values.get("findings") or []:
+        for match in _NUMBER.finditer(str(item)):
+            add(match.group(0))
+            if len(found) == limit:
+                return found
+    numbers: list[float] = []
+    _collect_numbers(result.values, numbers)
+    for number in sorted(numbers, key=lambda value: abs(value), reverse=True):
+        add(_plain_number(number))
+        if len(found) == limit:
+            break
+    return found
+
+
+def _collect_numbers(value, found: list[float]) -> None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key == "findings":
+                continue
+            _collect_numbers(item, found)
+        return
+    if isinstance(value, list):
+        for item in value:
+            _collect_numbers(item, found)
+        return
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return
+    found.append(float(value))
+
+
+def _plain_number(number: float) -> str:
+    if number.is_integer():
+        return str(int(number))
+    return str(number)
+
+
+def _answer_has_number(answer: str, token: str) -> bool:
+    target = float(token)
+    for match in _NUMBER.finditer(answer):
+        if float(match.group(0)) == target:
+            return True
+    return False
+
+
+def _ignored_tools(answer: str, tools: list[str], results: list[ResultObject]) -> list[tuple[str, list[str]]]:
+    ignored = []
+    for name, result in zip(tools, results):
+        numbers = _top_numbers(result)
+        if not numbers:
+            continue
+        if any(_answer_has_number(answer, token) for token in numbers):
+            continue
+        ignored.append((name, numbers))
+    return ignored
+
+
+def _rewrite_message(ignored: list[tuple[str, list[str]]]) -> str:
+    sentences = []
+    for name, numbers in ignored:
+        shown = ", ".join(numbers)
+        sentences.append(
+            f"Your answer did not use the results from {name}. "
+            f"The key numbers from that tool are: {shown}."
+        )
+    sentences.append("Rewrite the answer to include at least one number from each tool result.")
+    return " ".join(sentences)
 
 
 def _called_tools(scratchpad: list[str]) -> set[str]:

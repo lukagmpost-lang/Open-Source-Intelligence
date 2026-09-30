@@ -448,6 +448,7 @@ def structural_criticality(run: str) -> ResultObject:
         strategy: {ratio: stats["largest"] for ratio, stats in measured[strategy].items()}
         for strategy in ("random", "degree", "betweenness")
     }
+    values.update(_criticality_summary(measured))
     return _finish(
         "structural_criticality",
         {"run": run, "runs": trials},
@@ -459,6 +460,98 @@ def structural_criticality(run: str) -> ResultObject:
         started,
         n_edges=graph.number_of_edges(),
     )
+
+
+def _curve_value(curve: dict, target: float) -> float | None:
+    for key, value in curve.items():
+        try:
+            ratio = float(key)
+            largest = float(value)
+        except (TypeError, ValueError):
+            continue
+        if abs(ratio - target) < 1e-9:
+            return largest
+    return None
+
+
+def _halving_ratio(curve: dict) -> float | None:
+    """First removal ratio where the largest piece falls below half."""
+    ratios = []
+    for key, value in curve.items():
+        try:
+            ratio = float(key)
+            largest = float(value)
+        except (TypeError, ValueError):
+            continue
+        ratios.append((ratio, largest))
+    for ratio, largest in sorted(ratios):
+        if ratio > 0 and largest < 0.5:
+            return ratio
+    return None
+
+
+def _criticality_findings(
+    degree: dict,
+    betweenness: dict,
+    random: dict,
+    n_components: float | None,
+) -> list[str]:
+    """Plain sentences for how fast each removal strategy breaks the network."""
+    halving_degree = _halving_ratio(degree)
+    halving_random = _halving_ratio(random)
+    frac_at_30 = _curve_value(degree, 0.30)
+    findings: list[str] = []
+    if halving_degree is None or halving_degree > 0.30:
+        findings.append(
+            "The network is resilient: it survives removing 30% of the top accounts without halving."
+        )
+    elif halving_degree <= 0.05:
+        findings.append(
+            "The network is extremely fragile: removing just "
+            f"{halving_degree * 100:.0f}% of the top accounts by degree halves it."
+        )
+    elif halving_degree <= 0.20:
+        findings.append(
+            "The network is fragile: removing "
+            f"{halving_degree * 100:.0f}% of the top accounts halves it."
+        )
+    else:
+        findings.append(
+            "The network is moderately fragile: removing "
+            f"{halving_degree * 100:.0f}% halves it."
+        )
+    degree_breaks_sooner = halving_degree is not None and (
+        halving_random is None or halving_random > halving_degree * 3
+    )
+    if degree_breaks_sooner:
+        findings.append(
+            "Removing random accounts has much less effect — this is a targeted-vulnerability pattern."
+        )
+    if frac_at_30 is not None and frac_at_30 < 0.10 and n_components is not None:
+        pieces = int(round(n_components))
+        findings.append(
+            f"Removing 30% of the top accounts shatters the network into {pieces} disconnected pieces."
+        )
+    return findings
+
+
+def _criticality_summary(measured: dict) -> dict:
+    degree = {ratio: stats["largest"] for ratio, stats in measured["degree"].items()}
+    betweenness = {ratio: stats["largest"] for ratio, stats in measured["betweenness"].items()}
+    random = {ratio: stats["largest"] for ratio, stats in measured["random"].items()}
+    components = None
+    for ratio, stats in measured["degree"].items():
+        if abs(float(ratio) - 0.30) < 1e-9:
+            components = float(stats["components"])
+            break
+    summary = {
+        "halving_degree": _halving_ratio(degree),
+        "halving_betweenness": _halving_ratio(betweenness),
+        "halving_random": _halving_ratio(random),
+        "frac_at_30_degree": _curve_value(degree, 0.30),
+        "findings": _criticality_findings(degree, betweenness, random, components),
+    }
+    return summary
 
 
 def _path_values(graph: nx.Graph, source: Any, target: Any) -> dict:

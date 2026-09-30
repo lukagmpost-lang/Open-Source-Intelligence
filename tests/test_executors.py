@@ -67,7 +67,8 @@ def test_each_executor_fills_a_result(sample_run):
     assert isinstance(health.values["findings"], list)
     assert health.values["findings"]
     assert all("modularity" not in item.lower() for item in health.values["findings"])
-    assert set(critical.values) == {"random", "degree", "betweenness"}
+    assert {"random", "degree", "betweenness", "findings"} <= set(critical.values)
+    assert any("%" in item for item in critical.values["findings"])
     assert communities.trust in {"stable", "moderate", "unstable"}
     assert sum(communities.values["sizes"]) == _graph.number_of_nodes()
 
@@ -135,6 +136,31 @@ def test_large_criticality_uses_ten_trials(sample_run, monkeypatch):
     assert result.sample_size == 10
     assert result.params["runs"] == 10
     assert result.trust == "moderate"
+
+
+def test_structural_criticality_findings_name_the_halving_percentage():
+    from osi.executors import _criticality_findings
+
+    degree = {0.0: 1.0, 0.01: 0.8, 0.05: 0.4, 0.10: 0.2, 0.30: 0.05}
+    betweenness = {0.0: 1.0, 0.20: 0.4}
+    random = {0.0: 1.0, 0.30: 0.9}
+    findings = _criticality_findings(degree, betweenness, random, n_components=40)
+    assert findings[0] == (
+        "The network is extremely fragile: removing just 5% of the top accounts by degree halves it."
+    )
+    assert "Removing random accounts has much less effect — this is a targeted-vulnerability pattern." in findings
+    assert "Removing 30% of the top accounts shatters the network into 40 disconnected pieces." in findings
+
+    fragile = _criticality_findings({0.0: 1.0, 0.10: 0.4, 0.30: 0.2}, {}, {0.0: 1.0, 0.20: 0.4}, None)
+    assert fragile[0] == "The network is fragile: removing 10% of the top accounts halves it."
+
+    moderate = _criticality_findings({0.0: 1.0, 0.30: 0.4}, {}, {0.0: 1.0, 0.30: 0.4}, None)
+    assert moderate == ["The network is moderately fragile: removing 30% halves it."]
+
+    resilient = _criticality_findings({0.0: 1.0, 0.30: 0.8}, {}, {0.0: 1.0, 0.30: 0.7}, None)
+    assert resilient == [
+        "The network is resilient: it survives removing 30% of the top accounts without halving."
+    ]
 
 
 def test_interpret_health_keeps_the_three_strongest_findings():
