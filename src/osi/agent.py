@@ -31,7 +31,6 @@ from osi.result import ResultObject
 from osi.store import get_run, load_communities, load_graph, load_metrics
 
 MAX_STEPS = 10
-_MAX_REJECTIONS = 3
 
 WORRY_QUESTIONS = ("worry", "worried", "vulnerable", "fragile", "at risk", "should i worry")
 HEALTH_QUESTIONS = ("healthy", "health", "shape", "structure", "how is")
@@ -45,10 +44,14 @@ _REQUIRED_BY_TYPE = (
     (COMMUNITY_QUESTIONS, ("list_communities", "explain_node")),
 )
 
-_CAVEAT = (
-    "Warning: this answer does not include structural_criticality. "
-    "Install the full analysis with --agent-full."
-)
+_AUTO_PARAMS = {
+    "critical_nodes": {"top_n": 10},
+    "structural_criticality": {},
+    "network_health": {},
+    "list_communities": {"algorithm": "louvain"},
+    "rank_nodes": {"metric": "pagerank", "top": 10},
+}
+
 
 def critical_nodes(run: str, top: int = 5, top_n: int | None = None) -> ResultObject:
     """Accounts that sit on the most paths. Removing them breaks the network first."""
@@ -174,19 +177,14 @@ def run_agent(run_id: str, question: str, use_llm: bool = True) -> AgentResult:
     tools: list[str] = []
     scratchpad: list[str] = []
     answer = ""
-    incomplete = False
     if use_llm:
-        answer, incomplete = _react(
-            question, domain, finding_texts, hypotheses, run_id, scratchpad, tools, results
-        )
+        answer = _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tools, results)
     else:
         _run_plan(run_id, tools, results, scratchpad)
     if not answer:
         answer = _fallback_answer(results, finding_texts)
     observations = find_unasked_observations(graph, snapshot["hypothesis_metrics"], domain, question)
     text, values = _compose(answer, observations, results, finding_texts)
-    if incomplete:
-        text = text.rstrip() + "\n\n" + _CAVEAT
     return AgentResult(answer=text, tools=tools, values=values, results=results)
 
 
@@ -231,13 +229,12 @@ def parse_agent_reply(text: str) -> tuple[str, str, dict]:
     return "answer", body, {}
 
 
-def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tools, results) -> tuple[str, bool]:
-    accepted = ""
-    rejections = 0
+def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tools, results) -> str:
+    system = _system_prompt(question, finding_texts)
     for _step in range(MAX_STEPS):
         prompt = _prompt(question, domain, finding_texts, hypotheses, scratchpad)
         try:
-            reply = call_llm(prompt, system=_system_prompt(question, finding_texts))
+            reply = call_llm(prompt, system=system)
         except (OSError, TimeoutError, RuntimeError, KeyError, json.JSONDecodeError, ValueError):
             break
         try:
@@ -246,36 +243,32 @@ def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tool
             scratchpad.append(f"The previous PARAMS could not be read ({error}). Call the tool again.")
             continue
         if kind == "answer":
-            missing = _missing_tools(question, tools)
-            if missing:
-                if rejections >= _MAX_REJECTIONS:
-                    return payload.strip(), True
-                rejections += 1
-                scratchpad.append(_rejection_message(missing))
-                continue
-            candidate = payload.strip()
-            values = _base_values({}, results, [])
-            if candidate and verify_numbers(candidate, values):
-                accepted = candidate
+            called = _called_tools(scratchpad)
+            missing = [name for name in _required_tools(question) if name not in called]
+            if not missing:
+                return payload.strip()
+            rows = []
+            for name in missing:
+                summary = _auto_run(run_id, name, results, tools, scratchpad)
+                rows.append(f"{name} → {summary}")
+            scratchpad.append(_auto_note(rows))
+            try:
+                follow = call_llm(_prompt(question, domain, finding_texts, hypotheses, scratchpad), system=system)
+            except (OSError, TimeoutError, RuntimeError, KeyError, json.JSONDecodeError, ValueError):
                 break
-            scratchpad.append(
-                "That answer used a number that is not in the tool results. "
-                "Answer again using only numbers that appear in the scratchpad."
-            )
-            continue
+            try:
+                follow_kind, follow_text, _params = parse_agent_reply(follow)
+            except ValueError:
+                return follow.strip()
+            if follow_kind == "answer":
+                return follow_text.strip()
+            return follow.strip()
         name = payload
         if name not in _TOOLS:
             scratchpad.append(f"Unknown tool {name}. Choose one from the tool list.")
             continue
-        try:
-            result = _call_tool(run_id, name, params)
-        except (LookupError, ValueError, TypeError, KeyError) as error:
-            scratchpad.append(f"TOOL RESULT {name}: {error}")
-            continue
-        tools.append(name)
-        results.append(result)
-        scratchpad.append(f"TOOL RESULT {name}: {_summarize(result)}")
-    return accepted, False
+        _record_tool(run_id, name, params, tools, results, scratchpad)
+    return ""
 
 
 def _run_plan(run_id: str, tools: list[str], results: list[ResultObject], scratchpad: list[str]) -> None:
@@ -310,18 +303,58 @@ def _required_tools(question: str) -> list[str]:
     return []
 
 
-def _missing_tools(question: str, tools: list[str]) -> list[str]:
-    """Required tools that are not yet in the scratchpad."""
-    return [name for name in _required_tools(question) if name not in tools]
+def _called_tools(scratchpad: list[str]) -> set[str]:
+    """Tool names that already have a result line in the scratchpad."""
+    called = set()
+    for line in scratchpad:
+        if not line.startswith("TOOL RESULT "):
+            continue
+        called.add(line.split(":", 1)[0].removeprefix("TOOL RESULT ").strip())
+    return called
 
 
-def _rejection_message(missing: list[str]) -> str:
-    names = ", ".join(missing)
-    return (
-        "Your answer was rejected. Before answering, you must "
-        f"call: {names}. Please call the missing tool now "
-        "with appropriate parameters."
-    )
+def _auto_params(name: str, results: list[ResultObject]) -> dict:
+    params = dict(_AUTO_PARAMS.get(name, {}))
+    if name == "explain_node":
+        params["node"] = _named_account(results)
+    return params
+
+
+def _named_account(results: list[ResultObject]) -> str:
+    for result in results:
+        for key in result.values:
+            if key != "findings":
+                return str(key)
+    return ""
+
+
+def _auto_run(run_id: str, name: str, results, tools, scratchpad) -> str:
+    summary = _record_tool(run_id, name, _auto_params(name, results), tools, results, scratchpad)
+    return summary
+
+
+def _auto_note(rows: list[str]) -> str:
+    lines = [
+        "The following required tools were run automatically because you did not call them:",
+        *rows,
+        "",
+        "Now write your final answer using all the results in the scratchpad.",
+    ]
+    return "\n".join(lines)
+
+
+def _record_tool(run_id: str, name: str, params: dict | None, tools, results, scratchpad) -> str:
+    try:
+        result = _call_tool(run_id, name, params)
+    except (LookupError, ValueError, TypeError, KeyError) as error:
+        summary = str(error)
+        scratchpad.append(f"TOOL RESULT {name}: {summary}")
+        return summary
+    tools.append(name)
+    results.append(result)
+    summary = _summarize(result)
+    scratchpad.append(f"TOOL RESULT {name}: {summary}")
+    return summary
 
 
 def _prompt(question, domain, finding_texts, hypotheses, scratchpad) -> str:
