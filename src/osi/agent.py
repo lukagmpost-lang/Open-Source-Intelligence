@@ -26,6 +26,13 @@ from osi.executors import (
     rank_nodes,
     structural_criticality,
 )
+from osi.failure_modes import (
+    DOMAIN_MODELS,
+    apply_failure_modes,
+    quantifying_tools,
+    rank_by_question,
+    worry_prompt,
+)
 from osi.findings import generate_findings, pick_top_findings
 from osi.hypotheses import find_unasked_observations, generate_hypotheses, infer_domain
 from osi.result import ResultObject
@@ -194,8 +201,23 @@ def run_agent(run_id: str, question: str, use_llm: bool = True) -> AgentResult:
     tools: list[str] = []
     scratchpad: list[str] = []
     answer = ""
+    prepared = False
+    if use_llm and str(domain).casefold() in DOMAIN_MODELS:
+        prepared = _prepare_failure_modes(
+            run_id, graph, domain, question, snapshot, tools, results, scratchpad
+        )
     if use_llm:
-        answer = _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tools, results)
+        answer = _react(
+            question,
+            domain,
+            finding_texts,
+            hypotheses,
+            run_id,
+            scratchpad,
+            tools,
+            results,
+            prepared=prepared,
+        )
     else:
         _run_plan(run_id, tools, results, scratchpad)
     if not answer:
@@ -246,7 +268,40 @@ def parse_agent_reply(text: str) -> tuple[str, str, dict]:
     return "answer", body, {}
 
 
-def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tools, results) -> str:
+def _prepare_failure_modes(run_id, graph, domain, question, snapshot, tools, results, scratchpad) -> bool:
+    """Measure health, match the domain's failure modes, then quantify the top ones."""
+    _record_tool(run_id, "network_health", {}, tools, results, scratchpad)
+    metrics = dict(snapshot.get("hypothesis_metrics") or {})
+    if results and results[-1].intent == "network_health":
+        for key, value in results[-1].values.items():
+            if key != "findings":
+                metrics[key] = value
+    matched = apply_failure_modes(metrics, graph, domain)
+    ranked = rank_by_question(matched, question)[:3]
+    for name, params in quantifying_tools(ranked, graph):
+        _record_tool(run_id, name, params, tools, results, scratchpad)
+    text = str(question or "").casefold()
+    if "worried" in text or "worry" in text:
+        scratchpad.append(worry_prompt(domain, ranked))
+    elif ranked:
+        lines = [f"Failure modes for this {domain} network:"]
+        for mode in ranked:
+            lines.append(f"- {mode['name']} ({mode['severity']}): {mode['description']}")
+        scratchpad.append("\n".join(lines))
+    return True
+
+
+def _react(
+    question,
+    domain,
+    finding_texts,
+    hypotheses,
+    run_id,
+    scratchpad,
+    tools,
+    results,
+    prepared: bool = False,
+) -> str:
     system = _system_prompt(question, finding_texts)
     for _step in range(MAX_STEPS):
         prompt = _prompt(question, domain, finding_texts, hypotheses, scratchpad)
@@ -261,7 +316,11 @@ def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tool
             continue
         if kind == "answer":
             called = _called_tools(scratchpad)
-            missing = [name for name in _required_tools(question) if name not in called]
+            # Failure modes already chose the measurements. Do not add the old required set.
+            if prepared:
+                missing = []
+            else:
+                missing = [name for name in _required_tools(question) if name not in called]
             if not missing:
                 return _rewrite_until_used(
                     payload.strip(),

@@ -158,7 +158,7 @@ def test_worry_question_on_reddit_2008_uses_three_tools(monkeypatch):
 
     monkeypatch.setattr("osi.agent.call_llm", scripted)
     result = run_agent("r2008-v2", "what should I be worried about", use_llm=True)
-    assert result.tools[:3] == ["rank_nodes", "list_communities", "explain_node"]
+    assert {"rank_nodes", "list_communities", "explain_node"} <= set(result.tools)
     assert len(result.tools) >= 3
     assert verify_numbers(result.answer, result.values)
     section = result.answer.split("While looking at this, I also noticed:", 1)[1]
