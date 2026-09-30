@@ -36,7 +36,7 @@ def test_system_prompt_names_the_question_and_the_tool_minimum(monkeypatch):
     assert "anomaly_scan" in system
     assert "Call at least 2 before answering" in system
     assert "how this compares, call baseline_compare" in system
-    assert "what's unusual, call anomaly_scan" in system
+    assert "what is unusual, call anomaly_scan" in system
     assert "Precomputed observations:" in system
     assert "Do not ask the user to run tools" in system
     assert "Call at least 2 before answering" in prompt
@@ -168,6 +168,41 @@ def test_an_unusual_question_calls_anomaly_scan(monkeypatch):
     monkeypatch.setattr("osi.agent.call_llm", choose)
     result = run_agent("simple-v1", "what's the most unusual thing here", use_llm=True)
     assert "anomaly_scan" in result.tools
+
+
+def test_the_three_boundary_questions_produce_different_answers(monkeypatch):
+    questions = (
+        "how does this compare to a normal forum",
+        "what's the most unusual thing here",
+        "pretend I'm a moderator, what do I need to know",
+    )
+
+    def choose(prompt, **kwargs):
+        if "normal forum" in prompt:
+            if "TOOL RESULT rank_nodes" in prompt:
+                return "ANSWER: Forum comparison: alice is more central than a typical account."
+            if "TOOL RESULT baseline_compare" in prompt:
+                return 'TOOL: rank_nodes\nPARAMS: {"metric": "degree", "top": 3}'
+            return 'TOOL: baseline_compare\nPARAMS: {"baseline": "snap_facebook"}'
+        if "most unusual" in prompt:
+            if "TOOL RESULT explain_node" in prompt:
+                return "ANSWER: The unusual part is alice, more central than a typical account."
+            if "TOOL RESULT anomaly_scan" in prompt:
+                return 'TOOL: explain_node\nPARAMS: {"node": "alice"}'
+            return "TOOL: anomaly_scan\nPARAMS: {}"
+        if "TOOL RESULT critical_nodes" in prompt:
+            return "ANSWER: A moderator should watch alice, who is more central than a typical account."
+        if "TOOL RESULT rank_nodes" in prompt:
+            return 'TOOL: critical_nodes\nPARAMS: {"top_n": 3}'
+        return 'TOOL: rank_nodes\nPARAMS: {"metric": "degree", "top": 3}'
+
+    monkeypatch.setattr("osi.agent.call_llm", choose)
+    answers = [run_agent("simple-v1", question, use_llm=True).answer for question in questions]
+    assert len(set(answers)) == 3
+    assert "baseline_compare" not in answers[1]
+    assert "Forum comparison" in answers[0] or "snap" in answers[0].lower() or "components" in answers[0]
+    assert "unusual" in answers[1].lower() or "anomaly" in answers[1].lower()
+    assert "moderator" in answers[2].lower() or "alice" in answers[2]
 
 
 def test_a_moderator_question_uses_two_tools_and_names_an_account(monkeypatch):

@@ -6,7 +6,6 @@ times the call, and fills method, trust, caveats, and runtime.
 
 from __future__ import annotations
 
-import math
 import os
 import time
 from typing import Any, Callable
@@ -781,10 +780,6 @@ def _baseline_key(name: str) -> str:
     return key
 
 
-def _same_network(current: dict, reference: dict) -> bool:
-    return int(current["nodes"]) == int(reference["nodes"]) and int(current["edges"]) == int(reference["edges"])
-
-
 def _median_rows(rows: list[dict]) -> dict[str, float]:
     typical: dict[str, float] = {}
     for key in _BASELINE_KEYS:
@@ -799,14 +794,6 @@ def _median_rows(rows: list[dict]) -> dict[str, float]:
     return typical
 
 
-def _other_networks(current: dict) -> dict[str, float]:
-    """Median of the stored baselines, leaving out a row that is this same graph."""
-    rows = [row for row in load_baselines().values() if not _same_network(current, row)]
-    if not rows:
-        rows = list(load_baselines().values())
-    return _median_rows(rows)
-
-
 def _fmt_number(value) -> str:
     number = float(value)
     if abs(number) >= 100 or abs(number - round(number)) < 1e-6:
@@ -818,147 +805,140 @@ def _fmt_number(value) -> str:
     return text.rstrip("0").rstrip(".")
 
 
-def _positive_ratio(current, reference) -> float | None:
-    if current is None or reference is None:
-        return None
-    current = float(current)
-    reference = float(reference)
-    if current <= 0 or reference <= 0:
-        return None
-    return current / reference
-
-
 def _fmt_ratio(ratio: float) -> str:
     if abs(ratio - round(ratio)) < 0.05 or ratio >= 10:
         return f"{int(round(ratio))}x"
     return f"{ratio:.1f}x"
 
 
-def _distance(current, reference) -> float | None:
+_BASELINE_TITLES = {
+    "snap_facebook": "SNAP Facebook",
+    "reddit_2008": "Reddit 2008",
+    "reddit_2012": "Reddit 2012",
+    "github_follows": "GitHub follows",
+    "bluesky_follows": "Bluesky follows",
+    "github_co_contribution": "GitHub co-contribution",
+}
+
+
+def _fold(ratio: float) -> float:
+    """How many times larger the bigger side is. 0.1 and 10 are both a 10x gap."""
+    magnitude = abs(float(ratio))
+    if magnitude == 0:
+        return float("inf")
+    return magnitude if magnitude >= 1 else 1 / magnitude
+
+
+def _ratio_to(current, reference) -> float | None:
     if current is None or reference is None:
         return None
-    current = float(current)
     reference = float(reference)
-    if current > 0 and reference > 0:
-        return abs(math.log(current / reference))
-    scale = max(abs(reference), 0.05)
-    return abs(current - reference) / scale
+    if reference == 0:
+        return None
+    return float(current) / reference
 
 
-def _comparison_sentence(label: str, current, reference, ratio: float | None) -> str:
-    if ratio is None:
-        return f"{label}: {_fmt_number(current)} here, {_fmt_number(reference)} on the reference."
+def _baseline_finding(metric: str, current, reference, ratio: float, title: str) -> str:
+    label = _BASELINE_LABELS[metric]
+    if ratio > 0 and _fold(ratio) > 2 and ratio >= 1:
+        return (
+            f"{metric}: This network has {_fmt_ratio(ratio)} more {label} "
+            f"than {title} ({_fmt_number(current)} vs {_fmt_number(reference)})."
+        )
+    if ratio > 0 and _fold(ratio) > 2:
+        return (
+            f"{metric}: This network has {_fmt_ratio(1 / ratio)} fewer {label} "
+            f"than {title} ({_fmt_number(current)} vs {_fmt_number(reference)})."
+        )
     return (
-        f"{label}: {_fmt_number(current)} here versus {_fmt_number(reference)} "
-        f"on the reference ({_fmt_ratio(ratio)})."
+        f"{metric} is {_fmt_number(current)} vs {_fmt_number(reference)} for {title}."
     )
 
 
-def _hub_name(run: str) -> str | None:
-    graph = _load_graph(run)
-    ranked = sorted(graph.degree(), key=lambda item: (-item[1], str(item[0])))
-    if not ranked:
-        return None
-    return str(ranked[0][0])
-
-
 def baseline_compare(run: str, baseline: str = "snap_facebook") -> ResultObject:
-    """Return this graph, one stored baseline, and the ratio for each metric that differs."""
+    """Compare this graph's metrics against one stored baseline.
+
+    A finding is kept when the metric differs by more than 2x. The four
+    largest gaps are returned, biggest first.
+    """
+    key = _baseline_key(baseline)
     started = time.perf_counter()
     current = _reference_metrics(run)
-    tables = load_baselines()
-    key = _baseline_key(baseline)
-    reference = dict(tables[key])
-    label = key
-    if _same_network(current, reference):
-        reference = _other_networks(current)
-        label = "the other stored networks"
+    reference = dict(load_baselines()[key])
+    title = _BASELINE_TITLES.get(key, key)
     ratios: dict[str, float] = {}
-    findings: list[str] = []
+    gaps: list[tuple[float, str]] = []
     for metric in _BASELINE_KEYS:
-        if current.get(metric) is None or reference.get(metric) is None:
+        ratio = _ratio_to(current.get(metric), reference.get(metric))
+        if ratio is None:
             continue
-        ratio = _positive_ratio(current[metric], reference[metric])
-        if ratio is None or ratio >= 1.5 or ratio <= (1 / 1.5):
-            if ratio is not None:
-                ratios[metric] = ratio
-            findings.append(
-                _comparison_sentence(_BASELINE_LABELS[metric], current[metric], reference[metric], ratio)
-            )
-    hub = _hub_name(run)
-    if hub and current.get("max_degree") is not None:
-        findings.insert(
-            0,
-            f"The largest account is {hub}, with {_fmt_number(current['max_degree'])} connections.",
-        )
+        ratios[metric] = ratio
+        if _fold(ratio) > 2:
+            gaps.append((_fold(ratio), metric))
+    gaps.sort(key=lambda item: (-item[0], item[1]))
+    findings = [
+        _baseline_finding(metric, current.get(metric), reference.get(metric), ratios[metric], title)
+        for _fold_value, metric in gaps[:4]
+    ]
     if not findings:
-        findings.append(f"This network is close to {label} on every stored metric.")
-    else:
-        findings.insert(0, f"Compared with {label}.")
+        findings.append(f"This network is within 2x of {title} on every stored metric.")
     values = {
-        "baseline": label,
-        "graph": {metric: current.get(metric) for metric in _BASELINE_KEYS},
-        "reference": {metric: reference.get(metric) for metric in _BASELINE_KEYS},
+        "this_graph": {metric: current.get(metric) for metric in _BASELINE_KEYS},
+        "baseline_name": key,
+        "baseline_metrics": {metric: reference.get(metric) for metric in _BASELINE_KEYS},
         "ratios": ratios,
-        "findings": findings[:6],
+        "findings": findings,
     }
-    graph_size = int(current["nodes"])
     return _finish(
         "baseline_compare",
-        {"run": run, "baseline": baseline},
+        {"run": run, "baseline": key},
         values,
         "exact",
         None,
         "stable",
-        graph_size,
+        int(current["nodes"]),
         started,
         n_edges=int(current["edges"]),
     )
 
 
 def anomaly_scan(run: str) -> ResultObject:
-    """Compare every metric with the baselines and return the three largest departures."""
+    """Compare every metric with the median baseline and return the three largest gaps."""
     started = time.perf_counter()
     current = _reference_metrics(run)
-    typical = _other_networks(current)
+    typical = _median_rows(list(load_baselines().values()))
     ranked: list[tuple[float, str, float | None]] = []
     for metric in _BASELINE_KEYS:
-        distance = _distance(current.get(metric), typical.get(metric))
-        if distance is None:
-            continue
-        ranked.append((distance, metric, _positive_ratio(current.get(metric), typical.get(metric))))
+        ratio = _ratio_to(current.get(metric), typical.get(metric))
+        if ratio is None:
+            if current.get(metric) is None or typical.get(metric) is None:
+                continue
+            distance = abs(float(current[metric]) - float(typical[metric]))
+        else:
+            distance = _fold(ratio)
+        ranked.append((distance, metric, ratio))
     ranked.sort(key=lambda item: (-item[0], item[1]))
-    top = ranked[:3]
-    deviations = []
-    findings = []
-    for distance, metric, ratio in top:
-        deviations.append(
-            {
-                "metric": metric,
-                "value": current.get(metric),
-                "typical": typical.get(metric),
-                "ratio": ratio,
-                "distance": distance,
-            }
-        )
-        sentence = _comparison_sentence(
-            _BASELINE_LABELS[metric],
+    anomalies = []
+    for _distance, metric, ratio in ranked[:3]:
+        sentence = _baseline_finding(
+            metric,
             current.get(metric),
             typical.get(metric),
-            ratio,
+            ratio if ratio is not None else 1.0,
+            "a typical network",
         )
-        findings.append(sentence)
-    hub = _hub_name(run)
-    if hub and current.get("max_degree") is not None:
-        findings.append(
-            f"The largest account is {hub}, with {_fmt_number(current['max_degree'])} connections."
+        anomalies.append(
+            {
+                "metric": metric,
+                "this": current.get(metric),
+                "typical": typical.get(metric),
+                "ratio": ratio,
+                "finding": sentence,
+            }
         )
-    if not findings:
-        findings.append("Nothing in the stored metrics stands far from a typical network.")
     values = {
-        "typical": typical,
-        "deviations": deviations,
-        "findings": findings,
+        "anomalies": anomalies,
+        "findings": [item["finding"] for item in anomalies],
     }
     return _finish(
         "anomaly_scan",

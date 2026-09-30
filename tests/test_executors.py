@@ -236,16 +236,17 @@ def test_baseline_compare_names_a_ratio(sample_run):
     run, _graph = sample_run
     result = baseline_compare(run, baseline="snap_facebook")
     assert result.intent == "baseline_compare"
+    assert result.values["baseline_name"] == "snap_facebook"
     assert result.values["ratios"]
+    assert result.values["this_graph"]
     assert any("x" in line for line in result.values["findings"])
-    assert "hub" in " ".join(result.values["findings"])
 
 
 def test_anomaly_scan_returns_three_departures(sample_run):
     run, _graph = sample_run
     result = anomaly_scan(run)
     assert result.intent == "anomaly_scan"
-    assert len(result.values["deviations"]) == 3
+    assert len(result.values["anomalies"]) == 3
     assert result.values["findings"]
 
 

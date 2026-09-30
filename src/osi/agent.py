@@ -127,21 +127,19 @@ TOOLS = [
         "description": "Compare this graph's metrics with one stored reference network.",
         "when_to_use": (
             "The user asks HOW DOES THIS COMPARE, IS THIS NORMAL, IS THIS TYPICAL, "
-            "or asks about how this network differs from other networks. Compares this "
-            "graph's metrics against the stored baselines (SNAP, Reddit 2008, Reddit 2012, "
-            "GitHub follows, Bluesky follows, GitHub co-contribution)."
+            "HOW DOES THIS DIFFER, or any question about how this network relates to "
+            "other networks. Compares against stored baselines (SNAP, Reddit 2008, "
+            "Reddit 2012, GitHub, Bluesky)."
         ),
-        "params": {
-            "baseline": "snap_facebook|reddit_2008|reddit_2012|github_follows|bluesky_follows|github_co_contribution"
-        },
+        "params": {"baseline": "str"},
     },
     {
         "name": "anomaly_scan",
         "description": "Return the three metrics farthest from a typical network.",
         "when_to_use": (
             "The user asks WHAT IS UNUSUAL, WHAT STANDS OUT, WHAT IS DIFFERENT HERE, "
-            "WHAT IS THE OUTLIER, or asks about what makes this network distinct. "
-            "Returns the metrics farthest from baseline."
+            "WHAT IS THE OUTLIER, WHAT IS THE MOST INTERESTING THING, or any question "
+            "about what makes this network distinctive."
         ),
         "params": {},
     },
@@ -823,14 +821,13 @@ def _brief(question, domain, modes, finding_texts) -> str:
             "",
             f"User question: {question}",
             "",
-            "Decide which tools to call. Call at least 2 before answering. "
-            "Your first reply must be a tool call, not an answer. Reply with TOOL/PARAMS or ANSWER.",
+            "Decide which tools to call. Call at least 2 before answering. Reply with TOOL/PARAMS or ANSWER.",
             "",
             "Every number in your answer must appear in a tool result. "
             "When the user asks for specific names, call rank_nodes or explain_node. "
             "When the user asks what could go wrong, call critical_nodes and structural_criticality. "
             "When the user asks how this compares, call baseline_compare. "
-            "When the user asks what's unusual, call anomaly_scan.",
+            "When the user asks what is unusual, call anomaly_scan.",
         ]
     )
 
@@ -856,7 +853,7 @@ def _prompt(question, domain, modes, scratchpad, finding_texts=None) -> str:
         "",
         "Call at least 2 before answering.",
         "When the user asks how this compares, call baseline_compare.",
-        "When the user asks what's unusual, call anomaly_scan.",
+        "When the user asks what is unusual, call anomaly_scan.",
         "When the user asks what could go wrong, call critical_nodes and structural_criticality.",
         "When the user asks for specific names, call rank_nodes or explain_node.",
     ]
