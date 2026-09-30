@@ -6,11 +6,12 @@ from osi.ask import ask, main
 def test_ask_returns_a_string_for_top_pagerank(monkeypatch):
     monkeypatch.setattr(
         "osi.answer.call_llm",
-        lambda prompt, **kwargs: "Alice leads PageRank at 0.415481.",
+        lambda prompt, **kwargs: "Alice is more central than the other accounts.",
     )
     text = ask("simple-v1", "top 3 by pagerank", use_cache=False)
     assert isinstance(text, str)
-    assert "0.415481" in text
+    assert text.startswith("Alice is more central than the other accounts.")
+    assert "0.415481" not in text
 
 
 def test_ask_returns_a_helpful_message_for_an_unsupported_question():

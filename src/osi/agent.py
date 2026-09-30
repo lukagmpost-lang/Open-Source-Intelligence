@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 import networkx as nx
 
 from osi.analysis import _modularity_of, pagerank as compute_pagerank
-from osi.answer import call_llm, templated_fallback, verify_numbers
+from osi.answer import call_llm, raw_centrality_problem, templated_fallback, verify_numbers
 from osi.executors import (
     connectivity,
     explain_node,
@@ -135,6 +135,7 @@ Rules:
 - Call at least 2 tools before answering.
 - For worry questions, call critical_nodes and structural_criticality.
 - Every number in your answer must appear in a tool result.
+- Never quote a raw centrality score (pagerank, betweenness, closeness, eigenvector). Always express importance as a ratio to the typical account: '36x more central than typical' or 'more connected than 99% of accounts'.
 - Keep the answer to 3-5 sentences.
 
 EXAMPLE CONVERSATION:
@@ -355,21 +356,49 @@ def _rewrite_until_used(
     for attempt in range(1, _REWRITE_ATTEMPTS + 1):
         ignored = _ignored_tools(answer, tools, results)
         if not ignored:
-            return answer
+            return _revise_raw_centrality(
+                answer,
+                question,
+                domain,
+                finding_texts,
+                hypotheses,
+                scratchpad,
+                results,
+                system,
+            )
         for name, result in ignored:
             _log_unused_tool(name, result, attempt)
         scratchpad.append(_rewrite_message(ignored))
         try:
             reply = call_llm(_prompt(question, domain, finding_texts, hypotheses, scratchpad), system=system)
         except (OSError, TimeoutError, RuntimeError, KeyError, json.JSONDecodeError, ValueError):
-            return _with_fragility_note(answer, tools, results)
+            return _revise_raw_centrality(
+                _with_fragility_note(answer, tools, results),
+                question,
+                domain,
+                finding_texts,
+                hypotheses,
+                scratchpad,
+                results,
+                system,
+            )
         try:
             kind, text, _params = parse_agent_reply(reply)
         except ValueError:
             answer = reply.strip()
             continue
         answer = text.strip() if kind == "answer" else reply.strip()
-    return _with_fragility_note(answer, tools, results)
+    answer = _with_fragility_note(answer, tools, results)
+    return _revise_raw_centrality(
+        answer,
+        question,
+        domain,
+        finding_texts,
+        hypotheses,
+        scratchpad,
+        results,
+        system,
+    )
 
 
 class _Times(float):
@@ -619,6 +648,45 @@ def _log_unused_tool(name: str, result: ResultObject, attempt: int) -> None:
         f"Rewrite attempt {attempt} of {_REWRITE_ATTEMPTS}.",
         file=sys.stderr,
     )
+
+
+def _centrality_problem(answer: str, results: list[ResultObject], finding_texts: list[str]) -> str | None:
+    """The first tool result that quotes a raw score, or omits the comparison."""
+    for result in results:
+        problem = raw_centrality_problem(answer, result, finding_texts)
+        if problem:
+            return problem
+    return None
+
+
+def _revise_raw_centrality(
+    answer: str,
+    question: str,
+    domain: str,
+    finding_texts: list[str],
+    hypotheses: list[dict],
+    scratchpad: list[str],
+    results: list[ResultObject],
+    system: str,
+) -> str:
+    """Ask once to replace a raw centrality score with the comparative finding."""
+    problem = _centrality_problem(answer, results, finding_texts)
+    if not problem:
+        return answer
+    scratchpad.append(problem)
+    try:
+        reply = call_llm(_prompt(question, domain, finding_texts, hypotheses, scratchpad), system=system)
+    except (OSError, TimeoutError, RuntimeError, KeyError, json.JSONDecodeError, ValueError):
+        return _fallback_answer(results, finding_texts)
+    try:
+        kind, text, _params = parse_agent_reply(reply)
+    except ValueError:
+        revised = reply.strip()
+    else:
+        revised = text.strip() if kind == "answer" else reply.strip()
+    if _centrality_problem(revised, results, finding_texts):
+        return _fallback_answer(results, finding_texts)
+    return revised
 
 
 def _with_fragility_note(answer: str, tools: list[str], results: list[ResultObject]) -> str:

@@ -56,7 +56,10 @@ def test_only_critical_nodes_auto_runs_structural_criticality(monkeypatch):
         if "run automatically" in prompt:
             bridge = _decimal(_tool_section(prompt, "critical_nodes"))
             fragile = _decimal(_tool_section(prompt, "structural_criticality"))
-            return f"ANSWER: The bridge score is {bridge} and the remaining share is {fragile}."
+            return (
+                f"ANSWER: The bridge score is {bridge} and the remaining share is {fragile}. "
+                "akdas is more central than a typical account."
+            )
         if "TOOL RESULT critical_nodes" not in prompt:
             return 'TOOL: critical_nodes\nPARAMS: {"top_n": 10}'
         return "ANSWER: One account sits on too many paths."
@@ -111,7 +114,7 @@ def test_nothing_is_auto_run_when_the_required_tools_were_called(monkeypatch):
     def both_tools(prompt, **kwargs):
         prompts.append(prompt)
         if "TOOL RESULT structural_criticality" in prompt:
-            return "ANSWER: The hubs hold this network together."
+            return "ANSWER: The hubs hold this network together. They are more central than typical."
         if "TOOL RESULT critical_nodes" in prompt:
             return "TOOL: structural_criticality\nPARAMS: {}"
         return 'TOOL: critical_nodes\nPARAMS: {"top_n": 10}'

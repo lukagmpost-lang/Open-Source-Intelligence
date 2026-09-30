@@ -228,9 +228,9 @@ def test_discuss_drops_an_invented_count(monkeypatch):
 def test_write_answer_uses_the_model_when_the_numbers_match(monkeypatch):
     _clear_llm_env(monkeypatch)
     monkeypatch.setenv("LLM_PROVIDER", "ollama")
-    _capture(monkeypatch, "Alice leads PageRank at 0.415481.")
+    _capture(monkeypatch, "Alice is more central than the other accounts. Rank 0.415481.")
     text = write_answer(_result(), use_llm=True)
-    assert text.startswith("Alice leads PageRank at 0.415481.")
+    assert text.startswith("Alice is more central than the other accounts.")
     assert "only 4 nodes" in text
 
 
@@ -248,12 +248,12 @@ def _cached_llm(monkeypatch, replies: list[str]) -> list[str]:
 
 def test_second_call_returns_the_cached_answer(tmp_path, monkeypatch):
     monkeypatch.setenv("OSI_STORE", str(tmp_path / "store.db"))
-    calls = _cached_llm(monkeypatch, ["Alice leads PageRank at 0.415481."])
+    calls = _cached_llm(monkeypatch, ["Alice is more central than the other accounts. Rank 0.415481."])
     result = _result()
     first = write_answer(result, use_llm=True, question="top 3 by pagerank")
     second = write_answer(result, use_llm=True, question="top 3 by pagerank")
     assert second == first
-    assert second.startswith("Alice leads PageRank at 0.415481.")
+    assert second.startswith("Alice is more central than the other accounts.")
     assert len(calls) == 1
 
 
@@ -261,13 +261,16 @@ def test_different_question_misses_the_cache(tmp_path, monkeypatch):
     monkeypatch.setenv("OSI_STORE", str(tmp_path / "store.db"))
     calls = _cached_llm(
         monkeypatch,
-        ["Alice leads PageRank at 0.415481.", "Carol follows at 0.274590."],
+        [
+            "Alice is more central than the other accounts. Rank 0.415481.",
+            "Carol is more central than a typical account. Rank 0.274590.",
+        ],
     )
     result = _result()
     first = write_answer(result, use_llm=True, question="top 3 by pagerank")
     second = write_answer(result, use_llm=True, question="who leads")
-    assert first.startswith("Alice leads PageRank at 0.415481.")
-    assert second.startswith("Carol follows at 0.274590.")
+    assert first.startswith("Alice is more central than the other accounts.")
+    assert second.startswith("Carol is more central than a typical account.")
     assert len(calls) == 2
 
 
@@ -279,7 +282,13 @@ def test_updating_a_run_invalidates_its_cache(tmp_path, monkeypatch):
     database = tmp_path / "store.db"
     monkeypatch.setenv("OSI_STORE", str(database))
     create_run("file", {"layer": "file"}, run_id="cache-v1", path=database)
-    calls = _cached_llm(monkeypatch, ["Alice leads PageRank at 0.415481.", "Alice leads PageRank at 0.415481."])
+    calls = _cached_llm(
+        monkeypatch,
+        [
+            "Alice is more central than the other accounts. Rank 0.415481.",
+            "Alice is more central than the other accounts. Rank 0.415481.",
+        ],
+    )
     result = _result()
     result.params = {**result.params, "run": "cache-v1"}
     first = write_answer(result, use_llm=True, question="top 3 by pagerank")
@@ -287,8 +296,8 @@ def test_updating_a_run_invalidates_its_cache(tmp_path, monkeypatch):
     graph.add_edge("alice", "bob", weight=1.0)
     save_graph("cache-v1", "file", graph, path=database)
     second = write_answer(result, use_llm=True, question="top 3 by pagerank")
-    assert first.startswith("Alice leads PageRank at 0.415481.")
-    assert second.startswith("Alice leads PageRank at 0.415481.")
+    assert first.startswith("Alice is more central than the other accounts.")
+    assert second.startswith("Alice is more central than the other accounts.")
     assert len(calls) == 2
 
 
@@ -298,6 +307,8 @@ def test_system_prompt_includes_plain_language_rules():
     assert "Do not start with" in SYSTEM_PROMPT
     assert "How sure: " in SYSTEM_PROMPT
     assert "modularity, betweenness, assortativity" in SYSTEM_PROMPT
+    assert "Never quote a raw centrality score" in SYSTEM_PROMPT
+    assert "36x more central than typical" in SYSTEM_PROMPT
 
 
 def test_write_answer_includes_run_context_in_the_prompt(monkeypatch):
@@ -455,6 +466,46 @@ def test_fallback_with_an_empty_scratchpad_uses_the_result_findings():
     assert text == templated_fallback(result)
     assert text.startswith("This is a sparse network")
     assert "How sure: stable." in text
+
+
+def _pagerank_result() -> ResultObject:
+    return ResultObject(
+        intent="rank_nodes",
+        params={"metric": "pagerank", "run": "r2008-v2"},
+        values={
+            "akdas": 0.02494,
+            "findings": ["akdas is 36x more central than the typical account."],
+        },
+        method="exact",
+        sample_size=None,
+        trust="stable",
+        caveats=[],
+        runtime_ms=0,
+    )
+
+
+def test_raw_centrality_score_is_rejected():
+    from osi.answer import raw_centrality_problem
+
+    problem = raw_centrality_problem("akdas has a centrality score of 0.02494.", _pagerank_result())
+    assert problem is not None
+    assert "0.02494" in problem
+    assert "akdas is 36x more central than the typical account." in problem
+    assert "Do not quote raw metric values." in problem
+
+
+def test_comparative_centrality_ratio_passes():
+    from osi.answer import raw_centrality_problem
+
+    assert raw_centrality_problem("akdas is 36x more central than typical.", _pagerank_result()) is None
+
+
+def test_answer_without_centrality_is_rejected():
+    from osi.answer import raw_centrality_problem
+
+    problem = raw_centrality_problem("akdas has 759 connections.", _pagerank_result())
+    assert problem is not None
+    assert "missing centrality" in problem.lower()
 
 
 def test_verify_style_rejects_the_graph_is():

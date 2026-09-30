@@ -82,6 +82,10 @@ SYSTEM_PROMPT = (
     '- No preamble. Do not start with "The graph is..."\n'
     "- Every number you write MUST appear in the JSON values. "
     "Do not invent numbers.\n"
+    "- Never quote a raw centrality score (pagerank, betweenness, "
+    "closeness, eigenvector). Always express importance as a ratio "
+    "to the typical account: '36x more central than typical' or "
+    "'more connected than 99% of accounts'.\n"
     "- If the trust field says unstable, say so explicitly.\n"
     '- End with a line starting with "How sure: ".'
 )
@@ -92,7 +96,10 @@ FINDINGS_SYSTEM_PROMPT = (
     "You receive 3-5 findings about a network. Rewrite them as "
     "2-3 sentences of flowing prose. Do not invent numbers. Do "
     "not add metrics. Do not use the words density, modularity, "
-    "clustering, or component."
+    "clustering, or component. Never quote a raw centrality score "
+    "(pagerank, betweenness, closeness, eigenvector). Always express "
+    "importance as a ratio to the typical account: '36x more central "
+    "than typical' or 'more connected than 99% of accounts'."
 )
 
 
@@ -328,6 +335,98 @@ def _explain_template(result: ResultObject) -> str:
         f"Their strongest connections are {_neighbors_text(values.get('neighbors'))}. "
         f"How sure: {_trust_reason(result)}."
     )
+
+
+_CENTRALITY_METRICS = {"pagerank", "betweenness", "closeness", "eigenvector"}
+_COMPARATIVE_PHRASES = ("more central", "x times", "compared to", "more connected")
+
+
+def _centrality_scores(result: ResultObject) -> list[float]:
+    """Floats that are pagerank, betweenness, closeness, or eigenvector."""
+    metric = str(result.params.get("metric") or "").lower()
+    scores: list[float] = []
+
+    def take(value) -> None:
+        if isinstance(value, bool) or not isinstance(value, float):
+            return
+        if 0 < value <= 1:
+            scores.append(value)
+
+    def walk(value, under_metric: bool) -> None:
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key == "findings":
+                    continue
+                name = str(key).lower()
+                named = name in _CENTRALITY_METRICS
+                if named and isinstance(item, (int, float)) and not isinstance(item, bool):
+                    take(float(item))
+                    continue
+                walk(item, under_metric or named)
+            return
+        if isinstance(value, list):
+            for item in value:
+                walk(item, under_metric)
+            return
+        if under_metric or metric in _CENTRALITY_METRICS:
+            take(value)
+
+    walk(result.values, False)
+    return scores
+
+
+def _ratio_sentence(result: ResultObject, extra_findings: list[str] | None = None) -> str:
+    texts = [str(item) for item in (result.values.get("findings") or [])]
+    texts.extend(str(item) for item in (extra_findings or []))
+    for text in texts:
+        lowered = text.lower()
+        if "more central" in lowered or "more connected" in lowered:
+            return text
+    return "express importance as a ratio to the typical account"
+
+
+def _has_comparison(answer: str) -> bool:
+    lowered = answer.lower()
+    return any(phrase in lowered for phrase in _COMPARATIVE_PHRASES)
+
+
+def _quoted_centrality(answer: str, scores: list[float]) -> str | None:
+    for match in _NUMBER.finditer(answer):
+        token = match.group(0)
+        if "." not in token:
+            continue
+        if _close_to_stored(token, float(token), scores):
+            return token
+    return None
+
+
+def raw_centrality_problem(
+    answer: str,
+    result: ResultObject,
+    extra_findings: list[str] | None = None,
+) -> str | None:
+    """Reject a raw centrality decimal, or an answer that never makes the comparison.
+
+    Returns the rewrite instruction, or None when the answer is fine.
+    """
+    scores = _centrality_scores(result)
+    if not scores:
+        return None
+    quoted = _quoted_centrality(answer, scores)
+    sentence = _ratio_sentence(result, extra_findings)
+    if quoted is not None and not _has_comparison(answer):
+        return (
+            f"Your answer quotes the raw centrality score {quoted}. "
+            f"Replace it with the comparative ratio from the findings: '{sentence}'. "
+            "Do not quote raw metric values."
+        )
+    if quoted is None and not _has_comparison(answer):
+        return (
+            "Your answer is missing centrality. "
+            f"Replace it with the comparative ratio from the findings: '{sentence}'. "
+            "Do not quote raw metric values."
+        )
+    return None
 
 
 def _findings_template(result: ResultObject) -> str:
@@ -695,8 +794,12 @@ def write_answer(
                 + "triangles, betweenness, assortativity, degree distribution, or power law."
             )
     else:
+        finding_text = ""
         prose = _request(_result_json(result))
-    if not _acceptable(prose):
+    problem = raw_centrality_problem(prose or "", result)
+    if problem:
+        prose = _request(problem if not finding_text else finding_text + "\n\n" + problem)
+    if not _acceptable(prose) or raw_centrality_problem(prose or "", result):
         return text
     assert prose is not None
     missing = [caveat for caveat in result.caveats if caveat not in prose]
