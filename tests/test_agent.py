@@ -1,26 +1,30 @@
 import re
 
+import pytest
+
 from osi.agent import _TOOLS, expressions_for, parse_agent_reply, run_agent, used_tools, uses_fragility
+
+
+@pytest.fixture(autouse=True)
+def _classify_without_calling_the_model(monkeypatch):
+    """Keep loop tests offline. Production classification goes through the model."""
+
+    def fake(question: str) -> dict:
+        text = question.casefold()
+        if any(part in text for part in ("worr", "risk", "vulnerab", "fragile", "at risk", "break", "fail", "collapse")):
+            return {"intents": ["diagnose"], "scope": "whole", "scope_target": None}
+        if any(part in text for part in ("shape", "structure", "how is", "healthy", "health")):
+            return {"intents": ["describe"], "scope": "whole", "scope_target": None}
+        if any(part in text for part in ("important", "central", "hubs", "who matters")):
+            return {"intents": ["rank", "explain"], "scope": "whole", "scope_target": None}
+        if any(part in text for part in ("communities", "groups", "clusters")):
+            return {"intents": ["describe", "explain"], "scope": "community", "scope_target": None}
+        return {"intents": ["describe"], "scope": "whole", "scope_target": None}
+
+    monkeypatch.setattr("osi.agent.classify_intent", fake)
 from osi.answer import verify_numbers
 from osi.ask import ask, main
 from osi.result import ResultObject
-
-
-def test_question_types_select_the_required_tools():
-    from osi.agent import _required_tools
-
-    assert _required_tools("what should I be worried about") == [
-        "critical_nodes",
-        "structural_criticality",
-    ]
-    assert _required_tools("what is the shape of this network") == [
-        "network_health",
-        "list_communities",
-    ]
-    assert _required_tools("who are the most important people") == [
-        "rank_nodes",
-        "explain_node",
-    ]
 
 
 def test_parse_agent_reply_reads_a_tool_call_and_an_answer():
@@ -51,6 +55,8 @@ def test_system_prompt_names_the_question_and_the_tool_minimum(monkeypatch):
     assert "TOOL: critical_nodes" in system
     assert "TOOL: structural_criticality" in system
     assert "Now respond to the actual question." in system
+    assert "Classified intent: diagnose" in system
+    assert "Scope: whole" in system
 
 
 def _decimal(text: str) -> str:

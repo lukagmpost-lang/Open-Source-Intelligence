@@ -107,6 +107,10 @@ def test_reddit_2012_worry_answer_names_a_failure_mode_and_an_account(monkeypatc
 
     monkeypatch.setitem(_TOOLS, "structural_criticality", _stub)
     monkeypatch.setitem(_TOOLS, "critical_nodes", _stub)
+    monkeypatch.setattr(
+        "osi.agent.classify_intent",
+        lambda question: {"intents": ["diagnose", "target"], "scope": "whole", "scope_target": None},
+    )
     monkeypatch.setattr("osi.agent.call_llm", answer_from_the_modes)
     result = run_agent("r2012-v2", "what should I be worried about", use_llm=True)
     assert "critical_nodes" in result.tools

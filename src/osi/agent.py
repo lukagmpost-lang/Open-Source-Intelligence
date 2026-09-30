@@ -33,6 +33,7 @@ from osi.failure_modes import (
     rank_by_question,
     worry_prompt,
 )
+from osi.intent import classify_intent, required_tools
 from osi.findings import generate_findings, pick_top_findings
 from osi.hypotheses import find_unasked_observations, generate_hypotheses, infer_domain
 from osi.result import ResultObject
@@ -53,28 +54,6 @@ FRAGILITY_WORDS = [
 _FRAGILITY_NOTE = (
     "Note: the fragility analysis did not make it into this answer. "
     "Run with --agent-full for the complete result."
-)
-
-# Substrings, so "worried", "worrying", "vulnerable", and "vulnerability" all match.
-WORRY_PATTERNS = (
-    "worr",
-    "risk",
-    "vulnerab",
-    "fragile",
-    "at risk",
-    "break",
-    "fail",
-    "collapse",
-)
-HEALTH_QUESTIONS = ("healthy", "health", "shape", "structure", "how is")
-IMPORTANT_QUESTIONS = ("important", "central", "key", "hubs", "who matters")
-COMMUNITY_QUESTIONS = ("communities", "groups", "clusters")
-
-_REQUIRED_BY_TYPE = (
-    (WORRY_PATTERNS, ("critical_nodes", "structural_criticality")),
-    (HEALTH_QUESTIONS, ("network_health", "list_communities")),
-    (IMPORTANT_QUESTIONS, ("rank_nodes", "explain_node")),
-    (COMMUNITY_QUESTIONS, ("list_communities", "explain_node")),
 )
 
 _AUTO_PARAMS = {
@@ -148,6 +127,9 @@ Precomputed findings about this graph:
 User question:
 {question}
 
+Classified intent: {intents}
+Scope: {scope}{scope_target}
+
 Rules:
 - Call at least 2 tools before answering.
 - For worry questions, call critical_nodes and structural_criticality.
@@ -211,10 +193,23 @@ def run_agent(run_id: str, question: str, use_llm: bool = True) -> AgentResult:
     tools: list[str] = []
     scratchpad: list[str] = []
     answer = ""
+    classification = {"intents": ["describe"], "scope": "whole", "scope_target": None}
+    if use_llm:
+        classification = classify_intent(question)
     if use_llm and str(domain).casefold() in DOMAIN_MODELS:
         _prepare_failure_modes(run_id, graph, domain, question, snapshot, tools, results, scratchpad)
     if use_llm:
-        answer = _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tools, results)
+        answer = _react(
+            question,
+            domain,
+            finding_texts,
+            hypotheses,
+            run_id,
+            scratchpad,
+            tools,
+            results,
+            classification,
+        )
     else:
         _run_plan(run_id, tools, results, scratchpad)
     if not answer:
@@ -288,8 +283,9 @@ def _prepare_failure_modes(run_id, graph, domain, question, snapshot, tools, res
     return True
 
 
-def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tools, results) -> str:
-    system = _system_prompt(question, finding_texts)
+def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tools, results, classification) -> str:
+    system = _system_prompt(question, finding_texts, classification)
+    needed = required_tools(classification.get("intents"), classification.get("scope"), domain)
     for _step in range(MAX_STEPS):
         prompt = _prompt(question, domain, finding_texts, hypotheses, scratchpad)
         try:
@@ -303,7 +299,7 @@ def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tool
             continue
         if kind == "answer":
             called = _called_tools(scratchpad)
-            missing = [name for name in _required_tools(question) if name not in called]
+            missing = [name for name in needed if name not in called]
             if not missing:
                 return _rewrite_until_used(
                     payload.strip(),
@@ -318,7 +314,7 @@ def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tool
                 )
             rows = []
             for name in missing:
-                summary = _auto_run(run_id, name, results, tools, scratchpad)
+                summary = _auto_run(run_id, name, results, tools, scratchpad, classification)
                 rows.append(f"{name} → {summary}")
             scratchpad.append(_auto_note(rows))
             try:
@@ -365,22 +361,26 @@ def _run_plan(run_id: str, tools: list[str], results: list[ResultObject], scratc
         scratchpad.append(f"TOOL RESULT {name}: {_summarize(result)}")
 
 
-def _system_prompt(question: str, finding_texts: list[str]) -> str:
+def _system_prompt(question: str, finding_texts: list[str], classification: dict | None = None) -> str:
     findings = "\n".join(f"- {text}" for text in finding_texts) if finding_texts else "None yet."
+    classification = classification or {}
+    intents = ", ".join(classification.get("intents") or []) or "describe"
+    scope = classification.get("scope") or "whole"
+    target = classification.get("scope_target")
+    if target is None or target == "":
+        target_line = ""
+    elif isinstance(target, list):
+        target_line = "\nScope target: " + ", ".join(str(item) for item in target)
+    else:
+        target_line = f"\nScope target: {target}"
     return (
         _AGENT_SYSTEM_TEMPLATE.replace("{tool_descriptions}", _TOOL_DESCRIPTIONS.strip())
         .replace("{findings}", findings)
         .replace("{question}", question)
+        .replace("{intents}", intents)
+        .replace("{scope_target}", target_line)
+        .replace("{scope}", scope)
     )
-
-
-def _required_tools(question: str) -> list[str]:
-    """Tools the question type must call before an answer is accepted."""
-    text = question.casefold()
-    for phrases, required in _REQUIRED_BY_TYPE:
-        if any(phrase in text for phrase in phrases):
-            return list(required)
-    return []
 
 
 def _rewrite_until_used(
@@ -750,10 +750,19 @@ def _called_tools(scratchpad: list[str]) -> set[str]:
     return called
 
 
-def _auto_params(name: str, results: list[ResultObject]) -> dict:
+def _auto_params(name: str, results: list[ResultObject], classification: dict | None = None) -> dict:
     params = dict(_AUTO_PARAMS.get(name, {}))
+    target = (classification or {}).get("scope_target")
     if name == "explain_node":
-        params["node"] = _named_account(results)
+        if isinstance(target, str) and target:
+            params["node"] = target
+        elif isinstance(target, list) and target:
+            params["node"] = str(target[0])
+        else:
+            params["node"] = _named_account(results)
+    if name == "connectivity" and isinstance(target, list) and len(target) >= 2:
+        params["source"] = str(target[0])
+        params["target"] = str(target[1])
     return params
 
 
@@ -765,8 +774,8 @@ def _named_account(results: list[ResultObject]) -> str:
     return ""
 
 
-def _auto_run(run_id: str, name: str, results, tools, scratchpad) -> str:
-    summary = _record_tool(run_id, name, _auto_params(name, results), tools, results, scratchpad)
+def _auto_run(run_id: str, name: str, results, tools, scratchpad, classification: dict | None = None) -> str:
+    summary = _record_tool(run_id, name, _auto_params(name, results, classification), tools, results, scratchpad)
     return summary
 
 
