@@ -15,6 +15,39 @@ def test_parse_agent_reply_reads_a_tool_call_and_an_answer():
     assert prose == "The hubs sit in different groups."
 
 
+def test_system_prompt_names_the_question_and_the_tool_minimum(monkeypatch):
+    seen: dict[str, str] = {}
+
+    def too_soon(prompt, **kwargs):
+        seen["system"] = kwargs.get("system") or ""
+        return "ANSWER: too soon"
+
+    monkeypatch.setattr("osi.agent.call_llm", too_soon)
+    run_agent("simple-v1", "what should I be worried about", use_llm=True)
+    system = seen["system"]
+    assert "what should I be worried about" in system
+    assert "calling at least" in system
+    assert "2 tools" in system
+    assert "critical_nodes" in system
+    assert "structural_criticality" in system
+    assert "how is this network" in system
+    assert "who is important" in system
+    assert "what communities" in system
+
+
+def test_a_worry_answer_waits_for_critical_nodes_and_criticality(monkeypatch):
+    prompts: list[str] = []
+
+    def answer_immediately(prompt, **kwargs):
+        prompts.append(prompt)
+        return "ANSWER: Nothing stands out yet."
+
+    monkeypatch.setattr("osi.agent.call_llm", answer_immediately)
+    run_agent("simple-v1", "what should I be worried about", use_llm=True)
+    assert "critical_nodes" in prompts[1]
+    assert "structural_criticality" in prompts[1]
+
+
 def test_the_loop_stops_after_eight_tool_calls(monkeypatch):
     def always_tool(prompt, **kwargs):
         return 'TOOL: rank_nodes\nPARAMS: {"metric": "degree", "top": 3}'

@@ -32,37 +32,72 @@ from osi.store import get_run, load_communities, load_graph, load_metrics
 
 MAX_STEPS = 8
 
+def critical_nodes(run: str, top: int = 5) -> ResultObject:
+    """Accounts that sit on the most paths. Removing them breaks the network first."""
+    result = rank_nodes(run, metric="betweenness", top=int(top))
+    result.intent = "critical_nodes"
+    return result
+
+
 _TOOLS = {
     "rank_nodes": rank_nodes,
     "list_communities": list_communities,
     "network_health": network_health,
     "structural_criticality": structural_criticality,
+    "critical_nodes": critical_nodes,
     "connectivity": connectivity,
     "explain_node": explain_node,
 }
 
-_TOOL_HELP = """\
-Tools you may call:
+_TOOL_DESCRIPTIONS = """\
 - rank_nodes: metric is pagerank, degree, betweenness, or closeness. top is an integer.
 - list_communities: algorithm is louvain or leiden.
 - network_health: no parameters.
 - structural_criticality: no parameters.
+- critical_nodes: accounts that hold the network together. top is an integer.
 - connectivity: source and target are account names.
-- explain_node: node is an account name.
+- explain_node: node is an account name. For a community question, pass one account from the largest community.
 """
 
-AGENT_SYSTEM_PROMPT = (
-    "You investigate one network by calling tools, then you answer.\n"
-    "Reply with exactly one of these two forms and nothing else.\n"
-    "TOOL: tool_name\n"
-    "PARAMS: {json object}\n"
-    "or\n"
-    "ANSWER: two or three sentences of plain prose.\n"
-    "Call a tool when you still need a measurement. "
-    "Do not invent numbers. Every number in the ANSWER must appear in a tool result. "
-    "Do not use the words density, modularity, clustering, or component.\n"
-    + _TOOL_HELP
-)
+_AGENT_SYSTEM_TEMPLATE = """\
+You are analyzing a graph. You have access to these tools:
+{tool_descriptions}
+
+Here are precomputed findings about this graph:
+{findings}
+
+The user asked: {question}
+
+Decide whether you need to call more tools or answer.
+
+Before answering, verify your reasoning by calling at least 
+2 tools. For vulnerability or "what should I worry about" 
+questions, you MUST call critical_nodes and 
+structural_criticality before answering.
+
+For health or "how is this network" questions, you MUST call 
+network_health and list_communities.
+
+For "who is important" questions, you MUST call rank_nodes and 
+explain_node on the top result.
+
+For "what communities" questions, you MUST call list_communities 
+and explain_node on the largest community.
+
+Reply with either:
+  TOOL: <name>
+  PARAMS: <json>
+
+or:
+
+  ANSWER: <your synthesis>
+
+Cap at 8 tool calls. If you have not answered by then, respond 
+with your best synthesis.
+
+Do not invent numbers. Every number in the answer must appear 
+in one of the tool results.
+"""
 
 _TOOL_LINE = re.compile(r"(?im)^TOOL:\s*([A-Za-z_]+)\s*$")
 _PARAMS_LINE = re.compile(r"(?im)^PARAMS:\s*(\{.*\})\s*$")
@@ -150,7 +185,7 @@ def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tool
     for _step in range(MAX_STEPS):
         prompt = _prompt(question, domain, finding_texts, hypotheses, scratchpad)
         try:
-            reply = call_llm(prompt, system=AGENT_SYSTEM_PROMPT)
+            reply = call_llm(prompt, system=_system_prompt(question, finding_texts))
         except (OSError, TimeoutError, RuntimeError, KeyError, json.JSONDecodeError, ValueError):
             break
         try:
@@ -159,8 +194,13 @@ def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tool
             scratchpad.append(f"The previous PARAMS could not be read ({error}). Call the tool again.")
             continue
         if kind == "answer":
-            if not tools:
-                scratchpad.append("Call a tool before answering. Use TOOL and PARAMS.")
+            missing = _missing_tools(question, tools)
+            if missing:
+                scratchpad.append(
+                    "Do not answer yet. Call at least 2 tools first. Still required: "
+                    + ", ".join(missing)
+                    + "."
+                )
                 continue
             candidate = payload.strip()
             values = _base_values({}, results, [])
@@ -199,6 +239,36 @@ def _run_plan(run_id: str, tools: list[str], results: list[ResultObject], scratc
         tools.append(name)
         results.append(result)
         scratchpad.append(f"TOOL RESULT {name}: {_summarize(result)}")
+
+
+def _system_prompt(question: str, finding_texts: list[str]) -> str:
+    findings = "\n".join(f"- {text}" for text in finding_texts) if finding_texts else "None yet."
+    return (
+        _AGENT_SYSTEM_TEMPLATE.replace("{tool_descriptions}", _TOOL_DESCRIPTIONS.strip())
+        .replace("{findings}", findings)
+        .replace("{question}", question)
+    )
+
+
+def _required_tools(question: str) -> list[str]:
+    """Tools a question type must call before an answer is accepted."""
+    text = question.casefold()
+    if "vulnerab" in text or "worr" in text:
+        return ["critical_nodes", "structural_criticality"]
+    if "how is this network" in text or "how healthy" in text or "network health" in text:
+        return ["network_health", "list_communities"]
+    if "who is important" in text or "who are important" in text or "most important" in text:
+        return ["rank_nodes", "explain_node"]
+    if "what communities" in text or "which communities" in text or "communities exist" in text:
+        return ["list_communities", "explain_node"]
+    return []
+
+
+def _missing_tools(question: str, tools: list[str]) -> list[str]:
+    missing = [name for name in _required_tools(question) if name not in tools]
+    if len(tools) >= 2 or missing:
+        return missing
+    return ["a second tool" if tools else "two tools"]
 
 
 def _prompt(question, domain, finding_texts, hypotheses, scratchpad) -> str:
