@@ -12,6 +12,7 @@ import inspect
 import json
 import re
 import sys
+import time
 from dataclasses import dataclass, field
 
 import networkx as nx
@@ -168,18 +169,15 @@ _TOOLS = {
 }
 
 _FORMAT_RULES = """\
-To call a tool, use exactly this form:
+The only valid reply right now is a tool call. Do not write ANSWER. Do not explain. Do not use markdown. Do not ask the user to run tools.
 TOOL: <tool_name>
 PARAMS: <json_object>
 
-To answer, use exactly this form:
-ANSWER: <your synthesis>
-
-Do not ask the user to run tools. Never quote a raw centrality score (pagerank, betweenness, closeness, eigenvector). Express importance as a ratio to the typical account, such as '36x more central than typical' or 'more connected than 99% of accounts'.
+Never quote a raw centrality score (pagerank, betweenness, closeness, eigenvector). Express importance as a ratio to the typical account, such as '36x more central than typical' or 'more connected than 99% of accounts'.
 """
 
 _TOOL_LINE = re.compile(r"(?im)^TOOL:\s*([A-Za-z_]+)\s*$")
-_PARAMS_LINE = re.compile(r"(?im)^PARAMS:\s*(\{.*\})\s*$")
+_PARAMS_LINE = re.compile(r"(?im)^(?:PARAMS:\s*)?(\{.*\})\s*$")
 _ANSWER_LINE = re.compile(r"(?im)^ANSWER:\s*(.*)$")
 
 _NOTICE = "While looking at this, I also noticed:"
@@ -251,6 +249,28 @@ def context_brief(run_id: str) -> str:
     return "\n".join(lines)
 
 
+def _tool_calls(text: str) -> list[tuple[str, dict]]:
+    """Every TOOL block in one reply, in order."""
+    body = text or ""
+    found: list[tuple[str, dict]] = []
+    matches = list(_TOOL_LINE.finditer(body))
+    for index, match in enumerate(matches):
+        window = body[match.end() :]
+        stop = len(window)
+        for other in matches[index + 1 :]:
+            stop = min(stop, other.start() - match.end())
+            break
+        answer_at = _ANSWER_LINE.search(window)
+        if answer_at:
+            stop = min(stop, answer_at.start())
+        params: dict = {}
+        params_match = _PARAMS_LINE.search(window[:stop])
+        if params_match:
+            params = _load_params(params_match.group(1))
+        found.append((match.group(1).strip().lower(), params))
+    return found
+
+
 def parse_agent_reply(text: str) -> tuple[str, str, dict]:
     """Return (kind, payload, params).
 
@@ -283,6 +303,20 @@ def _seed_failure_modes(run_id, graph, domain, snapshot, tools, results, scratch
     return apply_failure_modes(metrics, graph, domain)
 
 
+def _call_model(prompt: str, system: str) -> str | None:
+    """Call the model, waiting through a short rate limit."""
+    for attempt in range(4):
+        try:
+            return call_llm(prompt, system=system)
+        except RuntimeError as error:
+            if "429" not in str(error) or attempt == 3:
+                return None
+            time.sleep(2 * (attempt + 1))
+        except (OSError, TimeoutError, KeyError, json.JSONDecodeError, ValueError):
+            return None
+    return None
+
+
 def _health_findings(results: list[ResultObject], finding_texts: list[str]) -> list[str]:
     """Sentences from the health pass that opens the loop."""
     if results and results[0].intent == "network_health":
@@ -297,20 +331,53 @@ def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tool
     chosen = 0
     for _step in range(MAX_STEPS):
         prompt = _prompt(question, domain, modes, scratchpad, finding_texts)
+        reply = _call_model(prompt, system)
+        if reply is None:
+            scratchpad.append(
+                "The previous reply did not arrive. Call a tool with TOOL and PARAMS."
+            )
+            continue
         try:
-            reply = call_llm(prompt, system=system)
-        except (OSError, TimeoutError, RuntimeError, KeyError, json.JSONDecodeError, ValueError):
-            break
-        try:
-            kind, payload, params = parse_agent_reply(reply)
+            tool_calls = _tool_calls(reply)
         except ValueError as error:
             scratchpad.append(f"The previous PARAMS could not be read ({error}). Call the tool again.")
             continue
+        if tool_calls:
+            for name, params in tool_calls:
+                if name not in _TOOLS:
+                    scratchpad.append(f"Unknown tool {name}. Choose one from the tool list.")
+                    continue
+                if name == "network_health" and name in tools:
+                    scratchpad.append(
+                        f"TOOL RESULT {name}: {_summarize(results[tools.index(name)])}"
+                    )
+                else:
+                    _record_tool(run_id, name, params, tools, results, scratchpad)
+                chosen += 1
+            answer_match = _ANSWER_LINE.search(reply)
+            if answer_match and chosen >= _MIN_MODEL_TOOLS and answer_match.group(1).strip():
+                return _rewrite_until_used(
+                    answer_match.group(1).strip(),
+                    question,
+                    domain,
+                    finding_texts,
+                    hypotheses,
+                    scratchpad,
+                    tools,
+                    results,
+                    system,
+                    modes,
+                )
+            continue
+        kind, payload, _params = parse_agent_reply(reply)
         if kind == "answer":
             if chosen < _MIN_MODEL_TOOLS:
                 scratchpad.append(
                     f"You called {chosen} tool(s). Call at least 2 before answering. "
-                    "What else would help you answer this question?"
+                    "What else would help you answer this question?\n"
+                    "Do not write ANSWER yet. Reply with a tool call:\n"
+                    "TOOL: <tool_name>\n"
+                    "PARAMS: <json_object>"
                 )
                 continue
             return _rewrite_until_used(
@@ -325,12 +392,7 @@ def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tool
                 system,
                 modes,
             )
-        name = payload
-        if name not in _TOOLS:
-            scratchpad.append(f"Unknown tool {name}. Choose one from the tool list.")
-            continue
-        _record_tool(run_id, name, params, tools, results, scratchpad)
-        chosen += 1
+        scratchpad.append(f"Unknown tool {payload}. Choose one from the tool list.")
     return ""
 
 
@@ -349,7 +411,7 @@ def _run_plan(run_id: str, tools: list[str], results: list[ResultObject], scratc
 
 
 def _system_prompt(question: str, domain: str, modes: list[dict], finding_texts: list[str]) -> str:
-    return _brief(question, domain, modes, finding_texts) + "\n" + _FORMAT_RULES
+    return _FORMAT_RULES + "\n" + _brief(question, domain, modes, finding_texts)
 
 
 def _rewrite_until_used(
@@ -382,12 +444,8 @@ def _rewrite_until_used(
         for name, result in ignored:
             _log_unused_tool(name, result, attempt)
         scratchpad.append(_rewrite_message(ignored))
-        try:
-            reply = call_llm(
-                _prompt(question, domain, modes, scratchpad, finding_texts),
-                system=system,
-            )
-        except (OSError, TimeoutError, RuntimeError, KeyError, json.JSONDecodeError, ValueError):
+        reply = _call_model(_prompt(question, domain, modes, scratchpad, finding_texts), system)
+        if reply is None:
             return _revise_raw_centrality(
                 _with_fragility_note(answer, tools, results),
                 question,
@@ -697,12 +755,8 @@ def _revise_raw_centrality(
     if not problem:
         return answer
     scratchpad.append(problem)
-    try:
-        reply = call_llm(
-            _prompt(question, domain, modes, scratchpad, finding_texts),
-            system=system,
-        )
-    except (OSError, TimeoutError, RuntimeError, KeyError, json.JSONDecodeError, ValueError):
+    reply = _call_model(_prompt(question, domain, modes, scratchpad, finding_texts), system)
+    if reply is None:
         return _fallback_answer(results, finding_texts)
     try:
         kind, text, _params = parse_agent_reply(reply)
@@ -769,7 +823,8 @@ def _brief(question, domain, modes, finding_texts) -> str:
             "",
             f"User question: {question}",
             "",
-            "Decide which tools to call. Call at least 2 before answering. Reply with TOOL/PARAMS or ANSWER.",
+            "Decide which tools to call. Call at least 2 before answering. "
+            "Your first reply must be a tool call, not an answer. Reply with TOOL/PARAMS or ANSWER.",
             "",
             "Every number in your answer must appear in a tool result. "
             "When the user asks for specific names, call rank_nodes or explain_node. "
@@ -781,8 +836,29 @@ def _brief(question, domain, modes, finding_texts) -> str:
 
 
 def _prompt(question, domain, modes, scratchpad, finding_texts=None) -> str:
+    # Observations stay in the system prompt. This turn asks for a tool call.
+    del finding_texts
+    risks = [
+        f"- {mode['name']} ({mode['severity']}): {mode['description']}"
+        for mode in (modes or [])
+    ]
     lines = [
-        _brief(question, domain, modes, finding_texts or []),
+        f"User question: {question}",
+        "Reply with a tool call only.",
+        "TOOL: <tool_name>",
+        "PARAMS: <json_object>",
+        "",
+        "Here are the tools available:",
+        _render_tools(),
+        "",
+        f"This is a {domain} network. The following risks apply based on its structure:",
+        "\n".join(risks) if risks else "- none",
+        "",
+        "Call at least 2 before answering.",
+        "When the user asks how this compares, call baseline_compare.",
+        "When the user asks what's unusual, call anomaly_scan.",
+        "When the user asks what could go wrong, call critical_nodes and structural_criticality.",
+        "When the user asks for specific names, call rank_nodes or explain_node.",
     ]
     if scratchpad:
         lines.extend(["", "Results so far:", *scratchpad])
