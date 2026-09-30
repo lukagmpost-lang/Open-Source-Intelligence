@@ -1032,7 +1032,9 @@ def _compose(
     values = _base_values({}, results, finding_texts)
     missing = not answer.strip()
     ungrounded = _FRAGILITY_NOTE not in answer and not verify_numbers(answer, values)
-    if missing or ungrounded:
+    # The sentence list ends with a certainty line. A person would explain it instead.
+    listed = answer.rstrip().endswith("How sure: stable.") or answer.rstrip().endswith("How sure: moderate.") or answer.rstrip().endswith("How sure: unstable.")
+    if use_llm and _FRAGILITY_NOTE not in answer and (missing or ungrounded or listed):
         repaired = _prose_from_findings(question, domain, values) if use_llm else None
         if repaired:
             answer = repaired

@@ -294,6 +294,11 @@ def test_worry_question_on_reddit_2008_uses_three_tools(monkeypatch):
             return 'TOOL: list_communities\nPARAMS: {"algorithm": "louvain"}'
         if state["n"] == 3:
             return 'TOOL: explain_node\nPARAMS: {"node": "akdas"}'
+        if "Explain these findings" in prompt:
+            return (
+                "ANSWER: akdas is connected to 759 other accounts, like a mayor who knows the town, "
+                "which means if akdas leaves most people lose their connection to each other."
+            )
         match = re.search(r'"largest_size":\s*(\d+)', prompt)
         assert match, prompt
         return f"ANSWER: The largest group contains {match.group(1)} accounts."
