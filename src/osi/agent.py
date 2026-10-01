@@ -61,6 +61,7 @@ _FRAGILITY_NOTE = (
 )
 
 _MIN_MODEL_TOOLS = 2
+_MIN_TOOL_ATTEMPTS = 3
 
 TOOLS = [
     {
@@ -345,8 +346,41 @@ def _health_findings(results: list[ResultObject], finding_texts: list[str]) -> l
     return list(finding_texts)
 
 
+def _minimum_tool_message(chosen: int) -> str:
+    """Tell the model an answer arrived before two tools."""
+    return (
+        f"You called {chosen} tool(s). Call at least 2 before answering. "
+        "What else would help you answer this question?"
+    )
+
+
 def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tools, results, modes) -> str:
     chosen = 0
+    early_answers = 0
+
+    def _reject_early_answer() -> str | None:
+        """Refuse an answer that used fewer than two tools. Stop after three tries."""
+        nonlocal early_answers
+        early_answers += 1
+        if early_answers > _MIN_TOOL_ATTEMPTS:
+            return ""
+        scratchpad.append(_minimum_tool_message(chosen))
+        return None
+
+    def _accept_answer(payload: str, system: str) -> str:
+        return _rewrite_until_used(
+            payload.strip(),
+            question,
+            domain,
+            finding_texts,
+            hypotheses,
+            scratchpad,
+            tools,
+            results,
+            system,
+            modes,
+        )
+
     for _step in range(MAX_STEPS):
         ready = chosen >= _MIN_MODEL_TOOLS
         system = _system_prompt(question, domain, modes, finding_texts, ready=ready)
@@ -378,43 +412,22 @@ def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tool
                 _record_tool(run_id, name, params, tools, results, scratchpad)
                 chosen += 1
             answer_match = _ANSWER_LINE.search(reply)
-            if answer_match and chosen >= _MIN_MODEL_TOOLS and answer_match.group(1).strip():
-                return _rewrite_until_used(
-                    answer_match.group(1).strip(),
-                    question,
-                    domain,
-                    finding_texts,
-                    hypotheses,
-                    scratchpad,
-                    tools,
-                    results,
-                    system,
-                    modes,
-                )
+            if answer_match and answer_match.group(1).strip():
+                if chosen < _MIN_MODEL_TOOLS:
+                    stopped = _reject_early_answer()
+                    if stopped is not None:
+                        return stopped
+                    continue
+                return _accept_answer(answer_match.group(1), system)
             continue
         kind, payload, _params = parse_agent_reply(reply)
         if kind == "answer":
             if chosen < _MIN_MODEL_TOOLS:
-                scratchpad.append(
-                    f"You called {chosen} tool(s). Call at least 2 before answering. "
-                    "What else would help you answer this question?\n"
-                    "Do not write ANSWER yet. Reply with a tool call:\n"
-                    "TOOL: <tool_name>\n"
-                    "PARAMS: <json_object>"
-                )
+                stopped = _reject_early_answer()
+                if stopped is not None:
+                    return stopped
                 continue
-            return _rewrite_until_used(
-                payload.strip(),
-                question,
-                domain,
-                finding_texts,
-                hypotheses,
-                scratchpad,
-                tools,
-                results,
-                system,
-                modes,
-            )
+            return _accept_answer(payload, system)
         scratchpad.append(f"Unknown tool {payload}. Choose one from the tool list.")
     return ""
 

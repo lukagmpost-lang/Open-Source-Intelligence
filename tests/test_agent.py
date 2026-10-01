@@ -219,6 +219,53 @@ def test_a_moderator_question_uses_two_tools_and_names_an_account(monkeypatch):
     assert "alice" in result.answer
 
 
+def test_an_answer_with_one_tool_call_triggers_the_minimum_tool_rule(monkeypatch):
+    prompts: list[str] = []
+
+    def reply(prompt, **kwargs):
+        prompts.append(prompt)
+        if "TOOL RESULT list_communities" in prompt:
+            return "ANSWER: alice is more central than a typical account."
+        if "You called 1 tool(s)" in prompt:
+            return 'TOOL: list_communities\nPARAMS: {"algorithm": "louvain"}'
+        if "TOOL RESULT rank_nodes" in prompt:
+            return "ANSWER: alice is more central than a typical account."
+        return 'TOOL: rank_nodes\nPARAMS: {"metric": "degree", "top": 3}'
+
+    monkeypatch.setattr("osi.agent.call_llm", reply)
+    result = run_agent("simple-v1", "who matters here", use_llm=True)
+    assert any(
+        "You called 1 tool(s). Call at least 2 before answering. "
+        "What else would help you answer this question?"
+        in prompt
+        for prompt in prompts
+    )
+    assert "rank_nodes" in result.tools
+    assert "list_communities" in result.tools
+    assert "alice" in result.answer
+
+
+def test_an_answer_with_two_tool_calls_passes_the_minimum(monkeypatch):
+    prompts: list[str] = []
+
+    def reply(prompt, **kwargs):
+        prompts.append(prompt)
+        if "TOOL RESULT list_communities" in prompt:
+            return "ANSWER: alice is more central than a typical account."
+        if "TOOL RESULT rank_nodes" in prompt:
+            return 'TOOL: list_communities\nPARAMS: {"algorithm": "louvain"}'
+        return 'TOOL: rank_nodes\nPARAMS: {"metric": "degree", "top": 3}'
+
+    monkeypatch.setattr("osi.agent.call_llm", reply)
+    result = run_agent("simple-v1", "who matters here", use_llm=True)
+    assert all("You called" not in prompt for prompt in prompts)
+    assert [name for name in result.tools if name != "network_health"] == [
+        "rank_nodes",
+        "list_communities",
+    ]
+    assert "alice" in result.answer
+
+
 def test_an_early_answer_is_sent_back_for_another_tool(monkeypatch):
     prompts: list[str] = []
 
