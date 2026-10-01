@@ -17,6 +17,7 @@ from pathlib import Path
 
 from osi.result import ResultObject
 from osi.store import get_cached_answer, put_cached_answer
+from osi.vocabulary import get_source, vocabulary_instruction
 
 _ROOT = Path(__file__).resolve().parents[2]
 _NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
@@ -129,18 +130,22 @@ def domain_context(domain: str | None) -> str:
     )
 
 
-def answer_system_prompt(domain: str | None = "general") -> str:
+def answer_system_prompt(domain: str | None = "general", source: str | None = "general") -> str:
     """System prompt for a plain-language answer about one network."""
-    return "\n\n".join([WRITING_RULES, domain_context(domain), ANSWER_EXAMPLE])
+    return "\n\n".join(
+        [WRITING_RULES, vocabulary_instruction(source), domain_context(domain), ANSWER_EXAMPLE]
+    )
 
 
-def findings_system_prompt(domain: str | None = "general") -> str:
+def findings_system_prompt(
+    domain: str | None = "general", source: str | None = "general"
+) -> str:
     """System prompt when the executor already wrote the findings."""
     preface = (
         "You receive findings about a network. Rewrite them as flowing prose. "
         "Do not invent numbers. Do not add metrics."
     )
-    return preface + "\n\n" + answer_system_prompt(domain)
+    return preface + "\n\n" + answer_system_prompt(domain, source)
 
 
 SYSTEM_PROMPT = answer_system_prompt("general")
@@ -871,6 +876,7 @@ def write_answer(
     if not isinstance(run_id, str):
         run_id = ""
     domain = run_domain(result)
+    source = get_source(run_id)
     findings = result.values.get("findings")
     send_findings = (
         isinstance(findings, list)
@@ -881,14 +887,14 @@ def write_answer(
     def _request(prompt: str) -> str | None:
         try:
             if send_findings:
-                return call_llm(prompt, system=findings_system_prompt(domain))
+                return call_llm(prompt, system=findings_system_prompt(domain, source))
             return call_llm(
                 prompt,
                 run_id=run_id,
                 n_nodes=_size(result, "n_nodes", "nodes"),
                 n_edges=_size(result, "n_edges", "edges"),
                 question=asked,
-                system=answer_system_prompt(domain),
+                system=answer_system_prompt(domain, source),
             )
         except (OSError, TimeoutError, RuntimeError, KeyError, json.JSONDecodeError, ValueError):
             return None

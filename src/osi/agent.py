@@ -46,6 +46,7 @@ from osi.findings import HEALTH_SOURCES, generate_findings, pick_top_findings
 from osi.hypotheses import find_unasked_observations, generate_hypotheses, infer_domain
 from osi.result import ResultObject
 from osi.store import get_run, load_communities, load_graph, load_metrics
+from osi.vocabulary import get_source, vocabulary_for
 
 MAX_STEPS = 10
 _REWRITE_ATTEMPTS = 2
@@ -170,7 +171,9 @@ def critical_nodes(run: str, top: int = 5, top_n: int | None = None) -> ResultOb
         return ResultObject.from_dict(json.loads(cached))
     result = rank_nodes(run, metric="betweenness", top=limit)
     result.intent = "critical_nodes"
-    result.values["findings"] = criticality_account_findings(result.values)
+    result.values["findings"] = criticality_account_findings(
+        result.values, vocabulary_for(get_source(run))
+    )
     put_metric(run, key, json.dumps(result.to_dict()))
     return ResultObject.from_dict(json.loads(get_metric(run, key)))
 
@@ -238,11 +241,12 @@ def run_agent(run_id: str, question: str, use_llm: bool = True) -> AgentResult:
     if meta is None:
         raise ValueError(f"run {run_id} was not found")
     graph = _load(run_id, meta)
+    vocab = vocabulary_for(get_source(run_id))
     domain = infer_domain(meta.get("source") or "", (meta.get("config") or {}).get("layer") or "")
     snapshot = _snapshot(run_id, graph)
     shape = [
         item
-        for item in generate_findings(snapshot["finding_metrics"], None)
+        for item in generate_findings(snapshot["finding_metrics"], None, vocab)
         if item.get("source") in HEALTH_SOURCES
     ]
     finding_texts = pick_top_findings(shape, n=4)
@@ -273,7 +277,9 @@ def run_agent(run_id: str, question: str, use_llm: bool = True) -> AgentResult:
     if use_llm:
         for result in results:
             note_determinism(result)
-    observations = find_unasked_observations(graph, snapshot["hypothesis_metrics"], domain, question)
+    observations = find_unasked_observations(
+        graph, snapshot["hypothesis_metrics"], domain, question, vocab
+    )
     text, values = _compose(
         answer,
         observations,
@@ -292,12 +298,13 @@ def context_brief(run_id: str) -> str:
     if meta is None:
         raise ValueError(f"run {run_id} was not found")
     graph = _load(run_id, meta)
+    vocab = vocabulary_for(get_source(run_id))
     domain = infer_domain(meta.get("source") or "", (meta.get("config") or {}).get("layer") or "")
     snapshot = _snapshot(run_id, graph)
     findings = pick_top_findings(
         [
             item
-            for item in generate_findings(snapshot["finding_metrics"], None)
+            for item in generate_findings(snapshot["finding_metrics"], None, vocab)
             if item.get("source") in HEALTH_SOURCES
         ],
         n=1,

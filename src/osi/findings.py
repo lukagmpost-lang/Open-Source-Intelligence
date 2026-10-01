@@ -12,6 +12,8 @@ from pathlib import Path
 
 import networkx as nx
 
+from osi.vocabulary import VOCAB, apply_vocabulary
+
 _BASELINES_PATH = Path(__file__).with_name("baselines.json")
 # Clustering and assortativity are expensive on the large stored graphs.
 _AUTO_MEASURE_LIMIT = 5000
@@ -500,7 +502,7 @@ _RULES = (
 )
 
 
-def generate_findings(metrics: dict, graph=None) -> list[dict]:
+def generate_findings(metrics: dict, graph=None, vocab: dict[str, str] | None = None) -> list[dict]:
     """Apply every rule.
 
     Each match has ``text``, ``score`` (0-10), and ``metric``. The list is
@@ -510,6 +512,9 @@ def generate_findings(metrics: dict, graph=None) -> list[dict]:
     found: list[dict] = []
     for rule in _RULES:
         found.extend(rule(metrics, graph))
+    selected_vocab = vocab or VOCAB["general"]
+    for item in found:
+        item["text"] = apply_vocabulary(item["text"], selected_vocab)
     found.sort(key=lambda item: item["score"], reverse=True)
     return found
 

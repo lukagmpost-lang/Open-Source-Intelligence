@@ -36,6 +36,7 @@ from osi.findings import (
 )
 from osi.result import ResultObject, make_caveats
 from osi.store import get_run, load_communities, load_graph, load_metrics
+from osi.vocabulary import apply_vocabulary, get_source, vocabulary_for
 
 # Exact betweenness above this size is the sampled NetworkX routine, k=500.
 BETWEENNESS_SAMPLE_NODES = 5000
@@ -247,7 +248,9 @@ def _name_list(names: list[str]) -> str:
     return ", ".join(names[:-1]) + ", and " + names[-1]
 
 
-def interpret_rank(ranked: list[tuple], graph: nx.Graph, metric: str) -> list[str]:
+def interpret_rank(
+    ranked: list[tuple], graph: nx.Graph, metric: str, vocab: dict[str, str] | None = None
+) -> list[str]:
     """Turn a ranked list into 3 findings."""
     if not ranked or graph.number_of_nodes() == 0:
         return []
@@ -277,7 +280,9 @@ def interpret_rank(ranked: list[tuple], graph: nx.Graph, metric: str) -> list[st
         central = pagerank_centrality_text(ranked)
         if central:
             findings.append(central)
-    return findings
+    if vocab is None:
+        return findings
+    return [apply_vocabulary(sentence, vocab) for sentence in findings]
 
 
 def interpret_communities(n_communities: int, largest_size: int, modularity: float | None) -> list[str]:
@@ -300,7 +305,13 @@ def interpret_communities(n_communities: int, largest_size: int, modularity: flo
     return findings
 
 
-def _shape_findings(metrics: dict, communities: dict, ranked: list[tuple], graph: nx.Graph) -> list[str]:
+def _shape_findings(
+    metrics: dict,
+    communities: dict,
+    ranked: list[tuple],
+    graph: nx.Graph,
+    vocab: dict[str, str] | None = None,
+) -> list[str]:
     """The few sentences that describe the shape, with no metric names."""
     lines: list[str] = []
     for sentence in interpret_health(metrics, graph):
@@ -327,7 +338,8 @@ def _shape_findings(metrics: dict, communities: dict, ranked: list[tuple], graph
     hubs = next((sentence for sentence in rank_lines if sentence.startswith("These five")), None)
     if hubs and len(lines) < 5:
         lines.append(hubs)
-    return lines[:5]
+    selected_vocab = vocab or vocabulary_for("general")
+    return [apply_vocabulary(line, selected_vocab) for line in lines[:5]]
 
 
 def _selected_findings(
@@ -335,9 +347,10 @@ def _selected_findings(
     allowed: set[str] | None = None,
     n: int = 4,
     sources: set[str] | None = None,
+    vocab: dict[str, str] | None = None,
 ) -> list[str]:
     """Plain sentences from the findings engine, highest score first."""
-    found = generate_findings(metrics, None)
+    found = generate_findings(metrics, None, vocab)
     if allowed is not None:
         found = [item for item in found if item["metric"] in allowed]
     if sources is not None:
@@ -348,6 +361,7 @@ def _selected_findings(
 def rank_nodes(run: str, metric: str = "pagerank", top: int = 10) -> ResultObject:
     """Top nodes by pagerank, degree, betweenness, or closeness."""
     graph = _load_graph(run)
+    vocab = vocabulary_for(get_source(run))
     started = time.perf_counter()
     scores, method, sample_size = _metric_scores(run, metric, graph)
     ranked = list(scores.items())
@@ -368,8 +382,12 @@ def rank_nodes(run: str, metric: str = "pagerank", top: int = 10) -> ResultObjec
             [assignment.get(node) for node in names] if assignment and len(names) >= 5 else None
         ),
     }
-    base = interpret_rank(ranked[:top], graph, metric)
-    extra = [text for text in _selected_findings(hub_metrics, sources=RANK_SOURCES) if text not in base]
+    base = interpret_rank(ranked[:top], graph, metric, vocab)
+    extra = [
+        text
+        for text in _selected_findings(hub_metrics, sources=RANK_SOURCES, vocab=vocab)
+        if text not in base
+    ]
     values["findings"] = base + extra
     return _finish(
         "rank_nodes",
@@ -389,6 +407,7 @@ def list_communities(run: str, algorithm: str = "louvain") -> ResultObject:
     if algorithm not in _COMMUNITIES:
         raise ValueError(f"unknown algorithm {algorithm}")
     graph = _load_graph(run)
+    vocab = vocabulary_for(get_source(run))
     started = time.perf_counter()
     assignment = load_communities(run, algorithm)
     if not assignment:
@@ -404,11 +423,14 @@ def list_communities(run: str, algorithm: str = "louvain") -> ResultObject:
         "n_communities": int(values["n_communities"]),
         "largest_size": int(values["largest_size"]),
     }
-    values["findings"] = _selected_findings(community_metrics, COMMUNITY_METRICS) or interpret_communities(
+    values["findings"] = _selected_findings(community_metrics, COMMUNITY_METRICS, vocab=vocab) or [
+        apply_vocabulary(sentence, vocab)
+        for sentence in interpret_communities(
         int(values["n_communities"]),
         int(values["largest_size"]),
         values.get("modularity"),
-    )
+        )
+    ]
     return _finish(
         "list_communities",
         {"run": run, "algorithm": algorithm},
@@ -425,6 +447,7 @@ def list_communities(run: str, algorithm: str = "louvain") -> ResultObject:
 def network_health(run: str) -> ResultObject:
     """Assortativity, clustering, transitivity, components, degree, and the power-law fit."""
     graph = _load_graph(run)
+    vocab = vocabulary_for(get_source(run))
     started = time.perf_counter()
     health = _network_health(graph)
     fit = degree_distribution(graph)
@@ -482,9 +505,9 @@ def network_health(run: str) -> ResultObject:
         "avg_degree": health["avg_degree"],
         "max_degree": health["max_degree"],
         "power_law": fit["power_law"],
-        "findings": _selected_findings(finding_metrics, sources=HEALTH_SOURCES)
+        "findings": _selected_findings(finding_metrics, sources=HEALTH_SOURCES, vocab=vocab)
         or [
-            sentence
+            apply_vocabulary(sentence, vocab)
             for sentence in interpret_health(metrics, graph)
             if not sentence.startswith("A few hubs")
         ],
@@ -545,7 +568,7 @@ def structural_criticality(run: str) -> ResultObject:
         strategy: {ratio: stats["largest"] for ratio, stats in measured[strategy].items()}
         for strategy in ("random", "degree", "betweenness")
     }
-    values.update(_criticality_summary(measured))
+    values.update(_criticality_summary(measured, vocabulary_for(get_source(run))))
     result = _finish(
         "structural_criticality",
         {"run": run, "runs": trials},
@@ -589,7 +612,7 @@ def _halving_ratio(curve: dict) -> float | None:
     return None
 
 
-def criticality_account_findings(values: dict) -> list[str]:
+def criticality_account_findings(values: dict, vocab: dict[str, str] | None = None) -> list[str]:
     """Who would disconnect the network. These sentences belong to critical_nodes."""
     rows = []
     for key, value in values.items():
@@ -600,10 +623,12 @@ def criticality_account_findings(values: dict) -> list[str]:
         except (TypeError, ValueError):
             continue
     if not rows:
-        return [
+        findings = [
             "Removing the accounts that sit on the most paths first would disconnect the network, "
             "which means other people lose their way to each other."
         ]
+        selected_vocab = vocab or vocabulary_for("general")
+        return [apply_vocabulary(sentence, selected_vocab) for sentence in findings]
     rows.sort(key=lambda item: (-item[1], item[0]))
     names = _name_list([name for name, _score in rows[:5]])
     top_name, top_score = rows[0]
@@ -618,7 +643,8 @@ def criticality_account_findings(values: dict) -> list[str]:
             f"{top_name} is on {ratio:.0f}x more paths than a typical account, "
             f"which means removing {top_name} cuts other people off from each other."
         )
-    return lines
+    selected_vocab = vocab or vocabulary_for("general")
+    return [apply_vocabulary(sentence, selected_vocab) for sentence in lines]
 
 
 def _criticality_findings(
@@ -672,7 +698,7 @@ def _criticality_findings(
     return findings
 
 
-def _criticality_summary(measured: dict) -> dict:
+def _criticality_summary(measured: dict, vocab: dict[str, str] | None = None) -> dict:
     degree = {ratio: stats["largest"] for ratio, stats in measured["degree"].items()}
     betweenness = {ratio: stats["largest"] for ratio, stats in measured["betweenness"].items()}
     random = {ratio: stats["largest"] for ratio, stats in measured["random"].items()}
@@ -681,12 +707,15 @@ def _criticality_summary(measured: dict) -> dict:
         if abs(float(ratio) - 0.30) < 1e-9:
             components = float(stats["components"])
             break
+    findings = _criticality_findings(degree, betweenness, random, components)
+    if vocab is not None:
+        findings = [apply_vocabulary(sentence, vocab) for sentence in findings]
     summary = {
         "halving_degree": _halving_ratio(degree),
         "halving_betweenness": _halving_ratio(betweenness),
         "halving_random": _halving_ratio(random),
         "frac_at_30_degree": _curve_value(degree, 0.30),
-        "findings": _criticality_findings(degree, betweenness, random, components),
+        "findings": findings,
     }
     return summary
 
