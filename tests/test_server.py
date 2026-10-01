@@ -68,6 +68,23 @@ def test_post_ask_open_question_describes_the_graph():
     assert "clustering" not in body["answer"]
 
 
+def test_post_ask_can_run_the_agent():
+    response = client.post(
+        "/api/ask",
+        json={
+            "run": "simple-v1",
+            "question": "top 3 by pagerank",
+            "use_llm": False,
+            "use_agent": True,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["intent"] == "agent"
+    assert body["method"] == "agent"
+    assert body["answer"].strip()
+
+
 def test_index_returns_html():
     response = client.get("/")
     assert response.status_code == 200

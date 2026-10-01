@@ -25,7 +25,7 @@
   <label for="run">Run</label>
   <select id="run"></select>
   <label for="question">Question</label>
-  <textarea id="question" placeholder="top 3 by pagerank"></textarea>
+  <textarea id="question">what should I be worried about</textarea>
   <button id="ask" type="button">Ask</button>
   <pre id="answer"></pre>
   <details>
@@ -48,6 +48,9 @@
         option.textContent = id;
         runSelect.append(option);
       }
+      if ([...runSelect.options].some((option) => option.value === "r2012-v2")) {
+        runSelect.value = "r2012-v2";
+      }
     }
 
     document.getElementById("ask").addEventListener("click", async () => {
@@ -60,6 +63,7 @@
           run: runSelect.value,
           question: questionBox.value,
           use_llm: true,
+          use_agent: true,
         }),
       });
       const body = await response.json();
