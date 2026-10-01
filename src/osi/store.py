@@ -156,7 +156,7 @@ def create_run(
 
 def save_graph(run_id: str, layer: str, graph: nx.Graph, path: str | Path | None = None) -> None:
     """Store one layer as node-link JSON."""
-    payload = nx.node_link_data(graph, edges=_LINK_KEY)
+    payload = nx.node_link_data(graph)
     encoded = json.dumps(payload)
     with _connection(path) as conn:
         conn.execute(
@@ -180,7 +180,7 @@ def load_graph(run_id: str, layer: str, path: str | Path | None = None) -> nx.Gr
         ).fetchone()
     if row is None:
         return None
-    return nx.node_link_graph(json.loads(row["graph_json"]), edges=_LINK_KEY)
+    return nx.node_link_graph(json.loads(row["graph_json"]))
 
 
 def save_metrics(

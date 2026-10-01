@@ -77,14 +77,8 @@ def _from_records(rows: list, source_col: str, target_col: str, weight_col: str 
 
 
 def _from_node_link(payload: dict) -> nx.Graph:
-    # The store writes "links". Some files use the older "edges" key.
-    if "links" in payload:
-        edges = "links"
-    elif "edges" in payload:
-        edges = "edges"
-    else:
-        edges = "links"
-    return nx.node_link_graph(payload, edges=edges)
+    # NetworkX 3.x automatically handles both "links" and "edges" keys
+    return nx.node_link_graph(payload)
 
 
 def load_edge_list(

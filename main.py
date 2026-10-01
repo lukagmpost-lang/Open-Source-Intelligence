@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
 from osi.loader import load_edge_list, load_graphml  # noqa: E402
+from osi.loaders.slack import load_slack_export, detect_slack_format  # noqa: E402
 from osi.analysis import (  # noqa: E402
     betweenness_centrality,
     closeness_centrality,
@@ -47,8 +48,8 @@ from osi.store import (  # noqa: E402
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Analyze a graph from a file or from a saved run.")
-    parser.add_argument("--source", choices=("file",), default=None)
-    parser.add_argument("--path", help="Edge list or GraphML. Used with --source file.")
+    parser.add_argument("--source", choices=("file", "slack"), default=None)
+    parser.add_argument("--path", help="Edge list, GraphML, or Slack export. Used with --source.")
     parser.add_argument("--analyze", choices=("all", "centrality", "communities"), default="all")
     parser.add_argument("--out", default="graph.json", help="Node-link JSON output path.")
     parser.add_argument("--save-run", metavar="NAME", help="Save results under this run id.")
@@ -66,6 +67,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Print network health and degree-distribution fits.",
     )
+    parser.add_argument("--edge-rule", choices=("thread", "channel", "mention"), 
+                        default="thread", help="Slack edge creation rule (thread, channel, mention)")
+    parser.add_argument("--thread-cap", type=int, default=30, 
+                        help="Maximum unique users per Slack thread (default: 30)")
     args = parser.parse_args(argv)
     args.robustness_loaded_latest = False
     if args.list_runs:
@@ -82,9 +87,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         args.robustness_loaded_latest = True
     if args.load_run and not args.no_cache:
         return args
-    if args.source == "file":
+    if args.source in ("file", "slack"):
         if not args.path:
-            parser.error("--source file requires --path")
+            parser.error(f"--source {args.source} requires --path")
         return args
     parser.error("pass --load-run, or --run")
     return args
@@ -262,13 +267,15 @@ def print_robustness_pair(label_a: str, left: dict, label_b: str, right: dict) -
 
 
 def write_graph(graph: nx.Graph, path: str) -> None:
-    payload = nx.node_link_data(graph, edges="links")
+    payload = nx.node_link_data(graph)
     Path(path).write_text(json.dumps(payload), encoding="utf-8")
 
 
 def graph_layer(args: argparse.Namespace) -> str:
     if args.source == "file":
         return "file"
+    if args.source == "slack":
+        return "slack"
     return "graph"
 
 
@@ -326,6 +333,9 @@ def _persist_run(args: argparse.Namespace, graph: nx.Graph, centralities: dict |
     layer = graph_layer(args)
     source = args.source or "file"
     config = {"source": source, "analyze": args.analyze, "layer": layer, "path": args.path}
+    if args.source == "slack":
+        config["edge_rule"] = args.edge_rule
+        config["thread_cap"] = args.thread_cap
     run_id = create_run(source, config, args.save_run, run_id=args.save_run)
     save_graph(run_id, layer, graph)
     scores = dict(centralities or {})
@@ -346,7 +356,17 @@ def _persist_run(args: argparse.Namespace, graph: nx.Graph, centralities: dict |
         save_communities(run_id, algorithm, membership)
 
 
-def _load_source_file(path: str) -> nx.Graph:
+def _load_source_file(path: str, source: str = "file", edge_rule: str = "thread", thread_cap: int = 30) -> nx.Graph:
+    if source == "slack":
+        confidence = detect_slack_format(path)
+        if confidence == "low":
+            raise ValueError(f"Could not detect valid Slack export at {path}")
+        print(f"Detected: Slack workspace export (confidence: {confidence})")
+        graph, metadata = load_slack_export(path, edge_rule=edge_rule, thread_cap=thread_cap)
+        print(f"Workspace: {metadata['workspace_name']}")
+        print(f"Users: {metadata['user_count']}, Channels: {metadata['channel_count']}")
+        return graph
+    
     suffix = Path(path).suffix.lower()
     if suffix in {".csv", ".tsv", ".json"}:
         return load_edge_list(path)
@@ -357,6 +377,15 @@ def _load_source_file(path: str) -> nx.Graph:
 
 def _analyze_fresh(args: argparse.Namespace, graph: nx.Graph) -> None:
     """Print the requested report, then store the graph when --save-run is set."""
+    # Print graph stats for Slack source
+    if args.source == "slack":
+        num_components = nx.number_connected_components(graph)
+        print(f"Graph: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges, {num_components} component(s)")
+        degrees = dict(graph.degree())
+        top_nodes = sorted(degrees.items(), key=lambda x: x[1], reverse=True)[:5]
+        top_names = [graph.nodes[node_id].get('display_name', node_id) for node_id, _ in top_nodes]
+        print(f"Top 5 by degree: {', '.join(top_names)}")
+    
     centralities = print_pagerank(graph) if args.analyze in ("all", "centrality") else None
     communities = print_communities(graph) if args.analyze in ("all", "communities") else None
     if not args.save_run:
@@ -374,10 +403,10 @@ def main(argv: list[str] | None = None) -> int:
         _print_saved_runs()
         return 0
     # --run and --load-run win unless --no-cache asked for a fresh file read.
-    reading_file = args.source == "file" and not (args.load_run and not args.no_cache)
+    reading_file = args.source in ("file", "slack") and not (args.load_run and not args.no_cache)
     if reading_file:
         try:
-            graph = _load_source_file(args.path)
+            graph = _load_source_file(args.path, source=args.source, edge_rule=args.edge_rule, thread_cap=args.thread_cap)
         except (OSError, ValueError, json.JSONDecodeError, nx.NetworkXError) as error:
             print(error, file=sys.stderr)
             return 1

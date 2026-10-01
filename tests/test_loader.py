@@ -45,7 +45,7 @@ def test_tsv_and_json_list_and_node_link(tmp_path, capsys):
     assert loaded["b"]["c"]["weight"] == 1.0
 
     document = tmp_path / "nodelink.json"
-    document.write_text(json.dumps(nx.node_link_data(loaded, edges="links")), encoding="utf-8")
+    document.write_text(json.dumps(nx.node_link_data(loaded)), encoding="utf-8")
     roundtrip = load_edge_list(document)
     assert set(roundtrip.edges) == {("a", "b"), ("b", "c")}
 
