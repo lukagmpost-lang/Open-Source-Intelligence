@@ -268,6 +268,8 @@ def run_agent(run_id: str, question: str, use_llm: bool = True) -> AgentResult:
         )
     else:
         _run_plan(run_id, tools, results, scratchpad)
+    if use_llm and not answer.strip() and _question_sources_missing(question, set()):
+        _fill_missing_tools(question, run_id, tools, results, scratchpad)
     if use_llm:
         for result in results:
             note_determinism(result)
@@ -386,6 +388,33 @@ def _health_findings(results: list[ResultObject], finding_texts: list[str]) -> l
         if lines:
             return lines
     return list(finding_texts)
+
+
+def _tools_for_question(question: str) -> list[str]:
+    """Tools whose findings the question needs when the model never calls them."""
+    text = question.casefold()
+    worry = any(phrase in text for phrase in ("worried", "worry", "what could go wrong", "go wrong"))
+    names: list[str] = []
+    if worry or any(phrase in text for phrase in ("who is central", "most important", "who matters", "who is a hub")):
+        names.append("rank_nodes")
+    if worry or "fragil" in text:
+        names.append("structural_criticality")
+    if worry or any(phrase in text for phrase in ("critical", "disconnect", "if removed")):
+        names.append("critical_nodes")
+    return names
+
+
+def _fill_missing_tools(question, run_id, tools, results, scratchpad) -> None:
+    """Run the category tools after the loop gives up without them."""
+    params = {
+        "rank_nodes": {"metric": "degree", "top": 5},
+        "critical_nodes": {"top_n": 5},
+        "structural_criticality": {},
+    }
+    for name in _tools_for_question(question):
+        if name in tools:
+            continue
+        _record_tool(run_id, name, params[name], tools, results, scratchpad)
 
 
 def _minimum_tool_message(used: int) -> str:

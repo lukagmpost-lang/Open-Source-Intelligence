@@ -58,7 +58,7 @@ def generate_hypotheses(metrics, graph, domain) -> list[dict]:
 
 def find_unasked_observations(graph, metrics, domain, original_question) -> list[str]:
     """Return two or three observations the question did not ask for."""
-    from osi.findings import generate_findings
+    from osi.findings import HEALTH_SOURCES, generate_findings
 
     metrics = metrics or {}
     candidates: list[str] = []
@@ -70,6 +70,8 @@ def find_unasked_observations(graph, metrics, domain, original_question) -> list
         if key not in {"assignment", "communities", "betweenness", "robustness", "activity"}
     }
     for item in generate_findings(finding_metrics, None):
+        if item.get("source") not in HEALTH_SOURCES:
+            continue
         candidates.append(str(item["text"]))
     candidates.extend(_structural_notes(metrics))
     asked = _words(original_question)

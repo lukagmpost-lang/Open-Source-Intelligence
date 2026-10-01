@@ -111,6 +111,19 @@ def test_a_worry_question_calls_rank_and_criticality_and_names_an_account(monkey
     assert any(name in result.answer for name in ("alice", "bob", "carol", "dave"))
 
 
+def test_a_worry_question_still_measures_criticality_when_the_model_never_calls_a_tool(monkeypatch):
+    def always_answer(prompt, **kwargs):
+        if "Explain these findings" in prompt:
+            return "ANSWER: about 999999 accounts."
+        return "ANSWER: The network looks fine."
+
+    monkeypatch.setattr("osi.agent.call_llm", always_answer)
+    result = run_agent("simple-v1", "what should I be worried about", use_llm=True)
+    assert "rank_nodes" in result.tools
+    assert "critical_nodes" in result.tools or "structural_criticality" in result.tools
+    assert any(name in result.answer for name in ("alice", "bob", "carol", "dave"))
+
+
 def test_an_importance_question_calls_rank_nodes(monkeypatch):
     def choose(prompt, **kwargs):
         assert "WHO is important" in prompt
