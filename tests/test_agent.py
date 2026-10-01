@@ -60,8 +60,9 @@ def test_a_worry_question_calls_the_fragility_tools(monkeypatch):
         assert "HOW FRAGILE" in prompt
         if "TOOL RESULT structural_criticality" in prompt:
             return (
-                "ANSWER: The network is fragile: removing 30% of the top accounts halves it. "
-                "alice is more central than a typical account."
+                "ANSWER: alice is more central than a typical account. "
+                "Removing 30% of the top accounts halves it. "
+                "The bridge score is 0.6666666667."
             )
         if "TOOL RESULT critical_nodes" in prompt:
             return "TOOL: structural_criticality\nPARAMS: {}"
@@ -77,7 +78,10 @@ def test_an_importance_question_calls_rank_nodes(monkeypatch):
     def choose(prompt, **kwargs):
         assert "WHO is important" in prompt
         if "TOOL RESULT explain_node" in prompt:
-            return "ANSWER: alice is more central than a typical account."
+            return (
+                "ANSWER: alice is more central than a typical account, "
+                "with pagerank 0.2745901355 and degree share 0.6666666667."
+            )
         if "TOOL RESULT rank_nodes" in prompt:
             return 'TOOL: explain_node\nPARAMS: {"node": "alice"}'
         return 'TOOL: rank_nodes\nPARAMS: {"metric": "pagerank", "top": 3}'
@@ -91,7 +95,10 @@ def test_an_account_question_calls_explain_node(monkeypatch):
     def choose(prompt, **kwargs):
         assert "SPECIFIC account" in prompt
         if "TOOL RESULT rank_nodes" in prompt:
-            return "ANSWER: alice is more central than a typical account."
+            return (
+                "ANSWER: alice is more central than a typical account, "
+                "with score 0.4154806663. One giant group contains 4 accounts."
+            )
         if "TOOL RESULT explain_node" in prompt:
             return 'TOOL: rank_nodes\nPARAMS: {"metric": "degree", "top": 3}'
         return 'TOOL: explain_node\nPARAMS: {"node": "alice"}'
@@ -105,7 +112,10 @@ def test_a_path_question_calls_connectivity(monkeypatch):
     def choose(prompt, **kwargs):
         assert "CONNECTED TO" in prompt
         if "TOOL RESULT rank_nodes" in prompt:
-            return "ANSWER: alice is more central than a typical account."
+            return (
+                "ANSWER: alice is more central than a typical account. "
+                "The degree share is 0.6666666667. One giant group contains 4 accounts."
+            )
         if "TOOL RESULT connectivity" in prompt:
             return 'TOOL: rank_nodes\nPARAMS: {"metric": "degree", "top": 3}'
         return 'TOOL: connectivity\nPARAMS: {"source": "alice", "target": "bob"}'
@@ -124,7 +134,8 @@ def test_a_novel_question_uses_a_tool_number(monkeypatch):
             match = re.search(r"\b(\d+)\b", section)
             assert match, section
             return (
-                f"ANSWER: alice has {match.group(1)} connections and is more central than a typical account."
+                f"ANSWER: alice has {match.group(1)} connections and is more central than a typical account. "
+                "The bridge score is 0.3333333333. One giant group contains 4 accounts."
             )
         if "TOOL RESULT rank_nodes" in prompt:
             return 'TOOL: critical_nodes\nPARAMS: {"top_n": 3}'
@@ -145,7 +156,11 @@ def test_a_comparison_question_calls_baseline_compare(monkeypatch):
         assert "HOW DOES THIS COMPARE" in prompt
         assert "baseline_compare" in prompt
         if "TOOL RESULT rank_nodes" in prompt:
-            return "ANSWER: alice is more central than a typical account."
+            return (
+                "ANSWER: alice is more central than a typical account. "
+                "The groups blur together 2927339757790822x more than on Reddit 2008 "
+                "and the degree share is 0.6666666667."
+            )
         if "TOOL RESULT baseline_compare" in prompt:
             return 'TOOL: rank_nodes\nPARAMS: {"metric": "degree", "top": 3}'
         return 'TOOL: baseline_compare\nPARAMS: {"baseline": "reddit_2008"}'
@@ -160,7 +175,11 @@ def test_an_unusual_question_calls_anomaly_scan(monkeypatch):
         assert "WHAT IS UNUSUAL" in prompt
         assert "anomaly_scan" in prompt
         if "TOOL RESULT rank_nodes" in prompt:
-            return "ANSWER: alice is more central than a typical account."
+            return (
+                "ANSWER: alice is more central than a typical account. "
+                "The groups blur together 6070852297695428x more "
+                "and the degree share is 0.6666666667."
+            )
         if "TOOL RESULT anomaly_scan" in prompt:
             return 'TOOL: rank_nodes\nPARAMS: {"metric": "degree", "top": 3}'
         return "TOOL: anomaly_scan\nPARAMS: {}"
@@ -178,20 +197,32 @@ def test_the_three_boundary_questions_produce_different_answers(monkeypatch):
     )
 
     def choose(prompt, **kwargs):
-        if "normal forum" in prompt:
+        question = prompt.splitlines()[0]
+        if "normal forum" in question:
             if "TOOL RESULT rank_nodes" in prompt:
-                return "ANSWER: Forum comparison: alice is more central than a typical account."
+                return (
+                    "ANSWER: Forum comparison: alice is more central than a typical account. "
+                    "The groups blur together 7521011377708728x more than on SNAP Facebook "
+                    "and the degree share is 0.6666666667."
+                )
             if "TOOL RESULT baseline_compare" in prompt:
                 return 'TOOL: rank_nodes\nPARAMS: {"metric": "degree", "top": 3}'
             return 'TOOL: baseline_compare\nPARAMS: {"baseline": "snap_facebook"}'
         if "most unusual" in prompt:
             if "TOOL RESULT explain_node" in prompt:
-                return "ANSWER: The unusual part is alice, more central than a typical account."
+                return (
+                    "ANSWER: The unusual anomaly is alice, more central than a typical account. "
+                    "The groups blur together 6070852297695428x more "
+                    "and the degree share is 0.6666666667."
+                )
             if "TOOL RESULT anomaly_scan" in prompt:
                 return 'TOOL: explain_node\nPARAMS: {"node": "alice"}'
             return "TOOL: anomaly_scan\nPARAMS: {}"
         if "TOOL RESULT critical_nodes" in prompt:
-            return "ANSWER: A moderator should watch alice, who is more central than a typical account."
+            return (
+                "ANSWER: A moderator should watch alice, who is more central than a typical account. "
+                "One giant group contains 4 accounts and the bridge score is 0.3333333333."
+            )
         if "TOOL RESULT rank_nodes" in prompt:
             return 'TOOL: critical_nodes\nPARAMS: {"top_n": 3}'
         return 'TOOL: rank_nodes\nPARAMS: {"metric": "degree", "top": 3}'
@@ -219,51 +250,55 @@ def test_a_moderator_question_uses_two_tools_and_names_an_account(monkeypatch):
     assert "alice" in result.answer
 
 
-def test_an_answer_with_one_tool_call_triggers_the_minimum_tool_rule(monkeypatch):
+def test_an_answer_that_uses_one_tool_triggers_the_minimum_tool_rule(monkeypatch):
     prompts: list[str] = []
+    _install_worry_stubs(monkeypatch)
 
     def reply(prompt, **kwargs):
         prompts.append(prompt)
-        if "TOOL RESULT list_communities" in prompt:
-            return "ANSWER: alice is more central than a typical account."
-        if "You called 1 tool(s)" in prompt:
-            return 'TOOL: list_communities\nPARAMS: {"algorithm": "louvain"}'
-        if "TOOL RESULT rank_nodes" in prompt:
-            return "ANSWER: alice is more central than a typical account."
-        return 'TOOL: rank_nodes\nPARAMS: {"metric": "degree", "top": 3}'
+        if "You used 1 tool(s)" in prompt:
+            return (
+                "ANSWER: The bridge score is 0.91 and removing 5% of the top accounts halves the network."
+            )
+        if "TOOL RESULT structural_criticality" in prompt:
+            return "ANSWER: The bridge score is 0.91."
+        if "TOOL RESULT critical_nodes" in prompt:
+            return "TOOL: structural_criticality\nPARAMS: {}"
+        return 'TOOL: critical_nodes\nPARAMS: {"top_n": 5}'
 
     monkeypatch.setattr("osi.agent.call_llm", reply)
-    result = run_agent("simple-v1", "who matters here", use_llm=True)
+    result = run_agent("simple-v1", "what should I be worried about", use_llm=True)
     assert any(
-        "You called 1 tool(s). Call at least 2 before answering. "
+        "You used 1 tool(s). Use at least 2 before answering. "
         "What else would help you answer this question?"
         in prompt
         for prompt in prompts
     )
-    assert "rank_nodes" in result.tools
-    assert "list_communities" in result.tools
-    assert "alice" in result.answer
+    assert "0.91" in result.answer
+    assert "5%" in result.answer
 
 
-def test_an_answer_with_two_tool_calls_passes_the_minimum(monkeypatch):
+def test_an_answer_that_uses_two_tools_passes_the_minimum(monkeypatch):
     prompts: list[str] = []
+    _install_worry_stubs(monkeypatch)
+    cited = "ANSWER: The bridge score is 0.91 and removing 5% of the top accounts halves the network."
 
     def reply(prompt, **kwargs):
         prompts.append(prompt)
-        if "TOOL RESULT list_communities" in prompt:
-            return "ANSWER: alice is more central than a typical account."
-        if "TOOL RESULT rank_nodes" in prompt:
-            return 'TOOL: list_communities\nPARAMS: {"algorithm": "louvain"}'
-        return 'TOOL: rank_nodes\nPARAMS: {"metric": "degree", "top": 3}'
+        if "TOOL RESULT structural_criticality" in prompt:
+            return cited
+        if "TOOL RESULT critical_nodes" in prompt:
+            return "TOOL: structural_criticality\nPARAMS: {}"
+        return 'TOOL: critical_nodes\nPARAMS: {"top_n": 5}'
 
     monkeypatch.setattr("osi.agent.call_llm", reply)
-    result = run_agent("simple-v1", "who matters here", use_llm=True)
-    assert all("You called" not in prompt for prompt in prompts)
-    assert [name for name in result.tools if name != "network_health"] == [
-        "rank_nodes",
-        "list_communities",
-    ]
-    assert "alice" in result.answer
+    first = run_agent("simple-v1", "what should I be worried about", use_llm=True)
+    second = run_agent("simple-v1", "what should I be worried about", use_llm=True)
+    assert all("You used" not in prompt for prompt in prompts)
+    assert first.answer == second.answer
+    assert first.tools == second.tools
+    assert "0.91" in first.answer
+    assert "5%" in first.answer
 
 
 def test_an_early_answer_is_sent_back_for_another_tool(monkeypatch):
@@ -271,7 +306,7 @@ def test_an_early_answer_is_sent_back_for_another_tool(monkeypatch):
 
     def answer_first(prompt, **kwargs):
         prompts.append(prompt)
-        if "You called" not in prompt:
+        if "You used" not in prompt:
             return "ANSWER: Nothing stands out yet."
         if "TOOL RESULT list_communities" in prompt:
             return "ANSWER: alice is more central than a typical account."
@@ -281,7 +316,7 @@ def test_an_early_answer_is_sent_back_for_another_tool(monkeypatch):
 
     monkeypatch.setattr("osi.agent.call_llm", answer_first)
     result = run_agent("simple-v1", "what should I be worried about", use_llm=True)
-    assert any("You called 0 tool(s). Call at least 2 before answering." in prompt for prompt in prompts)
+    assert any("You used 0 tool(s). Use at least 2 before answering." in prompt for prompt in prompts)
     assert "rank_nodes" in result.tools
     assert "list_communities" in result.tools
 
@@ -303,7 +338,11 @@ def test_nothing_is_auto_run_when_the_required_tools_were_called(monkeypatch):
     def both_tools(prompt, **kwargs):
         prompts.append(prompt)
         if "TOOL RESULT structural_criticality" in prompt:
-            return "ANSWER: The hubs hold this network together. They are more central than typical."
+            return (
+                "ANSWER: The hubs hold this network together. "
+                "alice is more central than a typical account. "
+                "The bridge score is 0.6666666667 and it survives removing 30% of the top accounts without halving."
+            )
         if "TOOL RESULT critical_nodes" in prompt:
             return "TOOL: structural_criticality\nPARAMS: {}"
         return 'TOOL: critical_nodes\nPARAMS: {"top_n": 10}'
@@ -406,7 +445,7 @@ def test_an_answer_that_uses_only_critical_nodes_asks_for_a_rewrite(monkeypatch)
         if "did not use the results" in prompt:
             return "ANSWER: The bridge score is 0.91 and removing 5% of the top accounts halves the network."
         if "TOOL RESULT structural_criticality" in prompt:
-            return "ANSWER: The bridge score is 0.91."
+            return "ANSWER: The bridge score is 0.91. One giant group contains 4 accounts."
         if "TOOL RESULT critical_nodes" in prompt:
             return "TOOL: structural_criticality\nPARAMS: {}"
         return 'TOOL: critical_nodes\nPARAMS: {"top_n": 5}'
@@ -454,7 +493,7 @@ def test_after_two_rewrites_the_answer_is_accepted_anyway(monkeypatch, capsys):
             return 'TOOL: critical_nodes\nPARAMS: {"top_n": 5}'
         if "TOOL RESULT structural_criticality" not in prompt:
             return "TOOL: structural_criticality\nPARAMS: {}"
-        return "ANSWER: The bridge score is 0.91."
+        return "ANSWER: The bridge score is 0.91. One giant group contains 4 accounts."
 
     monkeypatch.setattr("osi.agent.call_llm", still_ignores_fragility)
     result = run_agent("simple-v1", "what should I be worried about", use_llm=True)
@@ -555,7 +594,10 @@ def test_rewrite_fires_when_the_fragility_expression_is_missing(monkeypatch):
         if "did not use the results" in prompt:
             return "ANSWER: The bridge score is 0.91 and removing 5% halves the network."
         if "TOOL RESULT structural_criticality" in prompt:
-            return "ANSWER: The bridge score is 0.91. Accounts are 5x more connected."
+            return (
+                "ANSWER: The bridge score is 0.91. One giant group contains 4 accounts. "
+                "Accounts are 5x more connected."
+            )
         if "TOOL RESULT critical_nodes" in prompt:
             return "TOOL: structural_criticality\nPARAMS: {}"
         return 'TOOL: critical_nodes\nPARAMS: {"top_n": 5}'

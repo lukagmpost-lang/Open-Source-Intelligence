@@ -20,9 +20,12 @@ import networkx as nx
 from osi.analysis import _modularity_of, pagerank as compute_pagerank
 from osi.answer import (
     ANSWER_EXAMPLE,
+    LLM_SEED,
+    LLM_TEMPERATURE,
     WRITING_RULES,
     call_llm,
     domain_context,
+    note_determinism,
     raw_centrality_problem,
     templated_fallback,
     verify_numbers,
@@ -236,6 +239,9 @@ def run_agent(run_id: str, question: str, use_llm: bool = True) -> AgentResult:
         )
     else:
         _run_plan(run_id, tools, results, scratchpad)
+    if use_llm:
+        for result in results:
+            note_determinism(result)
     observations = find_unasked_observations(graph, snapshot["hypothesis_metrics"], domain, question)
     text, values = _compose(
         answer,
@@ -327,7 +333,7 @@ def _call_model(prompt: str, system: str) -> str | None:
     """Call the model, waiting through a short rate limit."""
     for attempt in range(4):
         try:
-            return call_llm(prompt, system=system)
+            return call_llm(prompt, system=system, temperature=LLM_TEMPERATURE, seed=LLM_SEED)
         except RuntimeError as error:
             if "429" not in str(error) or attempt == 3:
                 return None
@@ -346,10 +352,10 @@ def _health_findings(results: list[ResultObject], finding_texts: list[str]) -> l
     return list(finding_texts)
 
 
-def _minimum_tool_message(chosen: int) -> str:
-    """Tell the model an answer arrived before two tools."""
+def _minimum_tool_message(used: int) -> str:
+    """Tell the model the answer cites fewer than two tools."""
     return (
-        f"You called {chosen} tool(s). Call at least 2 before answering. "
+        f"You used {used} tool(s). Use at least 2 before answering. "
         "What else would help you answer this question?"
     )
 
@@ -357,14 +363,16 @@ def _minimum_tool_message(chosen: int) -> str:
 def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tools, results, modes) -> str:
     chosen = 0
     early_answers = 0
+    need_another = False
 
-    def _reject_early_answer() -> str | None:
-        """Refuse an answer that used fewer than two tools. Stop after three tries."""
-        nonlocal early_answers
+    def _reject_early_answer(used: int) -> str | None:
+        """Refuse an answer that cites fewer than two tools. Stop after three tries."""
+        nonlocal early_answers, need_another
         early_answers += 1
+        need_another = True
         if early_answers > _MIN_TOOL_ATTEMPTS:
             return ""
-        scratchpad.append(_minimum_tool_message(chosen))
+        scratchpad.append(_minimum_tool_message(used))
         return None
 
     def _accept_answer(payload: str, system: str) -> str:
@@ -382,7 +390,7 @@ def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tool
         )
 
     for _step in range(MAX_STEPS):
-        ready = chosen >= _MIN_MODEL_TOOLS
+        ready = chosen >= _MIN_MODEL_TOOLS and not need_another
         system = _system_prompt(question, domain, modes, finding_texts, ready=ready)
         prompt = _prompt(question, domain, modes, scratchpad, finding_texts, ready=ready)
         reply = _call_model(prompt, system)
@@ -411,23 +419,28 @@ def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tool
                     continue
                 _record_tool(run_id, name, params, tools, results, scratchpad)
                 chosen += 1
+                need_another = False
             answer_match = _ANSWER_LINE.search(reply)
             if answer_match and answer_match.group(1).strip():
-                if chosen < _MIN_MODEL_TOOLS:
-                    stopped = _reject_early_answer()
+                text = answer_match.group(1).strip()
+                used = _used_tool_count(text, tools, results)
+                if used < _MIN_MODEL_TOOLS:
+                    stopped = _reject_early_answer(used)
                     if stopped is not None:
                         return stopped
                     continue
-                return _accept_answer(answer_match.group(1), system)
+                return _accept_answer(text, system)
             continue
         kind, payload, _params = parse_agent_reply(reply)
         if kind == "answer":
-            if chosen < _MIN_MODEL_TOOLS:
-                stopped = _reject_early_answer()
+            text = payload.strip()
+            used = _used_tool_count(text, tools, results)
+            if used < _MIN_MODEL_TOOLS:
+                stopped = _reject_early_answer(used)
                 if stopped is not None:
                     return stopped
                 continue
-            return _accept_answer(payload, system)
+            return _accept_answer(text, system)
         scratchpad.append(f"Unknown tool {payload}. Choose one from the tool list.")
     return ""
 
@@ -721,6 +734,19 @@ def used_tools(answer: str, tool_results: dict[str, ResultObject]) -> set[str]:
         else:
             used.discard("structural_criticality")
     return used
+
+
+def uses_tool(answer: str, tool: str, tool_results: dict[str, ResultObject]) -> bool:
+    """True when one expression from this tool appears in the answer."""
+    return tool in used_tools(answer, tool_results)
+
+
+def _used_tool_count(answer: str, tools: list[str], results: list[ResultObject]) -> int:
+    """How many tools have at least one expression in the answer."""
+    paired: dict[str, ResultObject] = {}
+    for name, result in zip(tools, results):
+        paired.setdefault(name, result)
+    return sum(1 for name in paired if uses_tool(answer, name, paired))
 
 
 def uses_fragility(answer: str) -> bool:

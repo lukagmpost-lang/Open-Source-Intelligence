@@ -67,6 +67,7 @@ def _clear_llm_env(monkeypatch) -> None:
 
 
 def test_groq_request_sends_authorization_header(monkeypatch):
+    monkeypatch.setattr("osi.answer._SEED_SUPPORTED", True, raising=False)
     _clear_llm_env(monkeypatch)
     monkeypatch.setenv("LLM_PROVIDER", "groq")
     monkeypatch.setenv("LLM_BASE_URL", "https://api.groq.com/openai/v1")
@@ -84,8 +85,51 @@ def test_groq_request_sends_authorization_header(monkeypatch):
         {"role": "user", "content": "say hi"},
     ]
     assert body["temperature"] == 0
+    assert body["seed"] == 42
     assert request.get_header("Authorization") == "Bearer test-key"
     assert request.get_header("User-agent") == "osi/0.1"
+
+
+def test_a_provider_that_rejects_seed_retries_without_it(monkeypatch):
+    import io
+    import urllib.error
+
+    from osi.answer import NONDETERMINISTIC_CAVEAT, note_determinism
+
+    monkeypatch.setattr("osi.answer._SEED_SUPPORTED", True, raising=False)
+    _clear_llm_env(monkeypatch)
+    monkeypatch.setenv("LLM_PROVIDER", "groq")
+    monkeypatch.setenv("LLM_BASE_URL", "https://api.groq.com/openai/v1")
+    monkeypatch.setenv("LLM_MODEL", "llama-3.3-70b-versatile")
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    monkeypatch.setattr("osi.answer._dotenv_path", lambda: monkeypatch_missing())
+    bodies: list[dict] = []
+
+    def fake_urlopen(request, timeout=60):
+        body = json.loads(request.data.decode("utf-8"))
+        bodies.append(body)
+        if "seed" in body:
+            raise urllib.error.HTTPError(
+                request.full_url,
+                400,
+                "Bad Request",
+                {},
+                io.BytesIO(b'{"error":{"message":"seed is not supported"}}'),
+            )
+        return _Body({"choices": [{"message": {"content": "The same sentence."}}]})
+
+    monkeypatch.setattr("osi.answer.urllib.request.urlopen", fake_urlopen)
+    try:
+        assert call_llm("say hi", temperature=0, seed=42) == "The same sentence."
+        assert bodies[0]["temperature"] == 0
+        assert bodies[0]["seed"] == 42
+        assert "seed" not in bodies[1]
+        assert bodies[1]["temperature"] == 0
+        noted = _result()
+        note_determinism(noted)
+        assert NONDETERMINISTIC_CAVEAT in noted.caveats
+    finally:
+        monkeypatch.setattr("osi.answer._SEED_SUPPORTED", True, raising=False)
 
 
 def test_groq_without_a_key_raises(monkeypatch):

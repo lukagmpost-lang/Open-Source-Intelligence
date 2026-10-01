@@ -92,6 +92,8 @@ def test_reddit_2012_worry_answer_names_a_failure_mode_and_an_account(monkeypatc
         return (
             f"ANSWER: The failure mode {mode} is what matters. "
             f"{account} has 1890 connections and is more central than a typical account. "
+            "The bridge score is 0.91. "
+            "The network is fragile: removing 30% of the top accounts halves it. "
             f"If {account} stopped posting, the forum would lose its anchor."
         )
 
@@ -102,7 +104,8 @@ def test_reddit_2012_worry_answer_names_a_failure_mode_and_an_account(monkeypatc
             values={
                 "top": ["CosmicBard"],
                 "degree": 1890,
-                "findings": ["CosmicBard has 1890 connections."],
+                "hub": 0.91,
+                "findings": ["CosmicBard has 1890 connections. The bridge score is 0.91."],
             },
             method="exact",
             sample_size=None,

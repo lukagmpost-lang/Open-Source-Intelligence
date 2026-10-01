@@ -146,23 +146,56 @@ def findings_system_prompt(domain: str | None = "general") -> str:
 SYSTEM_PROMPT = answer_system_prompt("general")
 FINDINGS_SYSTEM_PROMPT = findings_system_prompt("general")
 
+# Every completion uses the same sampling settings. Seed is omitted after a
+# provider rejects it, and the result then carries NONDETERMINISTIC_CAVEAT.
+LLM_TEMPERATURE = 0
+LLM_SEED = 42
+NONDETERMINISTIC_CAVEAT = "Non-deterministic: this answer may vary between runs."
+_SEED_SUPPORTED = True
+
+
+def llm_seed_supported() -> bool:
+    """False after the provider rejects the seed field."""
+    return _SEED_SUPPORTED
+
+
+def note_determinism(result: ResultObject) -> None:
+    """Record that repeated runs can differ when the provider has no seed."""
+    if _SEED_SUPPORTED or NONDETERMINISTIC_CAVEAT in result.caveats:
+        return
+    result.caveats.append(NONDETERMINISTIC_CAVEAT)
+
+
+def _disable_seed() -> None:
+    global _SEED_SUPPORTED
+    _SEED_SUPPORTED = False
+
+
+def _seed_rejected(error: BaseException) -> bool:
+    text = str(error).lower()
+    return ("400" in text or "422" in text) and "seed" in text
+
 
 def _chat_request(
     prompt: str,
     settings: dict[str, str],
     system: str | None = None,
+    *,
+    temperature: float = LLM_TEMPERATURE,
+    seed: int | None = LLM_SEED,
 ) -> urllib.request.Request:
     url = settings["base_url"].rstrip("/") + "/chat/completions"
-    payload = json.dumps(
-        {
-            "model": settings["model"],
-            "messages": [
-                {"role": "system", "content": system or SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            "temperature": 0,
-        }
-    ).encode("utf-8")
+    body: dict = {
+        "model": settings["model"],
+        "messages": [
+            {"role": "system", "content": system or SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": temperature,
+    }
+    if seed is not None and _SEED_SUPPORTED:
+        body["seed"] = seed
+    payload = json.dumps(body).encode("utf-8")
     headers = {
         "Content-Type": "application/json",
         # Cloudflare rejects urllib's default client signature with error 1010.
@@ -180,6 +213,23 @@ def _chat_request(
     return urllib.request.Request(url, data=payload, headers=headers, method="POST")
 
 
+def _complete(
+    prompt: str,
+    settings: dict[str, str],
+    system: str | None,
+    temperature: float,
+    seed: int | None,
+) -> str:
+    request = _chat_request(prompt, settings, system, temperature=temperature, seed=seed)
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            body = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"LLM request failed: {error.code} {detail}") from error
+    return str(body["choices"][0]["message"]["content"]).strip()
+
+
 def call_llm(
     prompt: str,
     *,
@@ -188,10 +238,13 @@ def call_llm(
     n_edges: int | None = None,
     question: str = "",
     system: str | None = None,
+    temperature: float = LLM_TEMPERATURE,
+    seed: int | None = LLM_SEED,
 ) -> str:
     """Send the system rules plus one user message and return the assistant text.
 
     When a run is known, the user message starts with the network's name and size.
+    Temperature is 0. A seed is sent when the provider accepts one.
     """
     if run_id or question or n_nodes is not None or n_edges is not None:
         context = (
@@ -199,14 +252,15 @@ def call_llm(
             f'with {n_nodes} nodes and {n_edges} edges. The question was: "{question}".'
         )
         prompt = context + "\n\n" + prompt
-    request = _chat_request(prompt, llm_settings(), system)
+    settings = llm_settings()
+    actual_seed = seed if _SEED_SUPPORTED else None
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            body = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as error:
-        detail = error.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"LLM request failed: {error.code} {detail}") from error
-    return str(body["choices"][0]["message"]["content"]).strip()
+        return _complete(prompt, settings, system, temperature, actual_seed)
+    except RuntimeError as error:
+        if actual_seed is None or not _seed_rejected(error):
+            raise
+        _disable_seed()
+        return _complete(prompt, settings, system, temperature, None)
 
 
 def _format_values(values: dict) -> str:
@@ -810,6 +864,7 @@ def write_answer(
         key, _run_id = cached_as
         stored = get_cached_answer(key)
         if stored is not None:
+            note_determinism(result)
             return stored
     asked = question if question is not None else str(result.params.get("question") or "")
     run_id = result.params.get("run")
@@ -864,8 +919,10 @@ def write_answer(
     if problem:
         prose = _request(problem if not finding_text else finding_text + "\n\n" + problem)
     if not _acceptable(prose) or raw_centrality_problem(prose or "", result):
+        note_determinism(result)
         return text
     assert prose is not None
+    note_determinism(result)
     missing = [caveat for caveat in result.caveats if caveat not in prose]
     if missing:
         prose = prose.rstrip() + " " + " ".join(missing)
