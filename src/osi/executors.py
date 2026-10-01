@@ -6,6 +6,7 @@ times the call, and fills method, trust, caveats, and runtime.
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from typing import Any, Callable
@@ -118,6 +119,8 @@ def _exact_metric(run: str, metric: str, graph: nx.Graph) -> dict:
     stored = load_metrics(run, metric)
     if stored:
         return stored
+    if metric == "betweenness":
+        return betweenness_centrality(graph, run_id=run)
     return _METRICS[metric](graph)
 
 
@@ -130,7 +133,7 @@ def _metric_scores(run: str, metric: str, graph: nx.Graph) -> tuple[dict, str, i
         if stored:
             return _sorted_scores(stored), "exact", None
         sample_size = min(BETWEENNESS_SAMPLE_SIZE, graph.number_of_nodes())
-        raw = nx.betweenness_centrality(graph, k=sample_size, weight="weight", seed=0)
+        raw = betweenness_centrality(graph, run_id=run, k=sample_size)
         return _sorted_scores(raw), "sampled", sample_size
     return _exact_metric(run, metric, graph), "exact", None
 
@@ -501,6 +504,11 @@ def network_health(run: str) -> ResultObject:
 
 def structural_criticality(run: str) -> ResultObject:
     """Largest-component fraction after random, degree, and betweenness removal."""
+    from osi.store import get_metric, put_metric
+
+    cached = get_metric(run, "structural_criticality")
+    if cached is not None:
+        return ResultObject.from_dict(json.loads(cached))
     graph = _load_graph(run)
     started = time.perf_counter()
     if graph.number_of_nodes() > CRITICALITY_SAMPLE_NODES:
@@ -518,13 +526,14 @@ def structural_criticality(run: str) -> ResultObject:
         degree_scores=degree_scores,
         betweenness_scores=between_scores,
         runs=trials,
+        run_id=run,
     )
     values = {
         strategy: {ratio: stats["largest"] for ratio, stats in measured[strategy].items()}
         for strategy in ("random", "degree", "betweenness")
     }
     values.update(_criticality_summary(measured))
-    return _finish(
+    result = _finish(
         "structural_criticality",
         {"run": run, "runs": trials},
         values,
@@ -535,6 +544,8 @@ def structural_criticality(run: str) -> ResultObject:
         started,
         n_edges=graph.number_of_edges(),
     )
+    put_metric(run, "structural_criticality", json.dumps(result.to_dict()))
+    return ResultObject.from_dict(json.loads(get_metric(run, "structural_criticality")))
 
 
 def _curve_value(curve: dict, target: float) -> float | None:

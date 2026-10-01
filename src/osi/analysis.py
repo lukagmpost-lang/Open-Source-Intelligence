@@ -6,6 +6,7 @@ and SciPy are imported inside the functions that can go faster with them.
 
 from __future__ import annotations
 
+import json
 import math
 from typing import Any
 
@@ -43,12 +44,19 @@ def _as_igraph(G: nx.Graph, weight: str | None):
     return names, graph
 
 
-def betweenness_centrality(G: nx.Graph, weight: str = "weight") -> dict[Any, float]:
-    # Exact betweenness. igraph implements the same sum as NetworkX, in C++,
-    # which is what makes the August 2012 graph finish.
+def _betweenness_uncached(G: nx.Graph, weight: str = "weight", k: int | None = None) -> dict[Any, float]:
+    """Exact betweenness, or a k-source sample when k is set.
+
+    igraph implements the same sum as NetworkX, in C++, which is what makes
+    the August 2012 graph finish. The sample stays on NetworkX so the seed
+    matches the rank path.
+    """
     node_count = G.number_of_nodes()
     if node_count < 3:
         return _by_score({node: 0.0 for node in G.nodes})
+    if k is not None:
+        sample = min(int(k), node_count)
+        return _by_score(nx.betweenness_centrality(G, k=sample, weight=weight, seed=0))
     try:
         names, graph = _as_igraph(G, weight)
         raw = graph.betweenness(directed=False, weights="weight" if graph.ecount() else None)
@@ -57,6 +65,37 @@ def betweenness_centrality(G: nx.Graph, weight: str = "weight") -> dict[Any, flo
     # Undirected NetworkX divides by the number of unordered node pairs.
     scale = 2.0 / ((node_count - 1) * (node_count - 2))
     return _by_score({names[index]: float(raw[index]) * scale for index in range(node_count)})
+
+
+def _dump_scores(scores: dict[Any, float]) -> str:
+    rows = [[json.dumps(node), float(value)] for node, value in scores.items()]
+    return json.dumps(rows)
+
+
+def _load_scores(raw: str) -> dict[Any, float]:
+    scores = {json.loads(node): float(value) for node, value in json.loads(raw)}
+    return _by_score(scores)
+
+
+def betweenness_centrality(
+    G: nx.Graph,
+    weight: str = "weight",
+    *,
+    run_id: str | None = None,
+    k: int | None = None,
+) -> dict[Any, float]:
+    """Betweenness scores. A run id stores the result so the next call is a read."""
+    key = "betweenness_exact" if k is None else f"betweenness_sampled_{int(k)}"
+    if run_id:
+        from osi.store import get_metric, put_metric
+
+        cached = get_metric(run_id, key)
+        if cached is not None:
+            return _load_scores(cached)
+    scores = _betweenness_uncached(G, weight, k)
+    if run_id:
+        put_metric(run_id, key, _dump_scores(scores))
+    return scores
 
 
 def closeness_centrality(G: nx.Graph) -> dict[Any, float]:
@@ -219,6 +258,7 @@ def robustness(
     runs: int = 10,
     degree_scores: dict | None = None,
     betweenness_scores: dict | None = None,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     """Remove a fixed prefix of the intact-graph ranking and measure what remains.
 
@@ -255,7 +295,11 @@ def robustness(
         if betweenness_scores:
             between_order = _attack_order(nodes, index, betweenness_scores, G.degree)
         else:
-            between_order = [index[node] for node in betweenness_centrality(G)]
+            if run_id:
+                ranked = betweenness_centrality(G, run_id=run_id)
+            else:
+                ranked = betweenness_centrality(G)
+            between_order = [index[node] for node in ranked]
 
     import random
 

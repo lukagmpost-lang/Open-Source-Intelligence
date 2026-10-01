@@ -156,10 +156,17 @@ TOOLS = [
 
 def critical_nodes(run: str, top: int = 5, top_n: int | None = None) -> ResultObject:
     """Accounts that sit on the most paths. Removing them breaks the network first."""
-    limit = top if top_n is None else top_n
-    result = rank_nodes(run, metric="betweenness", top=int(limit))
+    from osi.store import get_metric, put_metric
+
+    limit = int(top if top_n is None else top_n)
+    key = f"critical_nodes_{limit}"
+    cached = get_metric(run, key)
+    if cached is not None:
+        return ResultObject.from_dict(json.loads(cached))
+    result = rank_nodes(run, metric="betweenness", top=limit)
     result.intent = "critical_nodes"
-    return result
+    put_metric(run, key, json.dumps(result.to_dict()))
+    return ResultObject.from_dict(json.loads(get_metric(run, key)))
 
 
 _TOOLS = {

@@ -83,6 +83,13 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             run_id TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS metric_cache (
+            run_id TEXT NOT NULL,
+            metric TEXT NOT NULL,
+            result_json TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (run_id, metric)
+        );
         """
     )
 
@@ -140,8 +147,9 @@ def create_run(
             """,
             (run_id, source, created_at, config_json, notes),
         )
-        # Replacing a run drops answers written for the previous graph.
+        # Replacing a run drops answers and metrics written for the previous graph.
         conn.execute("DELETE FROM answer_cache WHERE run_id = ?", (run_id,))
+        conn.execute("DELETE FROM metric_cache WHERE run_id = ?", (run_id,))
     return run_id
 
 
@@ -159,6 +167,7 @@ def save_graph(run_id: str, layer: str, graph: nx.Graph, path: str | Path | None
             (run_id, layer, encoded),
         )
         conn.execute("DELETE FROM answer_cache WHERE run_id = ?", (run_id,))
+        conn.execute("DELETE FROM metric_cache WHERE run_id = ?", (run_id,))
 
 
 def load_graph(run_id: str, layer: str, path: str | Path | None = None) -> nx.Graph | None:
@@ -281,6 +290,7 @@ def delete_run(run_id: str, path: str | Path | None = None) -> None:
         conn.execute("DELETE FROM communities WHERE run_id = ?", (run_id,))
         conn.execute("DELETE FROM results WHERE run_id = ?", (run_id,))
         conn.execute("DELETE FROM answer_cache WHERE run_id = ?", (run_id,))
+        conn.execute("DELETE FROM metric_cache WHERE run_id = ?", (run_id,))
         conn.execute("DELETE FROM runs WHERE id = ?", (run_id,))
 
 
@@ -308,6 +318,33 @@ def load_result(run_id: str, source: str, path: str | Path | None = None) -> dic
     if row is None:
         return None
     return json.loads(row["payload_json"])
+
+
+def get_metric(run_id: str, metric: str, path: str | Path | None = None) -> str | None:
+    """Return cached JSON or None."""
+    with _connection(path) as conn:
+        row = conn.execute(
+            "SELECT result_json FROM metric_cache WHERE run_id = ? AND metric = ?",
+            (run_id, metric),
+        ).fetchone()
+    if row is None:
+        return None
+    return str(row["result_json"])
+
+
+def put_metric(run_id: str, metric: str, result_json: str, path: str | Path | None = None) -> None:
+    """Store JSON for this run and metric."""
+    with _connection(path) as conn:
+        conn.execute(
+            """
+            INSERT INTO metric_cache (run_id, metric, result_json)
+            VALUES (?, ?, ?)
+            ON CONFLICT(run_id, metric) DO UPDATE SET
+                result_json = excluded.result_json,
+                created_at = CURRENT_TIMESTAMP
+            """,
+            (run_id, metric, result_json),
+        )
 
 
 def get_cached_answer(key: str, path: str | Path | None = None) -> str | None:
