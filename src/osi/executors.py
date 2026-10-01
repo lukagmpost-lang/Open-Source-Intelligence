@@ -27,7 +27,8 @@ from osi.analysis import (
 )
 from osi.findings import (
     COMMUNITY_METRICS,
-    HUB_METRICS,
+    HEALTH_SOURCES,
+    RANK_SOURCES,
     generate_findings,
     load_baselines,
     pagerank_centrality_text,
@@ -329,11 +330,18 @@ def _shape_findings(metrics: dict, communities: dict, ranked: list[tuple], graph
     return lines[:5]
 
 
-def _selected_findings(metrics: dict, allowed: set[str] | None = None, n: int = 4) -> list[str]:
+def _selected_findings(
+    metrics: dict,
+    allowed: set[str] | None = None,
+    n: int = 4,
+    sources: set[str] | None = None,
+) -> list[str]:
     """Plain sentences from the findings engine, highest score first."""
     found = generate_findings(metrics, None)
     if allowed is not None:
         found = [item for item in found if item["metric"] in allowed]
+    if sources is not None:
+        found = [item for item in found if item.get("source") in sources]
     return pick_top_findings(found, n)
 
 
@@ -361,7 +369,7 @@ def rank_nodes(run: str, metric: str = "pagerank", top: int = 10) -> ResultObjec
         ),
     }
     base = interpret_rank(ranked, graph, metric)
-    extra = [text for text in _selected_findings(hub_metrics, HUB_METRICS) if text not in base]
+    extra = [text for text in _selected_findings(hub_metrics, sources=RANK_SOURCES) if text not in base]
     values["findings"] = base + extra
     return _finish(
         "rank_nodes",
@@ -474,7 +482,12 @@ def network_health(run: str) -> ResultObject:
         "avg_degree": health["avg_degree"],
         "max_degree": health["max_degree"],
         "power_law": fit["power_law"],
-        "findings": _selected_findings(finding_metrics) or interpret_health(metrics, graph),
+        "findings": _selected_findings(finding_metrics, sources=HEALTH_SOURCES)
+        or [
+            sentence
+            for sentence in interpret_health(metrics, graph)
+            if not sentence.startswith("A few hubs")
+        ],
     }
     _remember_reference(
         run,
@@ -574,6 +587,38 @@ def _halving_ratio(curve: dict) -> float | None:
         if ratio > 0 and largest < 0.5:
             return ratio
     return None
+
+
+def criticality_account_findings(values: dict) -> list[str]:
+    """Who would disconnect the network. These sentences belong to critical_nodes."""
+    rows = []
+    for key, value in values.items():
+        if key == "findings":
+            continue
+        try:
+            rows.append((str(key), float(value)))
+        except (TypeError, ValueError):
+            continue
+    if not rows:
+        return [
+            "Removing the accounts that sit on the most paths first would disconnect the network, "
+            "which means other people lose their way to each other."
+        ]
+    rows.sort(key=lambda item: (-item[1], item[0]))
+    names = _name_list([name for name, _score in rows[:5]])
+    top_name, top_score = rows[0]
+    midpoint = sorted(score for _name, score in rows)[len(rows) // 2]
+    lines = [
+        f"Removing {names} first would disconnect the network, "
+        "which means these are the accounts other people have to pass through."
+    ]
+    if midpoint and top_score > 2 * midpoint:
+        ratio = top_score / midpoint
+        lines.append(
+            f"{top_name} is on {ratio:.0f}x more paths than a typical account, "
+            f"which means removing {top_name} cuts other people off from each other."
+        )
+    return lines
 
 
 def _criticality_findings(

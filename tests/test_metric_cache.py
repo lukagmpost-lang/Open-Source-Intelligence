@@ -57,7 +57,7 @@ def test_first_call_computes_and_caches(tmp_path, monkeypatch):
     assert ranked.intent == "critical_nodes"
     assert curve.intent == "structural_criticality"
     assert get_metric(run, "betweenness_exact")
-    assert get_metric(run, "critical_nodes_3")
+    assert get_metric(run, "critical_nodes_v2_3")
     assert get_metric(run, "structural_criticality")
     sampled = betweenness_centrality(graph, run_id=run, k=4)
     assert sampled
@@ -104,12 +104,12 @@ def test_resaving_the_run_clears_the_cache(tmp_path, monkeypatch):
     critical_nodes(run, top_n=3)
     structural_criticality(run)
     assert get_metric(run, "betweenness_exact")
-    assert get_metric(run, "critical_nodes_3")
+    assert get_metric(run, "critical_nodes_v2_3")
     assert get_metric(run, "structural_criticality")
 
     save_graph(run, "g", graph)
     assert get_metric(run, "betweenness_exact") is None
-    assert get_metric(run, "critical_nodes_3") is None
+    assert get_metric(run, "critical_nodes_v2_3") is None
     assert get_metric(run, "structural_criticality") is None
 
     betweenness_centrality(graph, run_id=run)

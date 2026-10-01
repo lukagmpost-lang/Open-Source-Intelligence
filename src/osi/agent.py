@@ -34,6 +34,7 @@ from osi.executors import (
     anomaly_scan,
     baseline_compare,
     connectivity,
+    criticality_account_findings,
     explain_node,
     list_communities,
     network_health,
@@ -41,7 +42,7 @@ from osi.executors import (
     structural_criticality,
 )
 from osi.failure_modes import apply_failure_modes
-from osi.findings import generate_findings, pick_top_findings
+from osi.findings import HEALTH_SOURCES, generate_findings, pick_top_findings
 from osi.hypotheses import find_unasked_observations, generate_hypotheses, infer_domain
 from osi.result import ResultObject
 from osi.store import get_run, load_communities, load_graph, load_metrics
@@ -163,12 +164,13 @@ def critical_nodes(run: str, top: int = 5, top_n: int | None = None) -> ResultOb
     from osi.store import get_metric, put_metric
 
     limit = int(top if top_n is None else top_n)
-    key = f"critical_nodes_{limit}"
+    key = f"critical_nodes_v2_{limit}"
     cached = get_metric(run, key)
     if cached is not None:
         return ResultObject.from_dict(json.loads(cached))
     result = rank_nodes(run, metric="betweenness", top=limit)
     result.intent = "critical_nodes"
+    result.values["findings"] = criticality_account_findings(result.values)
     put_metric(run, key, json.dumps(result.to_dict()))
     return ResultObject.from_dict(json.loads(get_metric(run, key)))
 
@@ -193,6 +195,28 @@ PARAMS: <json_object>
 Never quote a raw centrality score (pagerank, betweenness, closeness, eigenvector). Express importance as a ratio to the typical account, such as '36x more central than typical' or 'more connected than 99% of accounts'.
 """
 
+_CATEGORY_RULES = """\
+Each tool produces findings in its own category:
+- network_health: shape, density, modularity, components, clustering
+- rank_nodes: who is central, who is a hub
+- critical_nodes: who would disconnect the network if removed
+- structural_criticality: how fragile the network is under attack
+
+Read the findings the tool returned. If the user's question is about a category the tool does not produce, call the tool that does.
+"""
+
+_TOOL_SOURCE = {
+    "network_health": "shape",
+    "rank_nodes": "hub",
+    "critical_nodes": "criticality",
+    "structural_criticality": "fragility",
+    "list_communities": "modularity",
+    "explain_node": "account",
+    "connectivity": "path",
+    "baseline_compare": "baseline",
+    "anomaly_scan": "anomaly",
+}
+
 _TOOL_LINE = re.compile(r"(?im)^TOOL:\s*([A-Za-z_]+)\s*$")
 _PARAMS_LINE = re.compile(r"(?im)^(?:PARAMS:\s*)?(\{.*\})\s*$")
 _ANSWER_LINE = re.compile(r"(?im)^ANSWER:\s*(.*)$")
@@ -216,7 +240,12 @@ def run_agent(run_id: str, question: str, use_llm: bool = True) -> AgentResult:
     graph = _load(run_id, meta)
     domain = infer_domain(meta.get("source") or "", (meta.get("config") or {}).get("layer") or "")
     snapshot = _snapshot(run_id, graph)
-    finding_texts = pick_top_findings(generate_findings(snapshot["finding_metrics"], None), n=4)
+    shape = [
+        item
+        for item in generate_findings(snapshot["finding_metrics"], None)
+        if item.get("source") in HEALTH_SOURCES
+    ]
+    finding_texts = pick_top_findings(shape, n=4)
     hypotheses = generate_hypotheses(snapshot["hypothesis_metrics"], graph, domain)
     results: list[ResultObject] = []
     tools: list[str] = []
@@ -263,7 +292,14 @@ def context_brief(run_id: str) -> str:
     graph = _load(run_id, meta)
     domain = infer_domain(meta.get("source") or "", (meta.get("config") or {}).get("layer") or "")
     snapshot = _snapshot(run_id, graph)
-    findings = pick_top_findings(generate_findings(snapshot["finding_metrics"], None), n=1)
+    findings = pick_top_findings(
+        [
+            item
+            for item in generate_findings(snapshot["finding_metrics"], None)
+            if item.get("source") in HEALTH_SOURCES
+        ],
+        n=1,
+    )
     shape = findings[0] if findings else "A network of connected accounts."
     lines = [
         f"Domain: {domain}",
@@ -423,7 +459,7 @@ def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tool
             answer_match = _ANSWER_LINE.search(reply)
             if answer_match and answer_match.group(1).strip():
                 text = answer_match.group(1).strip()
-                used = _used_tool_count(text, tools, results)
+                used = _used_tool_count(text, tools, results, question)
                 if used < _MIN_MODEL_TOOLS:
                     stopped = _reject_early_answer(used)
                     if stopped is not None:
@@ -434,7 +470,7 @@ def _react(question, domain, finding_texts, hypotheses, run_id, scratchpad, tool
         kind, payload, _params = parse_agent_reply(reply)
         if kind == "answer":
             text = payload.strip()
-            used = _used_tool_count(text, tools, results)
+            used = _used_tool_count(text, tools, results, question)
             if used < _MIN_MODEL_TOOLS:
                 stopped = _reject_early_answer(used)
                 if stopped is not None:
@@ -741,12 +777,106 @@ def uses_tool(answer: str, tool: str, tool_results: dict[str, ResultObject]) -> 
     return tool in used_tools(answer, tool_results)
 
 
-def _used_tool_count(answer: str, tools: list[str], results: list[ResultObject]) -> int:
-    """How many tools have at least one expression in the answer."""
+def _exprs_from_findings(result: ResultObject) -> set[str]:
+    """Expressions that appear in this tool's own findings, not its raw scores."""
+    values = []
+    seen: set = set()
+    for item in result.values.get("findings") or []:
+        for match in _ANSWER_EXPR.finditer(str(item)):
+            number, suffix = _split_expr(_normalize_expr(match.group(0)))
+            value = _value_from_parts(number, suffix)
+            key = _value_key(value)
+            if key in seen:
+                continue
+            seen.add(key)
+            values.append(value)
+    exprs: set[str] = set()
+    for value in values:
+        exprs.update(_normalize_expr(expr) for expr in expressions_for(value))
+    return exprs
+
+
+def _phrase_used(answer: str, result: ResultObject) -> bool:
+    lowered = answer.casefold()
+    for item in result.values.get("findings") or []:
+        snippet = " ".join(str(item).split())
+        if len(snippet) >= 40 and snippet[:40].casefold() in lowered:
+            return True
+    return False
+
+
+def used_finding_tools(answer: str, tool_results: dict[str, ResultObject]) -> set[str]:
+    """Tools whose own findings show up in the answer.
+
+    A number that several tools report does not count. A tool counts when
+    one of its finding sentences, or a number only that finding contains,
+    appears in the answer.
+    """
+    tokens = _answer_expressions(answer)
+    expr_by_tool = {name: _exprs_from_findings(result) for name, result in tool_results.items()}
+    expr_owner: dict[str, list[str]] = {}
+    for tool_name, exprs in expr_by_tool.items():
+        for expr in exprs:
+            expr_owner.setdefault(expr, []).append(tool_name)
+    used: set[str] = set()
+    for expr, owners in expr_owner.items():
+        if len(owners) != 1:
+            continue
+        if expr in tokens:
+            used.add(owners[0])
+    for name, result in tool_results.items():
+        if _phrase_used(answer, result):
+            used.add(name)
+    if "structural_criticality" in tool_results and uses_fragility(answer):
+        findings = " ".join(str(item) for item in (tool_results["structural_criticality"].values.get("findings") or []))
+        if uses_fragility(findings):
+            used.add("structural_criticality")
+    return used
+
+
+def _paired_results(tools: list[str], results: list[ResultObject]) -> dict[str, ResultObject]:
     paired: dict[str, ResultObject] = {}
     for name, result in zip(tools, results):
         paired.setdefault(name, result)
-    return sum(1 for name in paired if uses_tool(answer, name, paired))
+    return paired
+
+
+def _used_sources(answer: str, tools: list[str], results: list[ResultObject]) -> set[str]:
+    used = used_finding_tools(answer, _paired_results(tools, results))
+    return {_TOOL_SOURCE.get(name, name) for name in used}
+
+
+def _question_sources_missing(question: str, sources: set[str]) -> bool:
+    """A worry, centrality, or fragility question has to cite that category."""
+    text = question.casefold()
+    if any(phrase in text for phrase in ("who is central", "most important", "who matters", "who is a hub")):
+        if "hub" not in sources and "account" not in sources:
+            return True
+    if "fragil" in text and "fragility" not in sources:
+        return True
+    if any(phrase in text for phrase in ("critical", "disconnect", "if removed")) and "criticality" not in sources:
+        return True
+    if any(phrase in text for phrase in ("worried", "worry", "what could go wrong", "go wrong")):
+        if "criticality" not in sources and "fragility" not in sources:
+            return True
+    return False
+
+
+def _used_tool_count(
+    answer: str,
+    tools: list[str],
+    results: list[ResultObject],
+    question: str = "",
+) -> int:
+    """How many different finding categories the answer uses.
+
+    A worry, centrality, or fragility question that never cites that category
+    counts as zero, so the loop asks for the tool that produces it.
+    """
+    sources = _used_sources(answer, tools, results)
+    if _question_sources_missing(question, sources):
+        return min(len(sources), 1)
+    return len(sources)
 
 
 def uses_fragility(answer: str) -> bool:
@@ -904,6 +1034,8 @@ def _brief(question, domain, modes, finding_texts) -> str:
             observations,
             "",
             f"User question: {question}",
+            "",
+            _CATEGORY_RULES.strip(),
             "",
             "Decide which tools to call. Call at least 2 before answering. Reply with TOOL/PARAMS or ANSWER.",
             "",

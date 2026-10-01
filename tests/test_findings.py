@@ -2,7 +2,8 @@ import networkx as nx
 
 from osi.answer import write_answer
 from osi.executors import network_health
-from osi.findings import generate_findings, load_baselines, pick_top_findings
+from osi.executors import _selected_findings, network_health, rank_nodes
+from osi.findings import HEALTH_SOURCES, RANK_SOURCES, generate_findings, load_baselines, pick_top_findings
 
 
 def _texts(metrics: dict, graph=None) -> list[str]:
@@ -53,6 +54,42 @@ def test_pick_top_findings_keeps_the_higher_score_for_one_metric():
         {"text": "other", "score": 5, "metric": "clustering"},
     ]
     assert pick_top_findings(findings, n=4) == ["higher", "other"]
+
+
+def test_each_finding_names_the_tool_category_that_owns_it():
+    found = generate_findings(dict(load_baselines()["reddit_2012"]))
+    assert found
+    allowed = HEALTH_SOURCES | RANK_SOURCES | {"fragility", "criticality"}
+    for item in found:
+        assert {"text", "source", "score"} <= set(item)
+        assert item["source"] in allowed
+
+
+def test_network_health_findings_do_not_include_hub_findings():
+    metrics = dict(load_baselines()["reddit_2012"])
+    health = _selected_findings(metrics, sources=HEALTH_SOURCES, n=8)
+    hubs = _selected_findings(metrics, sources=RANK_SOURCES, n=8)
+    assert health
+    assert hubs
+    assert not (set(health) & set(hubs))
+    blob = " ".join(health).lower()
+    assert "1,890" not in blob
+    assert "top hub" not in blob
+    result = network_health("simple-v1")
+    for line in result.values["findings"]:
+        assert "1,890" not in line
+        assert "top hub is twice" not in line.lower()
+        assert not line.lower().startswith("one account")
+
+
+def test_rank_nodes_findings_include_hub_findings():
+    metrics = dict(load_baselines()["reddit_2012"])
+    hubs = _selected_findings(metrics, sources=RANK_SOURCES, n=8)
+    assert any(item["source"] in RANK_SOURCES for item in generate_findings(metrics))
+    assert any("1,890" in line or "hub" in line.lower() for line in hubs)
+    result = rank_nodes("simple-v1", metric="degree", top=5)
+    blob = " ".join(result.values["findings"]).lower()
+    assert "hub" in blob or "central" in blob
 
 
 def test_how_healthy_on_reddit_2012_returns_plain_findings():

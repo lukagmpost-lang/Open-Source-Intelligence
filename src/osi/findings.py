@@ -17,8 +17,36 @@ _BASELINES_PATH = Path(__file__).with_name("baselines.json")
 _AUTO_MEASURE_LIMIT = 5000
 
 
-def _finding(text: str, score: float, metric: str) -> dict:
-    return {"text": text, "score": float(score), "metric": metric}
+# A finding's source is the category of tool that is allowed to report it.
+_METRIC_SOURCE = {
+    "avg_degree": "degree",
+    "max_degree": "hub",
+    "modularity": "modularity",
+    "n_communities": "modularity",
+    "largest_size": "modularity",
+    "components": "components",
+    "baseline_components": "components",
+    "clustering": "clustering",
+    "assortativity": "assortativity",
+    "power_law": "hub",
+    "pagerank": "centrality",
+    "top_degree": "hub",
+    "hub_communities": "hub",
+    "baseline_modularity": "modularity",
+    "baseline_max_degree": "hub",
+}
+
+HEALTH_SOURCES = {"degree", "modularity", "components", "clustering", "assortativity"}
+RANK_SOURCES = {"hub", "centrality"}
+
+
+def _finding(text: str, score: float, metric: str, source: str | None = None) -> dict:
+    return {
+        "text": text,
+        "score": float(score),
+        "metric": metric,
+        "source": source or _METRIC_SOURCE.get(metric, metric),
+    }
 
 
 def _present(metrics: dict, *keys):
