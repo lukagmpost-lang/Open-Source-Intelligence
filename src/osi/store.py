@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import sys
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -328,7 +329,9 @@ def get_metric(run_id: str, metric: str, path: str | Path | None = None) -> str 
             (run_id, metric),
         ).fetchone()
     if row is None:
+        print(f"[cache] read {metric} for run {run_id}: MISS", file=sys.stderr, flush=True)
         return None
+    print(f"[cache] read {metric} for run {run_id}: HIT", file=sys.stderr, flush=True)
     return str(row["result_json"])
 
 
@@ -345,6 +348,7 @@ def put_metric(run_id: str, metric: str, result_json: str, path: str | Path | No
             """,
             (run_id, metric, result_json),
         )
+    print(f"[cache] write {metric} for run {run_id}", file=sys.stderr, flush=True)
 
 
 def get_cached_answer(key: str, path: str | Path | None = None) -> str | None:
