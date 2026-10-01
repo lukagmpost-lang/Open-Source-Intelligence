@@ -20,6 +20,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from osi.loader import load_edge_list, load_graphml  # noqa: E402
 from osi.loaders.slack import load_slack_export, detect_slack_format  # noqa: E402
 from osi.loaders.telegram import load_telegram_export, detect_telegram_format  # noqa: E402
+from osi.loaders.whatsapp import load_whatsapp_export, detect_whatsapp_format  # noqa: E402
 from osi.analysis import (  # noqa: E402
     betweenness_centrality,
     closeness_centrality,
@@ -49,7 +50,7 @@ from osi.store import (  # noqa: E402
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Analyze a graph from a file or from a saved run.")
-    parser.add_argument("--source", choices=("file", "slack", "telegram"), default=None)
+    parser.add_argument("--source", choices=("file", "slack", "telegram", "whatsapp"), default=None)
     parser.add_argument("--path", help="Edge list, GraphML, or Slack export. Used with --source.")
     parser.add_argument("--analyze", choices=("all", "centrality", "communities"), default="all")
     parser.add_argument("--out", default="graph.json", help="Node-link JSON output path.")
@@ -70,7 +71,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--edge-rule",
-        choices=("thread", "channel", "mention", "reply", "temporal"),
+        choices=("thread", "channel", "mention", "reply", "temporal", "sequence"),
         default=None,
         help="Slack or Telegram edge creation rule",
     )
@@ -78,6 +79,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="Maximum unique users per Slack thread (default: 30)")
     parser.add_argument("--chat-cap", type=int, default=30,
                         help="Maximum unique senders per Telegram conversation (default: 30)")
+    parser.add_argument("--window-minutes", type=float, default=5,
+                        help="WhatsApp temporal edge window in minutes (default: 5)")
     args = parser.parse_args(argv)
     args.robustness_loaded_latest = False
     if args.list_runs:
@@ -95,8 +98,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     if args.load_run and not args.no_cache:
         return args
     if args.edge_rule is None:
-        args.edge_rule = "reply" if args.source == "telegram" else "thread"
-    if args.source in ("file", "slack", "telegram"):
+        if args.source == "telegram":
+            args.edge_rule = "reply"
+        elif args.source == "whatsapp":
+            args.edge_rule = "temporal"
+        else:
+            args.edge_rule = "thread"
+    if args.source in ("file", "slack", "telegram", "whatsapp"):
         if not args.path:
             parser.error(f"--source {args.source} requires --path")
         return args
@@ -287,6 +295,8 @@ def graph_layer(args: argparse.Namespace) -> str:
         return "slack"
     if args.source == "telegram":
         return "telegram"
+    if args.source == "whatsapp":
+        return "whatsapp"
     return "graph"
 
 
@@ -350,6 +360,10 @@ def _persist_run(args: argparse.Namespace, graph: nx.Graph, centralities: dict |
     if args.source == "telegram":
         config["edge_rule"] = args.edge_rule
         config["chat_cap"] = args.chat_cap
+    if args.source == "whatsapp":
+        config["edge_rule"] = args.edge_rule
+        config["window_minutes"] = args.window_minutes
+        config["chat_cap"] = args.chat_cap
     run_id = create_run(source, config, args.save_run, run_id=args.save_run)
     save_graph(run_id, layer, graph)
     scores = dict(centralities or {})
@@ -376,7 +390,22 @@ def _load_source_file(
     edge_rule: str = "thread",
     thread_cap: int = 30,
     chat_cap: int = 30,
+    window_minutes: float = 5,
 ) -> nx.Graph:
+    if source == "whatsapp":
+        confidence = detect_whatsapp_format(path)
+        if confidence == "low":
+            raise ValueError(f"Could not detect valid WhatsApp export at {path}")
+        graph, metadata = load_whatsapp_export(
+            path,
+            edge_rule=edge_rule,
+            window_minutes=window_minutes,
+            chat_cap=chat_cap,
+        )
+        print("Detected: WhatsApp export")
+        print(f"Chat: {metadata['chat_name']}")
+        print(f"Members: {metadata['member_count']}, Messages: {metadata['message_count']}")
+        return graph
     if source == "telegram":
         confidence = detect_telegram_format(path)
         if confidence == "low":
@@ -407,6 +436,16 @@ def _load_source_file(
 
 def _analyze_fresh(args: argparse.Namespace, graph: nx.Graph) -> None:
     """Print the requested report, then store the graph when --save-run is set."""
+    if args.source == "whatsapp":
+        component_count = nx.number_connected_components(graph) if graph.number_of_nodes() else 0
+        component_label = "component" if component_count == 1 else "components"
+        edge_label = "edge" if graph.number_of_edges() == 1 else "edges"
+        print(
+            f"Graph: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} {edge_label}, "
+            f"{component_count} {component_label}"
+        )
+        top_nodes = sorted(graph.degree(), key=lambda item: (-item[1], str(item[0])))[:5]
+        print(f"Top 5 by degree: {', '.join(node for node, _degree in top_nodes)}")
     if args.source == "telegram":
         component_count = nx.number_connected_components(graph) if graph.number_of_nodes() else 0
         component_label = "component" if component_count == 1 else "components"
@@ -444,7 +483,7 @@ def main(argv: list[str] | None = None) -> int:
         _print_saved_runs()
         return 0
     # --run and --load-run win unless --no-cache asked for a fresh file read.
-    reading_file = args.source in ("file", "slack", "telegram") and not (args.load_run and not args.no_cache)
+    reading_file = args.source in ("file", "slack", "telegram", "whatsapp") and not (args.load_run and not args.no_cache)
     if reading_file:
         try:
             graph = _load_source_file(
@@ -453,6 +492,7 @@ def main(argv: list[str] | None = None) -> int:
                 edge_rule=args.edge_rule,
                 thread_cap=args.thread_cap,
                 chat_cap=args.chat_cap,
+                window_minutes=args.window_minutes,
             )
         except (OSError, ValueError, json.JSONDecodeError, nx.NetworkXError) as error:
             print(error, file=sys.stderr)

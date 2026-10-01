@@ -1,0 +1,7 @@
+Family Group
+1/15/24, 10:00:00 AM - Alice: Morning everyone
+1/15/24, 10:01:00 AM - Bob: Good morning
+[1/15/24, 10:30:00 AM] Carol: Are we meeting today?
+[1/15/24, 10:32:00 AM] Alice: Yes, see you there
+1/15/24, 11:00:00 AM - Bob: I will bring snacks
+[1/15/24, 11:30:00 AM] Carol: See you soon
