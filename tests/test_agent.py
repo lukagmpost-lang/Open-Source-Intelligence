@@ -16,7 +16,7 @@ def test_parse_agent_reply_reads_a_tool_call_and_an_answer():
     assert prose == "The hubs sit in different groups."
 
 
-def test_system_prompt_names_the_question_and_the_tool_minimum(monkeypatch):
+def test_system_prompt_names_the_question_and_the_tool_minimum(monkeypatch, temp_store):
     seen: dict[str, str] = {}
 
     def too_soon(prompt, **kwargs):
@@ -25,7 +25,7 @@ def test_system_prompt_names_the_question_and_the_tool_minimum(monkeypatch):
         return "ANSWER: too soon"
 
     monkeypatch.setattr("osi.agent.call_llm", too_soon)
-    run_agent("simple-v1", "what should I be worried about", use_llm=True)
+    run_agent(temp_store, "what should I be worried about", use_llm=True)
     system = seen["system"]
     prompt = seen["prompt"]
     assert "what should I be worried about" in system

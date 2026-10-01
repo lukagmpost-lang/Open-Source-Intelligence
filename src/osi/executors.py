@@ -368,7 +368,7 @@ def rank_nodes(run: str, metric: str = "pagerank", top: int = 10) -> ResultObjec
             [assignment.get(node) for node in names] if assignment and len(names) >= 5 else None
         ),
     }
-    base = interpret_rank(ranked, graph, metric)
+    base = interpret_rank(ranked[:top], graph, metric)
     extra = [text for text in _selected_findings(hub_metrics, sources=RANK_SOURCES) if text not in base]
     values["findings"] = base + extra
     return _finish(

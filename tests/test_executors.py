@@ -106,6 +106,8 @@ def test_rank_nodes_puts_the_hub_first(sample_run):
     assert len(scores) == 3
     assert result.values["findings"]
     assert "hub" in result.values["findings"][0]
+    assert all(node in result.values["findings"][0] for node in scores)
+    assert list(degree_centrality(graph))[3] not in result.values["findings"][0]
 
 
 def test_connectivity_path_and_disconnected(sample_run):

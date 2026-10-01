@@ -20,7 +20,7 @@ The same two commands work with `examples/simple.json` and `examples/simple.grap
 ## Web
 
 ```bash
-pip install osi[web]
+uv pip install -e '.[web,fast,dev]'
 uvicorn osi.server:app --host 0.0.0.0 --port 7860
 ```
 
