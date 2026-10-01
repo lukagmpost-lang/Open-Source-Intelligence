@@ -172,14 +172,13 @@ def load_telegram_export(
         sender_value = item.get("from_id")
         if sender_value is None or not str(sender_value).strip():
             continue
-        sender = str(sender_value)
         name_value = item.get("from")
         name = str(name_value).strip() if name_value is not None else ""
-        name = name or sender
+        sender = name or str(sender_value)
         message_id = _key(item.get("id"))
         message = {
             "sender": sender,
-            "name": name,
+            "name": name or str(sender_value),
             "message_key": message_id if message_id is not None else f"missing-id-{index}",
             "has_id": message_id is not None,
             "reply_to": _key(item.get("reply_to_message_id")),
@@ -188,10 +187,10 @@ def load_telegram_export(
         }
         messages.append(message)
         if graph.has_node(sender):
-            if graph.nodes[sender]["name"] == sender and name != sender:
+            if graph.nodes[sender]["name"] is None and name:
                 graph.nodes[sender]["name"] = name
         else:
-            graph.add_node(sender, user_id=sender, name=name)
+            graph.add_node(sender, user_id=sender_value, name=name_value)
 
     if edge_rule == "reply":
         _reply_edges(graph, messages, chat_cap)
@@ -223,8 +222,6 @@ def detect_telegram_format(path: str | Path) -> str:
     candidate = Path(path).expanduser()
     if candidate.is_dir():
         candidate = candidate / "result.json"
-    elif candidate.name != "result.json":
-        return "low"
     try:
         with candidate.open("r", encoding="utf-8") as source:
             data = json.load(source)

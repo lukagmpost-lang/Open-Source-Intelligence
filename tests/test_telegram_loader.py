@@ -42,8 +42,8 @@ def test_two_users_in_a_reply_chain_get_an_edge(tmp_path):
 
     graph, metadata = load_telegram_export(path)
 
-    assert graph.has_edge("useralice", "userbob")
-    assert graph.nodes["useralice"] == {"user_id": "useralice", "name": "Alice"}
+    assert graph.has_edge("Alice", "Bob")
+    assert graph.nodes["Alice"] == {"user_id": "useralice", "name": "Alice"}
     assert metadata == {
         "source": "telegram",
         "chat_title": "Activist Group A",
@@ -76,7 +76,7 @@ def test_reply_to_deleted_message_is_skipped_gracefully(tmp_path):
 
     graph, _metadata = load_telegram_export(path)
 
-    assert graph.nodes["userbob"]["name"] == "Bob"
+    assert graph.nodes["Bob"]["name"] == "Bob"
     assert graph.number_of_edges() == 0
 
 
@@ -112,8 +112,8 @@ def test_text_list_uses_only_plain_entries_for_mentions(tmp_path):
 
     graph, _metadata = load_telegram_export(path, edge_rule="mention")
 
-    assert graph.has_edge("useralice", "userbob")
-    assert not graph.has_edge("useralice", "usercarol")
+    assert graph.has_edge("Alice", "Bob")
+    assert not graph.has_edge("Alice", "Carol")
 
 
 def test_messages_without_from_id_are_skipped(tmp_path):
@@ -126,7 +126,7 @@ def test_messages_without_from_id_are_skipped(tmp_path):
 
     graph, metadata = load_telegram_export(path)
 
-    assert list(graph.nodes) == ["userbob"]
+    assert list(graph.nodes) == ["Bob"]
     assert metadata["message_count"] == 1
 
 
@@ -142,15 +142,38 @@ def test_temporal_rule_connects_users_within_five_minutes(tmp_path):
 
     graph, _metadata = load_telegram_export(path, edge_rule="temporal")
 
-    assert graph.has_edge("useralice", "userbob")
-    assert not graph.has_edge("userbob", "usercarol")
+    assert graph.has_edge("Alice", "Bob")
+    assert not graph.has_edge("Bob", "Carol")
+
+
+def test_display_name_is_node_key_and_user_id_is_preserved(tmp_path):
+    path = _write_export(
+        tmp_path / "result.json",
+        [
+            {
+                "id": 1,
+                "type": "message",
+                "from": "alice",
+                "from_id": "user100",
+                "text": "hello",
+            }
+        ],
+    )
+
+    graph, _metadata = load_telegram_export(path)
+
+    assert list(graph.nodes) == ["alice"]
+    assert graph.nodes["alice"]["user_id"] == "user100"
+    assert graph.nodes["alice"]["name"] == "alice"
 
 
 def test_detect_telegram_format_for_file_and_folder(tmp_path):
     path = _write_export(tmp_path / "result.json", [])
+    named_sample = _write_export(tmp_path / "telegram-sample.json", [])
 
     assert detect_telegram_format(path) == "high"
     assert detect_telegram_format(tmp_path) == "high"
+    assert detect_telegram_format(named_sample) == "high"
 
 
 def test_detect_telegram_format_returns_low_for_random_json(tmp_path):
