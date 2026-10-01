@@ -1,8 +1,10 @@
 import pytest
 
+from conftest import has_run
 from osi.executors import baseline_compare
 
 
+@pytest.mark.skipif(not has_run("r2012-v2"), reason="Reddit 2012 run not in the store")
 def test_reddit_2012_against_snap_returns_ratios_and_findings():
     result = baseline_compare("r2012-v2", baseline="snap_facebook")
     values = result.values

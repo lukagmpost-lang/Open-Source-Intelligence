@@ -1,5 +1,8 @@
 import re
 
+import pytest
+
+from conftest import has_run
 from osi.agent import _TOOLS, expressions_for, parse_agent_reply, run_agent, used_tools, uses_fragility
 from osi.answer import verify_numbers
 from osi.ask import ask, main
@@ -419,6 +422,7 @@ def test_nothing_is_auto_run_when_the_required_tools_were_called(monkeypatch):
     assert "The hubs hold this network together." in result.answer
 
 
+@pytest.mark.skipif(not has_run("r2008-v2"), reason="Reddit 2008 run not in the store")
 def test_worry_question_on_reddit_2008_uses_three_tools(monkeypatch):
     def _stub(run, **kwargs):
         return ResultObject(

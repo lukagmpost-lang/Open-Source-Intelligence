@@ -1,5 +1,7 @@
 import networkx as nx
+import pytest
 
+from conftest import has_run
 from osi.answer import write_answer
 from osi.executors import network_health
 from osi.executors import _selected_findings, network_health, rank_nodes
@@ -92,6 +94,7 @@ def test_rank_nodes_findings_include_hub_findings():
     assert "hub" in blob or "central" in blob
 
 
+@pytest.mark.skipif(not has_run("r2012-v2"), reason="Reddit 2012 run not in the store")
 def test_how_healthy_on_reddit_2012_returns_plain_findings():
     result = network_health("r2012-v2")
     findings = result.values["findings"]

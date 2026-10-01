@@ -4,6 +4,7 @@ import re
 import networkx as nx
 import pytest
 
+from conftest import has_run
 from osi.answer import (
     FINDINGS_SYSTEM_PROMPT,
     SYSTEM_PROMPT,
@@ -581,6 +582,7 @@ def _last_sentence(text: str) -> str:
     return parts[-1]
 
 
+@pytest.mark.skipif(not has_run("r2008-v2"), reason="Reddit 2008 run not in the store")
 def test_rank_nodes_answer_for_reddit_2008_uses_an_analogy():
     from osi.executors import rank_nodes
 
@@ -589,6 +591,7 @@ def test_rank_nodes_answer_for_reddit_2008_uses_an_analogy():
     assert re.search(r"\b(like|as|imagine)\b", text, re.IGNORECASE)
 
 
+@pytest.mark.skipif(not has_run("r2012-v2"), reason="Reddit 2012 run not in the store")
 def test_network_health_answer_for_reddit_2012_skips_metric_names():
     from osi.executors import network_health
 
@@ -598,6 +601,7 @@ def test_network_health_answer_for_reddit_2012_skips_metric_names():
         assert word not in text
 
 
+@pytest.mark.skipif(not has_run("r2008-v2"), reason="Reddit 2008 run not in the store")
 def test_answer_names_an_account_when_the_tools_name_one():
     from osi.executors import rank_nodes
 
@@ -608,6 +612,7 @@ def test_answer_names_an_account_when_the_tools_name_one():
     assert any(name in text for name in names)
 
 
+@pytest.mark.skipif(not has_run("r2008-v2"), reason="Reddit 2008 run not in the store")
 def test_answer_ends_with_a_consequence_not_a_metric():
     from osi.executors import rank_nodes
 

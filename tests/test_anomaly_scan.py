@@ -1,3 +1,6 @@
+import pytest
+
+from conftest import has_run
 from osi.executors import anomaly_scan
 
 
@@ -9,6 +12,7 @@ def _fold(anomaly: dict) -> float:
     return magnitude if magnitude >= 1 else 1 / magnitude
 
 
+@pytest.mark.skipif(not has_run("r2012-v2"), reason="Reddit 2012 run not in the store")
 def test_reddit_2012_top_anomaly_is_fragmentation():
     result = anomaly_scan("r2012-v2")
     anomalies = result.values["anomalies"]
@@ -19,6 +23,10 @@ def test_reddit_2012_top_anomaly_is_fragmentation():
     assert result.values["findings"]
 
 
+@pytest.mark.skipif(
+    not has_run("r2012-v2") or not has_run("snap-v1"),
+    reason="Reddit 2012 and Snap runs not in the store",
+)
 def test_snap_is_closer_to_the_baselines_than_reddit_2012():
     reddit = anomaly_scan("r2012-v2").values["anomalies"]
     snap = anomaly_scan("snap-v1").values["anomalies"]

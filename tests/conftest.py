@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 
-def _has_run(run_id: str) -> bool:
+def has_run(run_id: str) -> bool:
     """Check if a run exists in the store."""
     from osi import store
     try:
@@ -36,7 +36,12 @@ def temp_store(monkeypatch):
         # Load the example graph
         from osi.loader import load_edge_list
         G = load_edge_list("examples/simple.csv")
-        store.create_run("file", {"source": "file", "path": "examples/simple.csv"}, "simple-v1", run_id="simple-v1")
+        store.create_run(
+            "file",
+            {"source": "file", "path": "examples/simple.csv", "layer": "file"},
+            "simple-v1",
+            run_id="simple-v1",
+        )
         store.save_graph("simple-v1", "file", G)
         
         yield "simple-v1"

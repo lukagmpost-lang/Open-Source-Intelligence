@@ -1,5 +1,7 @@
 import networkx as nx
+import pytest
 
+from conftest import has_run
 from osi.agent import _TOOLS, run_agent
 from osi.failure_modes import apply_failure_modes, rank_by_question
 from osi.result import ResultObject
@@ -67,6 +69,7 @@ def test_a_worry_question_ranks_severe_modes_and_drops_expected_ones():
     assert all(not mode.get("is_expected") for mode in ranked)
 
 
+@pytest.mark.skipif(not has_run("r2012-v2"), reason="Reddit 2012 run not in the store")
 def test_reddit_2012_worry_answer_names_a_failure_mode_and_an_account(monkeypatch):
     state = {"n": 0}
 
