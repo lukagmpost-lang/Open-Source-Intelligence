@@ -61,13 +61,12 @@
       letter-spacing: 0;
     }
     .brand-name { font-size: 13px; font-weight: 700; }
-    .brand-subtitle, .top-meta, .eyebrow, .field-label, .section-kicker {
+    .top-meta, .eyebrow, .field-label, .section-kicker {
       color: var(--muted);
       font: 600 10px/1.4 var(--mono);
       letter-spacing: 0;
       text-transform: uppercase;
     }
-    .brand-subtitle { margin-top: 2px; }
     .top-actions { display: flex; align-items: center; gap: 20px; }
     .top-meta { display: flex; align-items: center; gap: 8px; }
     .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink); }
@@ -114,7 +113,6 @@
       border-right: 1px solid var(--line);
       background: #f0f0ed;
     }
-    .section-kicker { display: block; margin-bottom: 8px; }
     h1, h2, p { margin-top: 0; }
     h1 {
       margin-bottom: 16px;
@@ -197,7 +195,6 @@
       padding-bottom: 15px;
       border-bottom: 1px solid var(--line);
     }
-    .content-header h1 { margin: 0; }
     .run-control { width: min(310px, 45%); }
     .run-control select { font-size: 12px; }
     .overview {
@@ -212,8 +209,6 @@
     .metric-value { font: 400 25px/1 var(--serif); }
     .metric-label { margin-top: 6px; color: var(--muted); font: 10px/1.4 var(--mono); text-transform: uppercase; }
     .query-section { max-width: 760px; }
-    .query-heading { display: flex; align-items: baseline; gap: 12px; margin-bottom: 11px; }
-    .query-heading .section-kicker { margin: 0; }
     .question-input {
       width: 100%;
       min-height: 84px;
@@ -319,7 +314,6 @@
     @media (max-width: 480px) {
       h1 { font-size: 25px; }
       .content-header { align-items: center; flex-direction: row; gap: 12px; }
-      .content-header h1 { font-size: 20px; }
       .run-control { width: 42%; }
       .run-control select { min-height: 36px; padding: 6px; }
       .overview { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -329,9 +323,6 @@
       .query-actions { align-items: center; flex-wrap: nowrap; gap: 8px; }
       .query-hint { display: none; }
       .ask-button { min-width: 74px; }
-      .query-heading { align-items: baseline; flex-direction: row; gap: 8px; }
-      .query-heading .section-kicker { font-size: 8px; }
-      .query-heading h2 { font-size: 16px; }
       .query-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .answer-area { min-height: 42px; padding: 7px 0; }
       .answer-placeholder { font: 12px/1.4 var(--sans); }
@@ -347,11 +338,9 @@
       <div class="brand-mark" aria-hidden="true">OSI</div>
       <div>
         <div class="brand-name">Open-Source Intelligence</div>
-        <div class="brand-subtitle">Graph workspace</div>
       </div>
     </div>
     <div class="top-actions">
-      <div class="top-meta"><span class="status-dot" aria-hidden="true"></span>Local graph desk</div>
       <div id="saved-menu" class="saved-menu">
         <button id="saved-menu-toggle" class="saved-menu-trigger" type="button" aria-label="Saved runs" aria-expanded="false" aria-controls="recent-runs">
           Saved runs
@@ -365,7 +354,6 @@
 
   <main class="workspace">
     <aside class="sidebar" aria-label="Upload data">
-      <span class="section-kicker">Graph input</span>
       <h1 id="import-title">Upload data.</h1>
 
       <form id="upload-form">
@@ -409,12 +397,8 @@
       </form>
     </aside>
 
-    <section class="content" aria-labelledby="workspace-title">
+    <section class="content" aria-label="Graph view">
       <div class="content-header">
-        <div>
-          <span class="section-kicker">Graph analysis</span>
-          <h1 id="workspace-title">Ask about this graph.</h1>
-        </div>
         <div class="run-control">
           <label class="field-label" for="run-select">Active run</label>
           <select id="run-select" aria-label="Active graph run"></select>
@@ -427,24 +411,17 @@
         <div class="metric"><div id="component-count" class="metric-value">—</div><div class="metric-label">Components</div></div>
       </div>
 
-      <section class="query-section" aria-labelledby="question-title">
-        <div class="query-heading">
-          <span class="section-kicker">Ask the graph</span>
-          <h2 id="question-title">What do you want to know?</h2>
-        </div>
-        <label class="sr-only" for="question">Question</label>
-        <textarea id="question" class="question-input" placeholder="Try: top 5 by pagerank, who connects the groups, how fragile is this network?">top 5 by pagerank</textarea>
+      <section class="query-section" aria-label="Ask a question">
+        <label class="field-label" for="question">Question</label>
+        <textarea id="question" class="question-input" placeholder="e.g. top 5 by pagerank">top 5 by pagerank</textarea>
         <div class="query-actions">
           <label class="llm-toggle" title="Use language model">
             <input id="use-llm" type="checkbox" aria-label="Use language model">
             <span aria-hidden="true">LLM</span>
           </label>
-          <span class="query-hint">Enter to ask · Shift+Enter for a new line</span>
           <button id="ask-button" class="ask-button" type="button"><span aria-hidden="true">↗</span> Ask</button>
         </div>
-        <div id="answer-area" class="answer-area" aria-live="polite">
-          <p class="answer-placeholder">Your graph answer will appear here.</p>
-        </div>
+        <div id="answer-area" class="answer-area" aria-live="polite"></div>
         <div id="query-meta" class="query-meta" hidden></div>
       </section>
     </section>
