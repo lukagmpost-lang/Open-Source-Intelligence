@@ -10,8 +10,8 @@ dependencies = [
 
 [project.optional-dependencies]
 fast = ["igraph", "leidenalg", "numpy", "scipy"]
-web = ["fastapi", "uvicorn"]
-dev = ["pytest"]
+web = ["fastapi", "uvicorn", "python-multipart"]
+dev = ["pytest", "httpx"]
 
 [project.scripts]
 osi = "osi.ask:main"
