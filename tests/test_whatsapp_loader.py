@@ -1,3 +1,5 @@
+import pytest
+
 from osi.loaders.whatsapp import detect_whatsapp_format, load_whatsapp_export
 
 
@@ -126,10 +128,52 @@ def test_mention_rule_connects_mentioned_sender(tmp_path):
 def test_detect_whatsapp_format_returns_high_for_export(tmp_path):
     path = _write_export(
         tmp_path / "chat.txt",
-        ["1/15/24, 10:30:45 AM - Alice: Hello"],
+        [
+            "1/15/24, 10:30:45 AM - Alice: Hello",
+            "[1/15/24, 10:31:12 AM] Bob: Hi Alice",
+            "1/15/24, 10:32:00 AM - Carol: Good morning",
+        ],
     )
 
     assert detect_whatsapp_format(path) == "high"
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "[1/15/24, 10:30:45 AM] Alice: hello",
+        "[1/15/24, 10:30:45] Alice: hello",
+        "1/15/24, 10:30:45 AM - Alice: hello",
+        "1/15/24, 10:30:45 - Alice: hello",
+        "15/1/24, 10:30:45 - Alice: hello",
+        "[15/1/24, 10:30:45] Alice: hello",
+    ],
+)
+def test_detect_whatsapp_format_accepts_common_timestamp_variants(tmp_path, line):
+    path = _write_export(tmp_path / "chat.txt", [line])
+
+    assert detect_whatsapp_format(path) == "medium"
+
+
+def test_detect_whatsapp_format_returns_high_for_european_dates_with_bom(tmp_path):
+    path = tmp_path / "chat.txt"
+    path.write_text(
+        "\ufeff 31/12/24, 23:59:59 - Zoë: Bonne nuit  \n"
+        "[01/01/25, 00:01:02] Björk: Bonjour\n"
+        " 2/1/25, 12:00:00 - René: Salut \n",
+        encoding="utf-8",
+    )
+
+    assert detect_whatsapp_format(path) == "high"
+
+
+def test_detect_whatsapp_format_returns_medium_for_one_or_two_matches(tmp_path):
+    path = _write_export(
+        tmp_path / "chat.txt",
+        ["1/15/24, 10:30:45 - Alice: Hello", "not a message line"],
+    )
+
+    assert detect_whatsapp_format(path) == "medium"
 
 
 def test_detect_whatsapp_format_returns_low_for_random_text(tmp_path):

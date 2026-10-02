@@ -15,6 +15,11 @@ _TIMESTAMP_PREFIX = re.compile(
     rf"^\[(?P<bracket_date>{_DATE})\]\s*(?P<bracket_body>.*)$|"
     rf"^(?P<plain_date>{_DATE})\s+-\s+(?P<plain_body>.*)$"
 )
+_DETECT_DATE = r"\d{1,2}/\d{1,2}/\d{2,4},\s*\d{1,2}:\d{2}:\d{2}(?:\s+[APap][Mm])?"
+_DETECT_MESSAGE = re.compile(
+    rf"^(?:\[\s*{_DETECT_DATE}\s*\]\s*[^:\r\n]+:\s*.*|"
+    rf"{_DETECT_DATE}\s+-\s*[^:\r\n]+:\s*.*)$"
+)
 _MENTION = re.compile(r"@([\w]+)", re.UNICODE)
 _EDGE_RULES = {"temporal", "sequence", "mention"}
 
@@ -188,9 +193,9 @@ def detect_whatsapp_format(path: str | Path) -> str:
         lines = candidate.read_text(encoding="utf-8-sig").splitlines()
     except (OSError, UnicodeDecodeError):
         return "low"
-    timestamps = [match for line in lines if (match := _TIMESTAMP_PREFIX.match(line))]
-    if not timestamps:
-        return "low"
-    if any(":" in (match.group("bracket_body") or match.group("plain_body") or "") for match in timestamps):
+    matches = sum(bool(_DETECT_MESSAGE.match(line.strip())) for line in lines[:50])
+    if matches >= 3:
         return "high"
-    return "medium"
+    if matches:
+        return "medium"
+    return "low"

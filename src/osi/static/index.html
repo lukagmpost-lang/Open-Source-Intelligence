@@ -67,14 +67,13 @@
       letter-spacing: 0;
       text-transform: uppercase;
     }
-    .top-actions { display: flex; align-items: center; gap: 20px; }
-    .top-meta { display: flex; align-items: center; gap: 8px; }
-    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink); }
-    .saved-menu { position: relative; }
+    .saved-menu { position: relative; margin-top: 14px; }
     .saved-menu-trigger {
+      width: 100%;
       min-height: 36px;
       display: flex;
       align-items: center;
+      justify-content: space-between;
       gap: 9px;
       padding: 0 10px;
       border: 1px solid var(--line);
@@ -90,7 +89,7 @@
     .saved-menu-panel {
       position: absolute;
       z-index: 10;
-      top: calc(100% + 8px);
+      bottom: calc(100% + 8px);
       right: 0;
       width: min(330px, calc(100vw - 28px));
       max-height: min(360px, 65vh);
@@ -305,9 +304,8 @@
 
     @media (max-width: 800px) {
       .topbar { min-height: 60px; padding: 0 18px; }
-      .top-meta { display: none; }
       .workspace { grid-template-columns: 1fr; }
-      .sidebar { padding: 14px 18px 14px; border-right: 0; border-bottom: 1px solid var(--line); }
+      .sidebar { padding: 14px 18px 8px; border-right: 0; border-bottom: 1px solid var(--line); }
       .content { padding: 19px 20px 28px; }
       .overview { margin-bottom: 20px; }
     }
@@ -338,16 +336,6 @@
       <div class="brand-mark" aria-hidden="true">OSI</div>
       <div>
         <div class="brand-name">Open-Source Intelligence</div>
-      </div>
-    </div>
-    <div class="top-actions">
-      <div id="saved-menu" class="saved-menu">
-        <button id="saved-menu-toggle" class="saved-menu-trigger" type="button" aria-label="Saved runs" aria-expanded="false" aria-controls="recent-runs">
-          Saved runs
-          <span id="run-count" class="saved-menu-count">00</span>
-          <span class="saved-menu-chevron" aria-hidden="true">⌄</span>
-        </button>
-        <div id="recent-runs" class="saved-menu-panel recent-list" aria-live="polite" hidden></div>
       </div>
     </div>
   </header>
@@ -395,6 +383,14 @@
           <span aria-hidden="true">↑</span><span>Analyze file</span>
         </button>
       </form>
+      <div id="saved-menu" class="saved-menu">
+        <button id="saved-menu-toggle" class="saved-menu-trigger" type="button" aria-label="Saved runs" aria-expanded="false" aria-controls="recent-runs">
+          <span>Saved runs</span>
+          <span class="saved-menu-count" id="run-count">00</span>
+          <span class="saved-menu-chevron" aria-hidden="true">⌃</span>
+        </button>
+        <div id="recent-runs" class="saved-menu-panel recent-list" aria-live="polite" hidden></div>
+      </div>
     </aside>
 
     <section class="content" aria-label="Graph view">
