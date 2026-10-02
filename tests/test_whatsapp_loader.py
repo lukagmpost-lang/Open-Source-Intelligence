@@ -29,6 +29,24 @@ def test_both_timestamp_formats_parse(tmp_path):
     }
 
 
+def test_requested_timestamp_variants_extract_senders_and_messages(tmp_path):
+    lines = [
+        "[8/15/23, 9:12:33 AM] Alice: Hello everyone",
+        "[8/15/23, 9:12:33] Alice: Hello",
+        "[15.08.23, 09:12:33] Alice: Hello",
+        "15.08.23, 09:12 - Alice: Hello",
+        "8/15/23, 9:12 AM - Alice: Hi",
+    ]
+
+    for index, line in enumerate(lines):
+        path = _write_export(tmp_path / f"chat-{index}.txt", [line])
+        graph, metadata = load_whatsapp_export(path)
+
+        assert set(graph) == {"Alice"}
+        assert graph.nodes["Alice"]["message_count"] == 1
+        assert metadata["message_count"] == 1
+
+
 def test_multiline_message_continuation_is_combined(tmp_path):
     path = _write_export(
         tmp_path / "chat.txt",

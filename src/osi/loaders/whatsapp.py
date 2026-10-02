@@ -10,26 +10,62 @@ from typing import Any
 import networkx as nx
 
 
-_DATE = r"\d{1,2}/\d{1,2}/\d{2,4}, \d{1,2}:\d{2}:\d{2} [APap][Mm]"
+_DATE = r"\d{1,4}[./-]\d{1,2}[./-]\d{2,4}"
+_TIME = r"\d{1,2}:\d{2}(?::\d{2})?(?:\s*[APap]\.?[Mm]\.?)?"
 _TIMESTAMP_PREFIX = re.compile(
-    rf"^\[(?P<bracket_date>{_DATE})\]\s*(?P<bracket_body>.*)$|"
-    rf"^(?P<plain_date>{_DATE})\s+-\s+(?P<plain_body>.*)$"
-)
-_DETECT_DATE = r"\d{1,2}/\d{1,2}/\d{2,4},\s*\d{1,2}:\d{2}:\d{2}(?:\s+[APap][Mm])?"
-_DETECT_MESSAGE = re.compile(
-    rf"^(?:\[\s*{_DETECT_DATE}\s*\]\s*[^:\r\n]+:\s*.*|"
-    rf"{_DETECT_DATE}\s+-\s*[^:\r\n]+:\s*.*)$"
+    rf"^\s*\[?\s*(?P<date>{_DATE}),?\s+(?P<time>{_TIME})\s*\]?\s*"
+    r"(?:-\s*)?(?P<sender>[^:\r\n]{1,50}):\s?(?P<text>.*)$"
 )
 _MENTION = re.compile(r"@([\w]+)", re.UNICODE)
 _EDGE_RULES = {"temporal", "sequence", "mention"}
 
 
-def _parse_date(value: str) -> datetime | None:
-    for date_format in ("%m/%d/%y, %I:%M:%S %p", "%m/%d/%Y, %I:%M:%S %p"):
-        try:
-            return datetime.strptime(value, date_format)
-        except ValueError:
-            pass
+def _parse_date(date_value: str, time_value: str) -> datetime | None:
+    parts = re.split(r"[./-]", date_value)
+    if len(parts) != 3:
+        return None
+    first, second, third = parts
+    separator = date_value[len(first)]
+    first_number = int(first)
+    second_number = int(second)
+    year_format = "%Y" if len(third) == 4 else "%y"
+    if len(first) == 4:
+        date_formats = [f"%Y{separator}%m{separator}%d"]
+    else:
+        if first_number > 12:
+            orders = ("dmy", "mdy")
+        elif second_number > 12:
+            orders = ("mdy", "dmy")
+        elif separator == ".":
+            orders = ("dmy", "mdy")
+        else:
+            orders = ("mdy", "dmy")
+        date_formats = [
+            f"%{('d' if order[0] == 'd' else 'm')}{separator}"
+            f"%{('d' if order[1] == 'd' else 'm')}{separator}{year_format}"
+            for order in orders
+        ]
+
+    normalized_time = re.sub(
+        r"(?i)([ap])\.?m\.?$",
+        lambda match: match.group(1).upper() + "M",
+        time_value.strip(),
+    )
+    has_meridiem = bool(re.search(r"(?i)[AP]M$", normalized_time))
+    time_formats = (
+        ("%I:%M:%S %p", "%I:%M %p")
+        if has_meridiem
+        else ("%H:%M:%S", "%H:%M")
+    )
+    for date_format in date_formats:
+        for time_format in time_formats:
+            try:
+                return datetime.strptime(
+                    f"{date_value} {normalized_time}",
+                    f"{date_format} {time_format}",
+                )
+            except ValueError:
+                continue
     return None
 
 
@@ -69,20 +105,15 @@ def _parse_export(path: Path) -> tuple[str, list[dict[str, Any]]]:
     parsed: list[dict[str, Any]] = []
     current: dict[str, Any] | None = None
     for line in raw_lines:
-        match = _TIMESTAMP_PREFIX.match(line)
+        match = _TIMESTAMP_PREFIX.match(line.strip())
         if match:
             if current is not None:
                 parsed.append(current)
-            date_text = match.group("bracket_date") or match.group("plain_date")
-            body = match.group("bracket_body") or match.group("plain_body") or ""
-            date = _parse_date(date_text)
-            sender: str | None = None
-            text = body
-            if ":" in body:
-                possible_sender, text = body.split(":", 1)
-                if possible_sender.strip():
-                    sender = possible_sender.strip()
-            current = {"date": date, "sender": sender, "text": text.strip()}
+            current = {
+                "date": _parse_date(match.group("date"), match.group("time")),
+                "sender": match.group("sender").strip(),
+                "text": match.group("text").strip(),
+            }
         elif current is not None:
             continuation = line.strip()
             if continuation:
@@ -193,7 +224,7 @@ def detect_whatsapp_format(path: str | Path) -> str:
         lines = candidate.read_text(encoding="utf-8-sig").splitlines()
     except (OSError, UnicodeDecodeError):
         return "low"
-    matches = sum(bool(_DETECT_MESSAGE.match(line.strip())) for line in lines[:50])
+    matches = sum(bool(_TIMESTAMP_PREFIX.match(line.strip())) for line in lines[:50])
     if matches >= 3:
         return "high"
     if matches:
