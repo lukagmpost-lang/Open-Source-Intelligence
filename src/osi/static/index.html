@@ -376,7 +376,7 @@
         </div>
         <div id="cap-field" class="field" hidden>
           <label class="field-label" for="chat-cap">Maximum chat members</label>
-          <input id="chat-cap" name="chat_cap" type="number" min="1" max="10000" value="30">
+          <input id="chat-cap" name="chat_cap" type="number" min="1" max="10000" value="500">
         </div>
         <div id="upload-message" class="upload-message" role="status" aria-live="polite"></div>
         <button id="upload-button" class="primary-button" type="submit">
@@ -603,7 +603,7 @@
       form.append("source", sourceSelect.value);
       form.append("edge_rule", edgeRule.value);
       form.append("window_minutes", document.getElementById("window-minutes").value || "5");
-      form.append("chat_cap", document.getElementById("chat-cap").value || "30");
+      form.append("chat_cap", document.getElementById("chat-cap").value || "500");
       uploadButton.disabled = true;
       uploadButton.lastElementChild.textContent = "Analyzing…";
       showUploadMessage("Reading file and building graph…");
