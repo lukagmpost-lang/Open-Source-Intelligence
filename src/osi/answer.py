@@ -22,6 +22,16 @@ from osi.result import ResultObject
 from osi.store import get_cached_answer, get_run, load_graph, put_cached_answer
 from osi.vocabulary import get_source, vocabulary_instruction
 
+import time
+_LAST_LLM_CALL = [0.0]
+
+def _wait_for_rate_limit(min_seconds=2.0):
+    now = time.time()
+    elapsed = now - _LAST_LLM_CALL[0]
+    if elapsed < min_seconds:
+        time.sleep(min_seconds - elapsed)
+    _LAST_LLM_CALL[0] = time.time()
+
 _ROOT = Path(__file__).resolve().parents[2]
 _NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
 # "10 communities" is not this phrase. The zero has to be its own number.
@@ -237,15 +247,19 @@ def _complete(
         print(f"[DEBUG] Request body (first 50 chars): {body_str[:50]}", file=sys.stderr)
     else:
         print(f"[DEBUG] Request body: (empty)", file=sys.stderr)
-    try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            body = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as error:
-        detail = error.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"LLM request failed: {error.code} {detail}") from error
+    for attempt in range(2):
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                body = json.loads(response.read().decode("utf-8"))
+            break
+        except urllib.error.HTTPError as error:
+            if error.code == 429 and attempt == 0:
+                time.sleep(60)
+                continue
+            else:
+                detail = error.read().decode("utf-8", errors="replace")
+                raise RuntimeError(f"LLM request failed: {error.code} {detail}") from error
     return str(body["choices"][0]["message"]["content"]).strip()
-
-
 def call_llm(
     prompt: str,
     *,
@@ -268,6 +282,7 @@ def call_llm(
             f'with {n_nodes} nodes and {n_edges} edges. The question was: "{question}".'
         )
         prompt = context + "\n\n" + prompt
+    _wait_for_rate_limit()
     settings = llm_settings()
     actual_seed = seed if _SEED_SUPPORTED else None
     try:
@@ -683,9 +698,13 @@ def verify_numbers(text: str, values: dict) -> bool:
     for match in _NUMBER.finditer(text):
         token = match.group(0)
         number = float(token)
-        # 1. Round to 4 decimal places match
-        rounded = round(number, 4)
-        if any(round(float(v), 4) == rounded for v in stored if not isinstance(v, bool)):
+        # 1. Tolerance check based on decimal places in token
+        if "." in token:
+            places = len(token.split(".")[1])
+            tolerance = 10 ** (-places)
+        else:
+            tolerance = 0.0  # For integers, we already have other checks, but we keep for safety
+        if any(abs(number - float(v)) < tolerance for v in stored if not isinstance(v, bool)):
             continue
         # 2. Small integer counts 1-10
         if number.is_integer() and 1 <= number <= 10:
