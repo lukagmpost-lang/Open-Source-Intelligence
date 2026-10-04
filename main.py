@@ -77,7 +77,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--thread-cap", type=int, default=30, 
                         help="Maximum unique users per Slack thread (default: 30)")
-    parser.add_argument("--chat-cap", type=int, default=30,
+    parser.add_argument("--chat-cap", type=int, default=500,
                         help="Maximum unique senders per Telegram conversation (default: 30)")
     parser.add_argument("--window-minutes", type=float, default=5,
                         help="WhatsApp temporal edge window in minutes (default: 5)")

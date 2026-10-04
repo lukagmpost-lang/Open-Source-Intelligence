@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -10,13 +11,28 @@ from typing import Any
 import networkx as nx
 
 
-_DATE = r"\d{1,4}[./-]\d{1,2}[./-]\d{2,4}"
+_DATE = r"\d{1,4}[./-]\d{1,2}[./-](?:\d{2}|\d{4})"
 _TIME = r"\d{1,2}:\d{2}(?::\d{2})?(?:\s*[APap]\.?[Mm]\.?)?"
 _TIMESTAMP_PREFIX = re.compile(
     rf"^\s*\[?\s*(?P<date>{_DATE}),?\s+(?P<time>{_TIME})\s*\]?\s*"
     r"(?:-\s*)?(?P<sender>[^:\r\n]{1,50}):\s?(?P<text>.*)$"
 )
 _MENTION = re.compile(r"@([\w]+)", re.UNICODE)
+
+def _open_whatsapp_file(path: Path) -> list[str]:
+    """Open a WhatsApp export file, trying UTF-8 first then CP1251.
+
+    Returns a list of lines with newline characters removed.
+    """
+    # Try UTF-8 first
+    try:
+        content = path.read_text(encoding="utf-8")
+        return content.splitlines()
+    except UnicodeDecodeError:
+        # Fall back to CP1251 (Windows Cyrillic)
+        content = path.read_text(encoding="cp1251")
+        return content.splitlines()
+
 _EDGE_RULES = {"temporal", "sequence", "mention"}
 
 
@@ -79,6 +95,13 @@ def _is_system_message(sender: str | None, text: str) -> bool:
             "messages and calls are end-to-end encrypted",
             "<media omitted>",
             "this message was deleted",
+            "сообщения и звонки защищены",
+            "вы добавили",
+            "вы удалили",
+            "вы изменили",
+            "добавил(-а)",
+            "удалил(-а)",
+            "изменил(-а)",
         )
     ):
         return True
@@ -95,8 +118,16 @@ def _is_system_message(sender: str | None, text: str) -> bool:
     )
 
 
+def _open_whatsapp_file(path: Path) -> list[str]:
+    """Read the export, trying UTF-8 first then CP1251 (Windows Cyrillic)."""
+    try:
+        return path.read_text(encoding="utf-8-sig").splitlines()
+    except UnicodeDecodeError:
+        return path.read_text(encoding="cp1251").splitlines()
+
+
 def _parse_export(path: Path) -> tuple[str, list[dict[str, Any]]]:
-    raw_lines = path.read_text(encoding="utf-8-sig").splitlines()
+    raw_lines = _open_whatsapp_file(path)
     first_line = next((line.strip() for line in raw_lines if line.strip()), "")
     chat_name = path.stem
     if first_line and not _TIMESTAMP_PREFIX.match(first_line):
@@ -173,14 +204,9 @@ def load_whatsapp_export(
     path: str | Path,
     edge_rule: str = "temporal",
     window_minutes: float = 5,
-    chat_cap: int = 30,
+    chat_cap: int = 500,
 ) -> tuple[nx.Graph, dict[str, Any]]:
-    """Load a WhatsApp chat export .txt into a NetworkX graph.
-
-    Supports both timestamp-prefix styles commonly produced by WhatsApp.
-    A chat with more than ``chat_cap`` unique senders keeps its nodes and
-    message counts but does not produce edges.
-    """
+    """Load a WhatsApp chat export .txt into a NetworkX graph."""
     if edge_rule not in _EDGE_RULES:
         raise ValueError(f"Unknown edge rule: {edge_rule}")
     if window_minutes < 0:
@@ -221,7 +247,7 @@ def detect_whatsapp_format(path: str | Path) -> str:
     if not candidate.is_file() or candidate.suffix.casefold() != ".txt":
         return "low"
     try:
-        lines = candidate.read_text(encoding="utf-8-sig").splitlines()
+        lines = _open_whatsapp_file(candidate)
     except (OSError, UnicodeDecodeError):
         return "low"
     matches = sum(bool(_TIMESTAMP_PREFIX.match(line.strip())) for line in lines[:50])
@@ -231,60 +257,49 @@ def detect_whatsapp_format(path: str | Path) -> str:
         return "medium"
     return "low"
 
+
 def choose_edge_rule_from_sample(path, sample_size=100):
-    """
-    Read the first  lines of the WhatsApp file.
-    Send them to the LLM with the question:
-      'Here is a sample of a WhatsApp chat. Which rule best captures who talks to whom?
-         - temporal: two users who post within 5 minutes
-         - sequence: connect the sender of each message to the sender of the previous message
-         - mention: connect users who @-mention each other
-       Reply with the rule name and one sentence of reasoning.'
-    Return a tuple (rule_name, reasoning) where rule_name is one of 'temporal', 'sequence', 'mention'.
+    """Ask the LLM which edge rule fits this WhatsApp export.
+
+    Returns (rule_name, reasoning). rule_name is one of
+    'temporal', 'sequence', or 'mention'.
     """
     from osi.answer import call_llm
-    import itertools
-    from pathlib import Path
-    path = Path(path)
-    try:
-        lines = path.read_text(encoding="utf-8-sig").splitlines()
-    except (OSError, UnicodeDecodeError) as e:
-        # If we cannot read the file, fall back to temporal
-        print(f"[whatsapp] Warning: could not read file for sampling: {e}", file=sys.stderr)
-        return "temporal", "Could not read file; defaulting to temporal."
-    # Take the first sample_size lines
-    sample_lines = list(itertools.islice(lines, sample_size))
-    sample_text = "\n".join(sample_lines)
-    prompt = f"""Here is a sample of a WhatsApp chat. Which rule best captures who talks to whom?
-       - temporal: two users who post within 5 minutes
-       - sequence: connect the sender of each message to the sender of the previous message
-       - mention: connect users who @-mention each other
-       Reply with the rule name and one sentence of reasoning.
 
-       {sample_text}
-       """
     try:
-        llm_result = call_llm(prompt)
+        lines = _open_whatsapp_file(Path(path))
+    except (OSError, UnicodeDecodeError) as e:
+        print(f"[whatsapp] could not read file: {e}", file=sys.stderr)
+        return "temporal", "could not read file"
+
+    sample = "\n".join(lines[:sample_size])
+
+    prompt = f"""Here is a sample of a WhatsApp chat. Which rule best captures who talks to whom?
+
+- temporal: two users who post within 5 minutes
+- sequence: connect the sender of each message to the sender of the previous message
+- mention: connect users who @-mention each other
+
+Reply with the rule name and one sentence of reasoning.
+
+{sample}
+"""
+
+    try:
+        reply = call_llm(prompt)
     except Exception as e:
-        print(f"[whatsapp] Warning: LLM call failed: {e}", file=sys.stderr)
-        return "temporal", f"LLM call failed: {e}; defaulting to temporal."
-    # Parse the LLM result: we expect the rule name and then reasoning.
-    # We'll look for one of the rule names in the result (case-insensitive).
-    for rule in _EDGE_RULES:
-        if rule in llm_result.lower():
-            return rule, llm_result.strip()
-    # If none found, default to temporal
-    return "temporal", llm_result.strip()
+        print(f"[whatsapp] LLM call failed: {e}", file=sys.stderr)
+        return "temporal", f"LLM failed: {e}"
+
+    lowered = reply.lower()
+    for rule in ("temporal", "sequence", "mention"):
+        if rule in lowered:
+            return rule, reply.strip()
+    return "temporal", reply.strip()
 
 
 def load_whatsapp_with_llm(path):
-    """
-    1. Call choose_edge_rule_from_sample(path).
-    2. Print the chosen rule and reasoning.
-    3. Call load_whatsapp_export(path, edge_rule=chosen_rule).
-    4. Return (graph, metadata).
-    """
-    chosen_rule, reasoning = choose_edge_rule_from_sample(path)
-    print(f"[whatsapp] LLM chose edge rule: {chosen_rule} - {reasoning}", file=sys.stderr)
-    graph, metadata = load_whatsapp_export(path, edge_rule=chosen_rule)
-    return graph, metadata
+    """Load a WhatsApp export, letting the LLM pick the edge rule."""
+    rule, reasoning = choose_edge_rule_from_sample(path)
+    print(f"[whatsapp] chosen rule: {rule} - {reasoning}", file=sys.stderr)
+    return load_whatsapp_export(path, edge_rule=rule)

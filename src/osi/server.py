@@ -224,7 +224,7 @@ async def upload_graph(
     edge_rule: str = Form(""),
     window_minutes: float = Form(5),
     thread_cap: int = Form(30),
-    chat_cap: int = Form(30),
+    chat_cap: int = Form(500),
 ) -> dict:
     """Parse an uploaded graph/export and save its graph under a generated run id."""
     allowed_sources = {"auto", "file", "slack", "telegram", "whatsapp"}
