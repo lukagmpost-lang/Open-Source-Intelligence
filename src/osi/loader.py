@@ -77,17 +77,13 @@ def _from_records(rows: list, source_col: str, target_col: str, weight_col: str 
 
 
 def _from_node_link(payload: dict) -> nx.Graph:
-    # Handle both 'links' and 'edges' keys for compatibility across NetworkX versions
-    try:
-        # First try with the standard 'links' key
-        return nx.node_link_graph(payload, links="links")
-    except (KeyError, nx.NetworkXError):
-        try:
-            # If that fails, try with 'edges' key
-            return nx.node_link_graph(payload, links="edges")
-        except (KeyError, nx.NetworkXError):
-            # If both fail, let the default behavior handle it
-            return nx.node_link_graph(payload)
+    # Ensure the payload has a 'links' key as expected by nx.node_link_graph.
+    # If it has 'edges' but not 'links', copy edges to links.
+    if "links" not in payload and "edges" in payload:
+        payload = payload.copy()  # avoid modifying original if reused
+        payload["links"] = payload["edges"]
+    # If neither links nor edges present, let node_link_graph raise an appropriate error.
+    return nx.node_link_graph(payload)
 
 
 def load_edge_list(

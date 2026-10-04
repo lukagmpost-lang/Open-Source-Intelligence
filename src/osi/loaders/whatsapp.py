@@ -230,3 +230,61 @@ def detect_whatsapp_format(path: str | Path) -> str:
     if matches:
         return "medium"
     return "low"
+
+def choose_edge_rule_from_sample(path, sample_size=100):
+    """
+    Read the first  lines of the WhatsApp file.
+    Send them to the LLM with the question:
+      'Here is a sample of a WhatsApp chat. Which rule best captures who talks to whom?
+         - temporal: two users who post within 5 minutes
+         - sequence: connect the sender of each message to the sender of the previous message
+         - mention: connect users who @-mention each other
+       Reply with the rule name and one sentence of reasoning.'
+    Return a tuple (rule_name, reasoning) where rule_name is one of 'temporal', 'sequence', 'mention'.
+    """
+    from osi.answer import call_llm
+    import itertools
+    from pathlib import Path
+    path = Path(path)
+    try:
+        lines = path.read_text(encoding="utf-8-sig").splitlines()
+    except (OSError, UnicodeDecodeError) as e:
+        # If we cannot read the file, fall back to temporal
+        print(f"[whatsapp] Warning: could not read file for sampling: {e}", file=sys.stderr)
+        return "temporal", "Could not read file; defaulting to temporal."
+    # Take the first sample_size lines
+    sample_lines = list(itertools.islice(lines, sample_size))
+    sample_text = "\n".join(sample_lines)
+    prompt = f"""Here is a sample of a WhatsApp chat. Which rule best captures who talks to whom?
+       - temporal: two users who post within 5 minutes
+       - sequence: connect the sender of each message to the sender of the previous message
+       - mention: connect users who @-mention each other
+       Reply with the rule name and one sentence of reasoning.
+
+       {sample_text}
+       """
+    try:
+        llm_result = call_llm(prompt)
+    except Exception as e:
+        print(f"[whatsapp] Warning: LLM call failed: {e}", file=sys.stderr)
+        return "temporal", f"LLM call failed: {e}; defaulting to temporal."
+    # Parse the LLM result: we expect the rule name and then reasoning.
+    # We'll look for one of the rule names in the result (case-insensitive).
+    for rule in _EDGE_RULES:
+        if rule in llm_result.lower():
+            return rule, llm_result.strip()
+    # If none found, default to temporal
+    return "temporal", llm_result.strip()
+
+
+def load_whatsapp_with_llm(path):
+    """
+    1. Call choose_edge_rule_from_sample(path).
+    2. Print the chosen rule and reasoning.
+    3. Call load_whatsapp_export(path, edge_rule=chosen_rule).
+    4. Return (graph, metadata).
+    """
+    chosen_rule, reasoning = choose_edge_rule_from_sample(path)
+    print(f"[whatsapp] LLM chose edge rule: {chosen_rule} - {reasoning}", file=sys.stderr)
+    graph, metadata = load_whatsapp_export(path, edge_rule=chosen_rule)
+    return graph, metadata

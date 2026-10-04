@@ -22,7 +22,7 @@ from osi.ask import _execute
 from osi.loader import load_edge_list, load_graphml
 from osi.loaders.slack import detect_slack_format, load_slack_export
 from osi.loaders.telegram import detect_telegram_format, load_telegram_export
-from osi.loaders.whatsapp import detect_whatsapp_format, load_whatsapp_export
+from osi.loaders.whatsapp import detect_whatsapp_format, load_whatsapp_export, choose_edge_rule_from_sample
 from osi.store import create_run, get_run, list_runs, load_graph, save_graph, store_path, _connection
 
 app = FastAPI()
@@ -191,10 +191,16 @@ def _load_uploaded_graph(
     if source == "whatsapp":
         if detect_whatsapp_format(path) == "low":
             raise ValueError("This file does not look like a WhatsApp text export.")
-        rule = edge_rule or "temporal"
+        if not edge_rule:
+            # Use LLM to choose the edge rule
+            chosen_rule, reasoning = choose_edge_rule_from_sample(path)
+            print(f"[whatsapp] LLM chose edge rule: {chosen_rule} - {reasoning}", file=sys.stderr)
+            edge_rule = chosen_rule
+        else:
+            edge_rule = edge_rule or "temporal"
         graph, metadata = load_whatsapp_export(
             path,
-            edge_rule=rule,
+            edge_rule=edge_rule,
             window_minutes=window_minutes,
             chat_cap=chat_cap,
         )
