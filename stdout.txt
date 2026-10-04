@@ -1,0 +1,7 @@
+The most central accounts are alice, carol, and bob, which means these are the accounts everyone else has to go through. How sure: stable.
+
+Query used:
+  intent: rank_nodes
+  params: {'run': 'wa-v1', 'metric': 'pagerank', 'top': 3}
+  method: exact
+  trust: stable

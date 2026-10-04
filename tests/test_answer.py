@@ -349,21 +349,18 @@ def test_updating_a_run_invalidates_its_cache(tmp_path, monkeypatch):
 
 
 def test_system_prompt_includes_plain_language_rules():
-    assert "Lead with what happened, not what the numbers are." in SYSTEM_PROMPT
-    assert "Use one analogy per answer." in SYSTEM_PROMPT
-    assert "if the top accounts leave, most people lose their connection to each other." in SYSTEM_PROMPT
-    assert 'No "modularity", "clustering", "assortativity", "components", "density".' in SYSTEM_PROMPT
-    assert "Every number must appear in a tool result." in SYSTEM_PROMPT
-    assert "Never quote a raw centrality score" in SYSTEM_PROMPT
-    assert "36x more central than typical" in SYSTEM_PROMPT
-    assert "a small town with distinct neighborhoods" in SYSTEM_PROMPT
-    assert "an office where different teams work on different floors" in SYSTEM_PROMPT
-    assert "a neighborhood where people know each other by face" in SYSTEM_PROMPT
-    assert "a network of safe houses connected by trusted couriers" in SYSTEM_PROMPT
-    assert "a group of people connected by shared interests" in SYSTEM_PROMPT
-    assert "Reddit in 2012 was a completely different animal" in SYSTEM_PROMPT
-    assert "Write in this style." in SYSTEM_PROMPT
-    assert "This is a general network." in SYSTEM_PROMPT
+    assert "You are analyzing a network." in SYSTEM_PROMPT
+    assert "Do not fill in a template." in SYSTEM_PROMPT
+    assert "Do not quote pre-written findings verbatim." in SYSTEM_PROMPT
+    assert "Every number in your answer must appear in the data above." in SYSTEM_PROMPT
+    assert "Lead with what matters most." in SYSTEM_PROMPT
+    assert "Use plain language." in SYSTEM_PROMPT
+    assert "End with what this means for someone who uses this network." in SYSTEM_PROMPT
+    assert "If the graph has fewer than 10 nodes, say the data is thin" in SYSTEM_PROMPT
+    assert "do not report community structure or modularity" in SYSTEM_PROMPT
+    assert "This is a network network." in SYSTEM_PROMPT
+    assert "Refer to people as account" in SYSTEM_PROMPT
+    assert "groups as group" in SYSTEM_PROMPT
 
 
 def test_write_answer_includes_run_context_in_the_prompt(monkeypatch):
