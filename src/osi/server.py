@@ -7,6 +7,7 @@ and run ``uvicorn osi.server:app``.
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -46,9 +47,30 @@ def _static_file(path: str) -> Path:
 
 
 @app.get("/api/runs")
-def get_runs() -> list[str]:
-    """Return a list of stored run ids."""
-    return [run_id for run_id, _source, _created_at, _notes in list_runs()]
+def get_runs() -> list[dict]:
+    """Return a list of stored runs with details."""
+    runs = []
+    for run_id, source, created_at, notes in list_runs():
+        # Load graph to get node/edge counts
+        try:
+            # Determine layer from config
+            metadata = get_run(run_id)
+            config = metadata.get("config") or {}
+            layer = config.get("layer") or metadata.get("source")
+            graph = load_graph(run_id, layer) if layer else None
+            nodes = graph.number_of_nodes() if graph else 0
+            edges = graph.number_of_edges() if graph else 0
+        except Exception:
+            nodes = 0
+            edges = 0
+        runs.append({
+            "run_id": run_id,
+            "source": source,
+            "nodes": nodes,
+            "edges": edges,
+            "chat_name": notes or None,
+        })
+    return runs
 
 
 @app.get("/api/runs/{run_id}")
@@ -209,6 +231,21 @@ def post_ask(req: AskRequest) -> dict:
     ``ask`` returns only the sentence. ``_execute`` is the same pipeline
     and also returns intent, params, method, and trust.
     """
+    # Determine source, node count, edge count for logging
+    try:
+        metadata = get_run(req.run)
+        source = metadata.get("source") if metadata else "unknown"
+        config = metadata.get("config") or {}
+        layer = config.get("layer") or metadata.get("source")
+        graph = load_graph(req.run, layer) if layer else None
+        nodes = graph.number_of_nodes() if graph else 0
+        edges = graph.number_of_edges() if graph else 0
+    except Exception:
+        source = "unknown"
+        nodes = 0
+        edges = 0
+    print(f"[api] ask: run_id={req.run} source={source} nodes={nodes} edges={edges}", file=sys.stderr)
+
     started = time.perf_counter()
     try:
         text, query = _execute(
