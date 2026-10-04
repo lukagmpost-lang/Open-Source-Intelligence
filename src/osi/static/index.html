@@ -541,7 +541,10 @@
       runSelect.replaceChildren();
       for (const item of runs) {
         const id = typeof item === "string" ? item : item.run;
-        const option = new Option(id, id);
+        const optionText = typeof item === "object" && item.nodes !== undefined && item.edges !== undefined
+          ? `${id} (${item.nodes} nodes, ${item.edges} edges)`
+          : id;
+        const option = new Option(optionText, id);
         runSelect.add(option);
         if (typeof item === "object") runDetails.set(id, item);
       }
@@ -609,10 +612,12 @@
         const body = await response.json();
         if (!response.ok) throw new Error(body.detail || "Upload failed.");
         runDetails.set(body.run, body);
-        await loadRuns(body.run);
-        showUploadMessage(`${body.title} · ${body.nodes} nodes · ${body.edges} edges`, "success");
+        runSelect.value = body.run;   // set it immediately
+        showRunDetails(body.run);     // update the sidebar with the data we have
+        showUploadMessage(`${body.title} · ${body.nodes} nodes · ${body.edges} edges · ${body.components} components`, "success");
         answerArea.innerHTML = '<p class="answer-placeholder">Graph ready. Ask a question about its connections.</p>';
         metaArea.hidden = true;
+        await loadRuns(body.run);     // update the list and recent runs
       } catch (error) {
         showUploadMessage(error.message || "Upload failed.", "error");
       } finally {

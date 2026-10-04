@@ -23,7 +23,7 @@ from osi.loader import load_edge_list, load_graphml
 from osi.loaders.slack import detect_slack_format, load_slack_export
 from osi.loaders.telegram import detect_telegram_format, load_telegram_export
 from osi.loaders.whatsapp import detect_whatsapp_format, load_whatsapp_export
-from osi.store import create_run, get_run, list_runs, load_graph, save_graph
+from osi.store import create_run, get_run, list_runs, load_graph, save_graph, store_path, _connection
 
 app = FastAPI()
 
@@ -73,6 +73,59 @@ def get_runs() -> list[dict]:
     return runs
 
 
+@app.get("/api/runs/export")
+def export_runs() -> dict:
+    """Export the entire store as JSON."""
+    data = {}
+    tables = [
+        "runs",
+        "graphs",
+        "metrics",
+        "communities",
+        "downloads",
+        "results",
+        "answer_cache",
+        "metric_cache",
+    ]
+    with _connection() as conn:
+        for table in tables:
+            rows = conn.execute(f"SELECT * FROM {table}").fetchall()
+            data[table] = [dict(row) for row in rows]
+    return data
+
+
+@app.post("/api/runs/import")
+async def import_runs(export_data: dict) -> dict:
+    """Import the store from JSON exported by /api/runs/export."""
+    with _connection() as conn:
+        # Disable foreign key constraints temporarily
+        conn.execute("PRAGMA foreign_keys = OFF")
+        # Order of deletion: tables that depend on others first
+        tables = [
+            "metric_cache",
+            "answer_cache",
+            "results",
+            "downloads",
+            "communities",
+            "metrics",
+            "graphs",
+            "runs",
+        ]
+        for table in tables:
+            conn.execute(f"DELETE FROM {table}")
+        # Insert the provided data
+        for table, rows in export_data.items():
+            if not rows:
+                continue
+            columns = ", ".join(rows[0].keys())
+            placeholders = ", ".join(["?"] * len(rows[0]))
+            insert_sql = f"INSERT INTO {table} ({columns}) VALUES ({placeholders})"
+            for row in rows:
+                conn.execute(insert_sql, tuple(row.values()))
+        # Re-enable foreign keys and commit
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.commit()
+    return {"status": "success", "message": "Store imported successfully"}
 @app.get("/api/runs/{run_id}")
 def get_run_summary(run_id: str) -> dict:
     """Return compact graph metadata for the selected run."""
