@@ -540,7 +540,7 @@
       const runs = await response.json();
       runSelect.replaceChildren();
       for (const item of runs) {
-        const id = typeof item === "string" ? item : item.run;
+        const id = typeof item === "string" ? item : (item.run || item.run_id);
         const optionText = typeof item === "object" && item.nodes !== undefined && item.edges !== undefined
           ? `${id} (${item.nodes} nodes, ${item.edges} edges)`
           : id;
@@ -548,8 +548,8 @@
         runSelect.add(option);
         if (typeof item === "object") runDetails.set(id, item);
       }
-      renderRecentRuns(runs.map((item) => typeof item === "string" ? item : item.run));
-      if (preferredRun && runs.some((item) => (typeof item === "string" ? item : item.run) === preferredRun)) {
+      renderRecentRuns(runs.map((item) => typeof item === "string" ? item : (item.run || item.run_id)));
+      if (preferredRun && runs.some((item) => (typeof item === "string" ? item : (item.run || item.run_id)) === preferredRun)) {
         runSelect.value = preferredRun;
       } else if ([...runSelect.options].some((option) => option.value === "r2012-v2")) {
         runSelect.value = "r2012-v2";
@@ -611,13 +611,13 @@
         const response = await fetch("/api/uploads", {method: "POST", body: form});
         const body = await response.json();
         if (!response.ok) throw new Error(body.detail || "Upload failed.");
-        runDetails.set(body.run, body);
-        runSelect.value = body.run;   // set it immediately
-        showRunDetails(body.run);     // update the sidebar with the data we have
+        runDetails.set((body.run || body.run_id), body);
+        runSelect.value = (body.run || body.run_id);   // set it immediately
+        showRunDetails((body.run || body.run_id));     // update the sidebar with the data we have
         showUploadMessage(`${body.title} · ${body.nodes} nodes · ${body.edges} edges · ${body.components} components`, "success");
         answerArea.innerHTML = '<p class="answer-placeholder">Graph ready. Ask a question about its connections.</p>';
         metaArea.hidden = true;
-        await loadRuns(body.run);     // update the list and recent runs
+        await loadRuns((body.run || body.run_id));     // update the list and recent runs
       } catch (error) {
         showUploadMessage(error.message || "Upload failed.", "error");
       } finally {
