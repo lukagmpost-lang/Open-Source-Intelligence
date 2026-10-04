@@ -180,7 +180,19 @@ def load_graph(run_id: str, layer: str, path: str | Path | None = None) -> nx.Gr
         ).fetchone()
     if row is None:
         return None
-    return nx.node_link_graph(json.loads(row["graph_json"]))
+    data = json.loads(row["graph_json"])
+    # Try to load the graph, handling both 'links' and 'edges' keys for compatibility
+    try:
+        # First try with the standard 'links' key
+        return nx.node_link_graph(data, links="links")
+    except (KeyError, nx.NetworkXError):
+        try:
+            # If that fails, try with 'edges' key
+            return nx.node_link_graph(data, links="edges")
+        except (KeyError, nx.NetworkXError):
+            # If both fail, let the default behavior handle it
+            # This will likely raise an error if the format is completely wrong
+            return nx.node_link_graph(data)
 
 
 def save_metrics(
