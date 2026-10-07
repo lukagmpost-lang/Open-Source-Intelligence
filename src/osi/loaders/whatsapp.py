@@ -164,19 +164,30 @@ def _parse_export(path: Path) -> tuple[str, list[dict[str, Any]]]:
     return chat_name, messages
 
 
-def _add_edge(graph: nx.Graph, left: str, right: str, weight: float = 1.0) -> None:
+def _add_edge(graph: nx.Graph, left: str, right: str, weight: float = 1.0, sentiment: float = 0.0) -> None:
     if left == right:
         return
     if graph.has_edge(left, right):
         graph[left][right]["weight"] += weight
+        graph[left][right]["positive_count"] += 1 if sentiment > 0.3 else 0
+        graph[left][right]["negative_count"] += 1 if sentiment < -0.3 else 0
+        graph[left][right]["sentiment_sum"] += sentiment
+        graph[left][right]["message_count"] += 1
     else:
-        graph.add_edge(left, right, weight=weight)
+        graph.add_edge(
+            left, right,
+            weight=weight,
+            positive_count=1 if sentiment > 0.3 else 0,
+            negative_count=1 if sentiment < -0.3 else 0,
+            sentiment_sum=sentiment,
+            message_count=1,
+        )
 
 def _add_edges(graph: nx.Graph, messages: list[dict], edge_rule: str, window_minutes: float) -> None:
     ordered = sorted(messages, key=lambda item: item["date"])
     if edge_rule == "sequence":
         for previous, current in zip(ordered, ordered[1:]):
-            _add_edge(graph, previous["sender"], current["sender"])
+            _add_edge(graph, previous["sender"], current["sender"], sentiment=current.get("sentiment", 0.0))
         return
     if edge_rule == "mention":
         aliases: dict[str, set[str]] = {}
@@ -198,7 +209,7 @@ def _add_edges(graph: nx.Graph, messages: list[dict], edge_rule: str, window_min
                 exact = aliases.get(mention_text_lower, set())
                 if len(exact) == 1:
                     sender_name = next(iter(exact))
-                    _add_edge(graph, message["sender"], sender_name)
+                    _add_edge(graph, message["sender"], sender_name, sentiment=message.get("sentiment", 0.0))
                 elif not exact:
                     partials = {
                         m["sender"] for m in ordered
@@ -206,7 +217,7 @@ def _add_edges(graph: nx.Graph, messages: list[dict], edge_rule: str, window_min
                     }
                     if len(partials) == 1:
                         sender_name = next(iter(partials))
-                        _add_edge(graph, message["sender"], sender_name)
+                        _add_edge(graph, message["sender"], sender_name, sentiment=message.get("sentiment", 0.0))
         return
 
     window = timedelta(minutes=window_minutes)
@@ -215,7 +226,7 @@ def _add_edges(graph: nx.Graph, messages: list[dict], edge_rule: str, window_min
         while message["date"] - ordered[start]["date"] > window:
             start += 1
         for nearby in ordered[start:index]:
-            _add_edge(graph, message["sender"], nearby["sender"])
+            _add_edge(graph, message["sender"], nearby["sender"], sentiment=message.get("sentiment", 0.0))
 
 
 def load_whatsapp_export(
