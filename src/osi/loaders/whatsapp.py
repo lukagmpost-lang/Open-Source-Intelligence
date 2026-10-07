@@ -17,7 +17,7 @@ _TIMESTAMP_PREFIX = re.compile(
     rf"^\s*\[?\s*(?P<date>{_DATE}),?\s+(?P<time>{_TIME})\s*\]?\s*"
     r"(?:-\s*)?(?P<sender>[^:\r\n]{1,50}):\s?(?P<text>.*)$"
 )
-_MENTION = re.compile(r"@([\w]+)", re.UNICODE)
+_MENTION = re.compile(r"@[\u2068\u2069]*([\w\s\u0400-\u04FF]+?)[\u2068\u2069]*", re.UNICODE)
 
 def _open_whatsapp_file(path: Path) -> list[str]:
     """Open a WhatsApp export file, trying UTF-8 first then CP1251.
@@ -143,7 +143,7 @@ def _parse_export(path: Path) -> tuple[str, list[dict[str, Any]]]:
             current = {
                 "date": _parse_date(match.group("date"), match.group("time")),
                 "sender": match.group("sender").strip(),
-                "text": match.group("text").strip(),
+                "text": match.group("text").strip().lstrip("\u200e"),
             }
         elif current is not None:
             continuation = line.strip()
@@ -162,14 +162,13 @@ def _parse_export(path: Path) -> tuple[str, list[dict[str, Any]]]:
     return chat_name, messages
 
 
-def _add_edge(graph: nx.Graph, left: str, right: str) -> None:
+def _add_edge(graph: nx.Graph, left: str, right: str, weight: float = 1.0) -> None:
     if left == right:
         return
     if graph.has_edge(left, right):
-        graph[left][right]["weight"] += 1
+        graph[left][right]["weight"] += weight
     else:
-        graph.add_edge(left, right, weight=1)
-
+        graph.add_edge(left, right, weight=weight)
 
 def _add_edges(graph: nx.Graph, messages: list[dict], edge_rule: str, window_minutes: float) -> None:
     ordered = sorted(messages, key=lambda item: item["date"])
@@ -186,9 +185,26 @@ def _add_edges(graph: nx.Graph, messages: list[dict], edge_rule: str, window_min
                 aliases.setdefault(token.casefold(), set()).add(sender)
         for message in ordered:
             for match in _MENTION.finditer(message["text"]):
-                senders = aliases.get(match.group(1).casefold(), set())
-                if len(senders) == 1:
-                    _add_edge(graph, message["sender"], next(iter(senders)))
+                mention_text = match.group(1).lstrip("~")
+                while mention_text and not mention_text[0].isalpha():
+                    mention_text = mention_text[1:]
+                while mention_text and not mention_text[-1].isalpha():
+                    mention_text = mention_text[:-1]
+                mention_text_lower = mention_text.casefold()
+                if not mention_text_lower:
+                    continue
+                exact = aliases.get(mention_text_lower, set())
+                if len(exact) == 1:
+                    sender_name = next(iter(exact))
+                    _add_edge(graph, message["sender"], sender_name)
+                elif not exact:
+                    partials = {
+                        m["sender"] for m in ordered
+                        if m["sender"].casefold().lstrip("@").startswith(mention_text_lower)
+                    }
+                    if len(partials) == 1:
+                        sender_name = next(iter(partials))
+                        _add_edge(graph, message["sender"], sender_name)
         return
 
     window = timedelta(minutes=window_minutes)
