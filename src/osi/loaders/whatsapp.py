@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import networkx as nx
+from osi.sentiment import score as sentiment_score
 
 
 _DATE = r"\d{1,4}[./-]\d{1,2}[./-](?:\d{2}|\d{4})"
@@ -144,6 +145,7 @@ def _parse_export(path: Path) -> tuple[str, list[dict[str, Any]]]:
                 "date": _parse_date(match.group("date"), match.group("time")),
                 "sender": match.group("sender").strip(),
                 "text": match.group("text").strip().lstrip("\u200e"),
+                "sentiment": sentiment_score(match.group("text").strip().lstrip("\u200e")),
             }
         elif current is not None:
             continuation = line.strip()
