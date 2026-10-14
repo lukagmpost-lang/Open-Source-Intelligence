@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import sys
+import re
+
 """Irony detection pipeline for WhatsApp chat exports.
 
 This module provides functions to widen candidate messages for irony detection,
@@ -14,30 +17,24 @@ import re
 from collections import defaultdict
 # Widening markers: words/phrases that suggest irony or violated expectation
 WIDENING_MARKERS = [
-    # Russian
-    "спасибо", "конечно", "ну", "опять", "так и", "finally", "отлично",
-    "прекрасно", "замечательно", "молодец", "как всегда", "ясно", "понятно",
-    "серьезно", "да ладно", "ничего себе", "ну да", "ага", "разумеется",
-    "прикольно", "здорово", "великолепно", "фантастично", "супер", "лучше некуда",
-    "как же", "вот поворот", "неожиданно", "удивительно", "как всегда", "ну конечно",
-    # English
-    "thanks", "sure", "of course", "again", "finally", "great", "wonderful",
-    "perfect", "nice", "as always", "right", "ok", "really", "absolutely",
-    "definitely", "exactly", "precisely", "certainly", "naturally", "obviously",
-    "certainly", "surely", "indeed", "absolutely", "positively", "undoubtedly",
-    "without a doubt", "no doubt", "by all means", "for sure", "you bet"
+    "конечно", "опять", "как всегда", "да ладно", "ничего себе",
+    "ну да", "ну конечно", "разумеется", "как же", "вот поворот",
+    "надо же", "подумать только", "вот это да", "молодец", "умница",
+    "отличненько", "замечательно", "прекрасно", "великолепно",
+    "фантастика", "супер", "блестяще", "браво",
+    "так и", "опять же", "в который раз", "как обычно", "по традиции",
+    "again", "as always", "of course", "sure thing", "just great",
+    "perfect", "lovely", "fantastic", "wonderful", "how nice",
+    "shocking", "surprise surprise", "go figure", "there we go again",
+    "🙃", "😏", "/s", " jk ", "🙄",
 ]
 
 # Negation markers: words that suggest a violation
 NEGATION_MARKERS = [
-    # Russian
-    "не", "нет", "никогда", "больше не", "так и не", "опять не",
-    # English
-    "didn't", "don't", "won't", "never", "still haven't", "again didn't",
-    "hasn't", "hadn't", "wouldn't", "couldn't", "shouldn't", "isn't", "aren't",
-    "wasn't", "weren't", "doesn't", "don't", "did not", "do not", "does not",
-    "has not", "have not", "had not", "will not", "would not", "could not",
-    "should not", "is not", "are not", "was not", "were not"
+    "так и не", "опять не", "больше не", "все еще не", "до сих пор не",
+    "ни разу не", "никогда не",
+    "still haven't", "again didn't", "still not", "never did",
+    "hasn't even", "didn't even", "won't even",
 ]
 
 # Irony emojis and markers
@@ -49,17 +46,23 @@ SCARE_QUOTE_PATTERNS = [
     r'\bякобы\s+["\'][^"\']+["\']',
     r'\bтак называемый\s+["\'][^"\']+["\']'
 ]
+
+def _word_match(text: str, marker: str) -> bool:
+    """True if marker appears as a whole word."""
+    import re
+    return bool(re.search(rf"\b{re.escape(marker.lower())}\b", text.lower()))
+
 def widen_vocabulary(messages: list[dict]) -> set[int]:
     """Widen by vocabulary: WIDENING_MARKERS, NEGATION_MARKERS, IRONY_EMOJI, scare quotes."""
     indices = set()
     for i, msg in enumerate(messages):
         text = msg.get("text", "").lower()
         # Check widening markers
-        if any(marker.lower() in text for marker in WIDENING_MARKERS):
+        if any(_word_match(text, marker) for marker in WIDENING_MARKERS):
             indices.add(i)
             continue
         # Check negation markers
-        if any(marker.lower() in text for marker in NEGATION_MARKERS):
+        if any(_word_match(text, marker) for marker in NEGATION_MARKERS):
             indices.add(i)
             continue
         # Check irony emojis
@@ -135,7 +138,7 @@ def widen_candidates(messages: list[dict], commitments=None, profiles=None) -> l
         profiles = {}
     
     vocab = widen_vocabulary(messages)
-    echo = widen_echo(messages)
+    echo = set()  # disabled pending tuning
     ledger = widen_ledger_hits(messages, commitments)
     baseline = widen_by_baseline(messages, profiles)
     
@@ -175,6 +178,7 @@ def build_context(messages: list[dict], i: int, commitments=None, rank_gap=None,
             "date": msg.get("date")
         },
         "previous_turns": [],
+        "following_turns": [],
         "violated_commitments": [],
         "rank_gap": rank_gap,
         "speaker_baseline": profiles.get(msg.get("sender", ""), {}).get("irony_rate")
@@ -187,6 +191,14 @@ def build_context(messages: list[dict], i: int, commitments=None, rank_gap=None,
             "text": prev.get("text", ""),
             "date": prev.get("date")
         })
+    # Following 2 messages (if they exist)
+    for j in range(i+1, min(len(messages), i+3)):
+        nxt = messages[j]
+        context["following_turns"].append({
+            "sender": nxt.get("sender", ""),
+            "text": nxt.get("text", ""),
+            "date": nxt.get("date")
+        })
     # Viable commitments involving this sender or target
     sender = msg.get("sender", "")
     for c in commitments:
@@ -197,6 +209,32 @@ def build_context(messages: list[dict], i: int, commitments=None, rank_gap=None,
                 f"{c.get('speaker', '')} -> {c.get('target', '')}: {c.get('obligation', '')}"
             )
     return context
+def _json_default(obj):
+    """Convert non-JSON-serializable objects to strings."""
+    import datetime
+    if isinstance(obj, (datetime.datetime, datetime.date)):
+        return obj.isoformat()
+    return str(obj)
+
+
+def _safe_confidence(value) -> float:
+    """Convert LLM confidence output to a float in [0, 1]."""
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return max(0.0, min(1.0, float(value)))
+    s = str(value).strip().lower()
+    if s in ("", "none", "null", "n/a"):
+        return 0.0
+    word_map = {"zero": 0.0, "one": 1.0, "half": 0.5, "low": 0.2, "medium": 0.5, "high": 0.8, "very high": 0.9, "very low": 0.1}
+    if s in word_map:
+        return word_map[s]
+    try:
+        return max(0.0, min(1.0, float(s)))
+    except (ValueError, TypeError):
+        return 0.0
+
+
 def _safe_json_parse(text: str):
     """Try to parse JSON, fallback to extracting first {...} block."""
     try:
@@ -244,6 +282,11 @@ def classify_candidates(candidates: list[dict], messages: list[dict], commitment
                 for turn in context["previous_turns"]:
                     prompt_lines.append(f"  {turn['sender']}: {turn['text']}")
                 prompt_lines.append("")
+            if context.get("following_turns"):
+                prompt_lines.append("Following turns (how the conversation continued):")
+                for turn in context["following_turns"]:
+                    prompt_lines.append(f"  {turn['sender']}: {turn['text']}")
+                prompt_lines.append("")
             if context["violated_commitments"]:
                 prompt_lines.append("Violated commitments:")
                 for vc in context["violated_commitments"]:
@@ -274,7 +317,7 @@ def classify_candidates(candidates: list[dict], messages: list[dict], commitment
             
             # Try to get and parse LLM response
             parsed = None
-            for attempt in range(2):
+            for attempt in range(1):
                 try:
                     response = call_llm(prompt, temperature=0.0)
                     parsed = _safe_json_parse(response)
@@ -303,7 +346,7 @@ def classify_candidates(candidates: list[dict], messages: list[dict], commitment
                     "date": cand["date"],
                     "widened_by": cand["widened_by"],
                     "label": parsed.get("label", "insufficient"),
-                    "confidence": float(parsed.get("confidence", 0.0)),
+                    "confidence": _safe_confidence(parsed.get("confidence")),
                     "reason": parsed.get("assumed_listener_belief", ""),
                     "summary": parsed.get("summary", ""),
                     "contrast": parsed.get("contrast", "unclear")
@@ -346,7 +389,7 @@ def run_pipeline(chat_path: str, output_path: str, commitments=None, profiles=No
     filtered = [c for c in classified if c["label"] in ("ironic", "ambiguous") and c["confidence"] >= 0.4]
     # Write output
     with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(filtered, f, indent=2, ensure_ascii=False)
+        json.dump(filtered, f, indent=2, ensure_ascii=False, default=_json_default)
     # Print summary
     ironic_high = len([c for c in filtered if c["label"] == "ironic"])
     ambiguous_high = len([c for c in filtered if c["label"] == "ambiguous"])
