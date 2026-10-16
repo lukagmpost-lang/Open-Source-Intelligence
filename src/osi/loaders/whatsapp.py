@@ -20,19 +20,12 @@ _TIMESTAMP_PREFIX = re.compile(
 )
 _MENTION = re.compile(r"@[\u2068\u2069]*([\w\s\u0400-\u04FF]+?)[\u2068\u2069]*", re.UNICODE)
 
-def _open_whatsapp_file(path: Path) -> list[str]:
-    """Open a WhatsApp export file, trying UTF-8 first then CP1251.
-
-    Returns a list of lines with newline characters removed.
-    """
-    # Try UTF-8 first
+def _open_whatsapp_file(path) -> list[str]:
+    p = Path(path)
     try:
-        content = path.read_text(encoding="utf-8")
-        return content.splitlines()
+        return p.read_text(encoding="utf-8").splitlines()
     except UnicodeDecodeError:
-        # Fall back to CP1251 (Windows Cyrillic)
-        content = path.read_text(encoding="cp1251")
-        return content.splitlines()
+        return p.read_text(encoding="cp1251").splitlines()
 
 _EDGE_RULES = {"temporal", "sequence", "mention"}
 
@@ -119,15 +112,17 @@ def _is_system_message(sender: str | None, text: str) -> bool:
     )
 
 
-def _open_whatsapp_file(path: Path) -> list[str]:
+def _open_whatsapp_file(path) -> list[str]:
     """Read the export, trying UTF-8 first then CP1251 (Windows Cyrillic)."""
+    p = Path(path)
     try:
-        return path.read_text(encoding="utf-8-sig").splitlines()
+        return p.read_text(encoding="utf-8-sig").splitlines()
     except UnicodeDecodeError:
-        return path.read_text(encoding="cp1251").splitlines()
+        return p.read_text(encoding="cp1251").splitlines()
 
 
-def _parse_export(path: Path) -> tuple[str, list[dict[str, Any]]]:
+def _parse_export(path) -> tuple[str, list[dict[str, Any]]]:
+    path = Path(path)
     raw_lines = _open_whatsapp_file(path)
     first_line = next((line.strip() for line in raw_lines if line.strip()), "")
     chat_name = path.stem

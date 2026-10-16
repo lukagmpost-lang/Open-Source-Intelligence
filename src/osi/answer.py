@@ -200,7 +200,11 @@ def _chat_request(
             {"role": "user", "content": prompt},
         ],
         "temperature": temperature,
+        "max_completion_tokens": 4000,
     }
+    # gpt-oss models are reasoning models; low effort saves output budget
+    if "gpt-oss" in settings["model"] or "gemini" in settings["model"].lower():
+        body["reasoning_effort"] = "low"
     if seed is not None and _SEED_SUPPORTED:
         body["seed"] = seed
     payload = json.dumps(body).encode("utf-8")
@@ -210,7 +214,7 @@ def _chat_request(
         "User-Agent": "osi/0.1",
     }
     # Hosted providers require a bearer token. Local Ollama does not.
-    if settings["provider"] != "ollama":
+    if settings["provider"] not in ("ollama", "pollinations"):
         if not settings["api_key"]:
             raise RuntimeError(
                 "LLM_API_KEY is not set. Get a free Groq key at "
@@ -230,7 +234,6 @@ def _complete(
 ) -> str:
     request = _chat_request(prompt, settings, system, temperature=temperature, seed=seed)
     # Debug: print request details
-    print(f"[DEBUG] Request URL: {request.full_url}", file=sys.stderr)
     headers = dict(request.headers)
     if 'Authorization' in headers:
         auth = headers['Authorization']
@@ -240,16 +243,13 @@ def _complete(
             headers['Authorization'] = redacted
         else:
             headers['Authorization'] = 'Bearer [REDACTED]'
-    print(f"[DEBUG] Request headers: {headers}", file=sys.stderr)
     body = request.data
     if body:
         body_str = body.decode('utf-8', errors='replace')
-        print(f"[DEBUG] Request body (first 50 chars): {body_str[:50]}", file=sys.stderr)
     else:
-        print(f"[DEBUG] Request body: (empty)", file=sys.stderr)
     for attempt in range(2):
         try:
-            with urllib.request.urlopen(request, timeout=60) as response:
+            with urllib.request.urlopen(request, timeout=120) as response:
                 body = json.loads(response.read().decode("utf-8"))
             break
         except urllib.error.HTTPError as error:
@@ -259,10 +259,29 @@ def _complete(
             else:
                 detail = error.read().decode("utf-8", errors="replace")
                 raise RuntimeError(f"LLM request failed: {error.code} {detail}") from error
-    return str(body["choices"][0]["message"]["content"]).strip()
+    choices = body.get("choices")
+    if not choices:
+        raise RuntimeError(f"LLM response missing choices: {str(body)[:300]}")
+    msg = choices[0].get("message", {})
+    content = msg.get("content")
+    if content is None or content == "":
+        # Some reasoning models put output in 'reasoning' instead of 'content'.
+        reasoning = msg.get("reasoning") or ""
+        if reasoning:
+            import re as _re
+            # Try to find a JSON array in the reasoning
+            match = _re.search(r"\[\s*\{.*?\}\s*\]", reasoning, _re.DOTALL)
+            if match:
+                return match.group(0)
+            match2 = _re.search(r"\[\s*\]", reasoning)
+            if match2:
+                return "[]"
+        raise RuntimeError(f"LLM response has no content: {str(body)[:300]}")
+    return str(content).strip()
 def call_llm(
     prompt: str,
     *,
+    model: str | None = None,
     run_id: str = "",
     n_nodes: int | None = None,
     n_edges: int | None = None,
@@ -284,6 +303,8 @@ def call_llm(
         prompt = context + "\n\n" + prompt
     _wait_for_rate_limit()
     settings = llm_settings()
+    if model is not None:
+        settings["model"] = model
     actual_seed = seed if _SEED_SUPPORTED else None
     try:
         return _complete(prompt, settings, system, temperature, actual_seed)
@@ -998,7 +1019,6 @@ def write_answer(
                 system=answer_system_prompt(domain, source),
             )
             # DEBUG: Print raw LLM output
-            print(f"[DEBUG] Raw LLM output: {repr(llm_result)}", file=sys.stderr)
             return llm_result
         except (OSError, TimeoutError, RuntimeError, KeyError, json.JSONDecodeError, ValueError) as e:
             # DEBUG: Print that we caught an exception

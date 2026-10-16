@@ -10,7 +10,7 @@ import re
 
 from osi.answer import call_llm
 
-_INTENTS = ("describe", "rank", "diagnose", "explain", "compare", "target", "locate", "trace")
+_INTENTS = ("describe", "rank", "diagnose", "explain", "compare", "target", "locate", "trace", "tension")
 _SCOPES = ("whole", "community", "node", "edge", "time_range")
 _INTENT_SET = set(_INTENTS)
 _SCOPE_SET = set(_SCOPES)
@@ -24,6 +24,7 @@ INTENT_TOOLS = {
     "target": ["rank_nodes", "explain_node"],
     "locate": ["explain_node"],
     "trace": ["connectivity"],
+    "tension": ["most_tension"],
 }
 
 DOMAIN_ADJUSTMENTS = {
@@ -52,6 +53,11 @@ Intents (pick one or more):
   target    — asking for specific names, not categories
   locate    — asking where something sits in the network
   trace     — asking how two things are connected
+  tension   — asking about conflict, arguments, hostility, or negative relationships
+
+Direction (only for rank intent, otherwise "top"):
+  top     — most, highest, strongest, biggest, top
+  bottom  — least, lowest, weakest, smallest, fewest, bottom
 
 Scope (pick one):
   whole       — the entire graph
@@ -61,14 +67,16 @@ Scope (pick one):
   time_range  — a period of time
 
 Reply with JSON:
-{{"intents": ["diagnose", "target"], "scope": "whole", "scope_target": null}}
+{{"intents": ["rank"], "direction": "top", "scope": "whole", "scope_target": null}}
 
 Examples:
-"what should I be worried about" → {{"intents": ["diagnose", "target"], "scope": "whole"}}
-"who is alice" → {{"intents": ["explain", "locate"], "scope": "node", "scope_target": "alice"}}
-"how is alice connected to bob" → {{"intents": ["trace"], "scope": "edge", "scope_target": ["alice", "bob"]}}
-"how fragmented is this" → {{"intents": ["describe"], "scope": "whole"}}
-"what changed since 2008" → {{"intents": ["compare"], "scope": "time_range", "scope_target": "2008"}}
+"what should I be worried about" → {{"intents": ["diagnose", "target"], "direction": "top", "scope": "whole"}}
+"who is alice" → {{"intents": ["explain", "locate"], "direction": "top", "scope": "node", "scope_target": "alice"}}
+"how is alice connected to bob" → {{"intents": ["trace"], "direction": "top", "scope": "edge", "scope_target": ["alice", "bob"]}}
+"how fragmented is this" → {{"intents": ["describe"], "direction": "top", "scope": "whole"}}
+"what changed since 2008" → {{"intents": ["compare"], "direction": "top", "scope": "time_range", "scope_target": "2008"}}
+"who is the least important" → {{"intents": ["rank", "target"], "direction": "bottom", "scope": "whole"}}
+"who is in the most heated arguments" → {{"intents": ["tension", "target"], "direction": "top", "scope": "whole"}}
 """
 
 _OBJECT = re.compile(r"\{.*\}", re.DOTALL)
@@ -110,7 +118,7 @@ def required_tools(intents, scope, domain) -> list[str]:
 
 
 def _fallback() -> dict:
-    return {"intents": ["describe"], "scope": "whole", "scope_target": None}
+    return {"intents": ["describe"], "direction": "top", "scope": "whole", "scope_target": None}
 
 
 def _parse(reply: str) -> dict:
