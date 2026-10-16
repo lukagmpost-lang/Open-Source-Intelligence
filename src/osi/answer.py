@@ -215,6 +215,9 @@ def call_llm_with_tools(
     try:
         with _req.urlopen(request, timeout=timeout) as response:
             data = json.loads(response.read().decode("utf-8"))
+    except _req.HTTPError as http_err:
+        detail = http_err.read().decode("utf-8", errors="replace")
+        return {"tool_calls": [], "content": "", "error": "HTTP " + str(http_err.code) + ": " + detail[:800]}
     except Exception as e:
         return {"tool_calls": [], "content": "", "error": str(e)}
 
