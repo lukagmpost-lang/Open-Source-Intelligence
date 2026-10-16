@@ -177,10 +177,57 @@ def _load_extras():
     return extras
 
 
+def _hash_question(run_id, question, history):
+    import hashlib
+    key = run_id + "|" + question.strip().lower()
+    if history:
+        for h in history[-2:]:
+            key += "|" + (h.get("content") or "")[:200]
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()[:32]
+
+
+def _cache_lookup(run_id, question, history):
+    try:
+        from osi.store import _connection
+        key = _hash_question(run_id, question, history)
+        conn = _connection()
+        row = conn.execute(
+            "SELECT answer FROM answer_cache WHERE key = ?", (key,)
+        ).fetchone()
+        conn.close()
+        return row[0] if row else None
+    except Exception:
+        return None
+
+
+def _cache_store(run_id, question, history, answer):
+    try:
+        from osi.store import _connection
+        key = _hash_question(run_id, question, history)
+        conn = _connection()
+        conn.execute(
+            "INSERT OR REPLACE INTO answer_cache (key, answer, run_id) VALUES (?, ?, ?)",
+            (key, answer, run_id),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
 def converse(question, graph, messages, max_rounds=4, verbose=False, history=None):
     extras = _load_extras()
     prior = history if history is not None else []
     original_question = question
+
+    # Check cache (skip if very short question or no cache table)
+    import os as _os
+    _cache_ok = _os.environ.get("OSI_NO_CACHE") != "1"
+    if _cache_ok:
+        cached = _cache_lookup(graph.graph.get("run_id", "wa-real") if hasattr(graph, "graph") else "wa-real", question, prior)
+        if cached:
+            print("[cache hit] " + question[:80])
+            return {"answer": cached, "rounds": 0, "code_history": [], "cached": True}
     if prior:
         question = _resolve_question(question, prior)
         if question != original_question:
@@ -194,7 +241,7 @@ def converse(question, graph, messages, max_rounds=4, verbose=False, history=Non
 
     for round_num in range(max_rounds):
         # Cap history: keep system + original question + last 2 exchanges
-        trimmed = [history[0], history[1]] + history[2:][-4:]
+        trimmed = [history[0], history[1]] + history[2:][-2:]
         prompt_parts = []
         for h in trimmed:
             prompt_parts.append(h["role"].upper() + ": " + h["content"])
