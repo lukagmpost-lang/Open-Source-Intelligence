@@ -184,6 +184,58 @@ def _seed_rejected(error: BaseException) -> bool:
     return ("400" in text or "422" in text) and "seed" in text
 
 
+def call_llm_with_tools(
+    messages: list[dict],
+    tools: list[dict],
+    temperature: float = 0.0,
+    timeout: int = 120,
+) -> dict:
+    """Call the LLM with tool definitions. Returns {tool_calls, content, raw}."""
+    import urllib.request as _req
+    settings = llm_settings()
+    body = {
+        "model": settings["model"],
+        "messages": messages,
+        "tools": tools,
+        "tool_choice": "auto",
+        "temperature": temperature,
+        "max_tokens": 2000,
+    }
+    if "gpt-oss" in settings["model"]:
+        body["reasoning_effort"] = "low"
+    payload = json.dumps(body).encode("utf-8")
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "osi/0.1",
+    }
+    if settings["provider"] not in ("ollama", "pollinations"):
+        headers["Authorization"] = f"Bearer {settings['api_key']}"
+    url = settings["base_url"].rstrip("/") + "/chat/completions"
+    request = _req.Request(url, data=payload, headers=headers, method="POST")
+    try:
+        with _req.urlopen(request, timeout=timeout) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except Exception as e:
+        return {"tool_calls": [], "content": "", "error": str(e)}
+
+    choice = (data.get("choices") or [{}])[0]
+    msg = choice.get("message") or {}
+    calls = []
+    for tc in msg.get("tool_calls") or []:
+        fn = tc.get("function") or {}
+        name = fn.get("name")
+        try:
+            args = json.loads(fn.get("arguments") or "{}")
+        except json.JSONDecodeError:
+            args = {}
+        calls.append({"name": name, "arguments": args, "id": tc.get("id")})
+    return {
+        "tool_calls": calls,
+        "content": msg.get("content") or "",
+        "raw": data,
+    }
+
+
 def _chat_request(
     prompt: str,
     settings: dict[str, str],
@@ -243,10 +295,6 @@ def _complete(
             headers['Authorization'] = redacted
         else:
             headers['Authorization'] = 'Bearer [REDACTED]'
-    body = request.data
-    if body:
-        body_str = body.decode('utf-8', errors='replace')
-    else:
     for attempt in range(2):
         try:
             with urllib.request.urlopen(request, timeout=120) as response:
