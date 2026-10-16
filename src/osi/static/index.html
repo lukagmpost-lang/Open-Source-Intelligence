@@ -1,697 +1,464 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f5f5f2">
-  <title>OSI | Graph workspace</title>
-  <style>
-    :root {
-      color-scheme: light;
-      --paper: #f5f5f2;
-      --white: #fff;
-      --ink: #171717;
-      --soft-ink: #545454;
-      --muted: #777;
-      --line: #d5d5d1;
-      --heavy-line: #aaa;
-      --wash: #ecece8;
-      --focus: #111;
-      --serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
-      --sans: "Avenir Next", Avenir, "Segoe UI", sans-serif;
-      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-    }
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OSI - ask questions about any chat</title>
+<style>
+:root{
+  --bg:#f4f2ed; --ink:#1a1a1a; --muted:#6b6b6b; --line:#d6d2c9;
+  --panel:#f4f2ed; --green:#3fa34d; --red:#c43d3d; --yellow:#d4a72c;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:100%}
+body{
+  font-family:"IBM Plex Mono","SF Mono",Menlo,Consolas,monospace;
+  background:var(--bg); color:var(--ink); font-size:14px; line-height:1.55;
+  display:flex; flex-direction:column;
+}
+header{padding:28px 32px 12px; border-bottom:1px solid var(--line)}
+h1{font-size:32px; margin:0; font-weight:600; letter-spacing:-0.5px}
+.tagline{color:var(--muted); margin:6px 0 0; font-size:13px}
 
-    * { box-sizing: border-box; }
-    [hidden] { display: none !important; }
-    body {
-      margin: 0;
-      background: var(--paper);
-      color: var(--ink);
-      font-family: var(--sans);
-      font-size: 14px;
-      line-height: 1.5;
-    }
-    button, input, select, textarea { color: inherit; font: inherit; }
-    button, select { cursor: pointer; }
-    button:focus-visible, input:focus-visible, select:focus-visible,
-    textarea:focus-visible, [tabindex]:focus-visible {
-      outline: 2px solid var(--focus);
-      outline-offset: 3px;
-    }
-    .topbar {
-      position: relative;
-      min-height: 68px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 24px;
-      padding: 0 28px;
-      border-bottom: 1px solid var(--line);
-      background: var(--white);
-    }
-    .brand { display: flex; align-items: center; gap: 12px; }
-    .brand-mark {
-      width: 30px;
-      height: 30px;
-      display: grid;
-      place-items: center;
-      border: 1px solid var(--ink);
-      font: 700 11px/1 var(--mono);
-      letter-spacing: 0;
-    }
-    .brand-name { font-size: 13px; font-weight: 700; }
-    .top-meta, .eyebrow, .field-label, .section-kicker {
-      color: var(--muted);
-      font: 600 10px/1.4 var(--mono);
-      letter-spacing: 0;
-      text-transform: uppercase;
-    }
-    .saved-menu { position: relative; margin-top: 14px; }
-    .saved-menu-trigger {
-      width: 100%;
-      min-height: 36px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 9px;
-      padding: 0 10px;
-      border: 1px solid var(--line);
-      background: var(--white);
-      cursor: pointer;
-      font-size: 11px;
-      font-weight: 600;
-    }
-    .saved-menu-trigger:hover { border-color: var(--ink); }
-    .saved-menu-count { color: var(--muted); font: 10px/1 var(--mono); }
-    .saved-menu-chevron { color: var(--muted); font: 14px/1 var(--mono); }
-    .saved-menu[data-open="true"] .saved-menu-chevron { transform: rotate(180deg); }
-    .saved-menu-panel {
-      position: absolute;
-      z-index: 10;
-      bottom: calc(100% + 8px);
-      right: 0;
-      width: min(330px, calc(100vw - 28px));
-      max-height: min(360px, 65vh);
-      overflow: auto;
-      padding: 8px 13px 4px;
-      border: 1px solid var(--line);
-      background: var(--white);
-      box-shadow: 0 8px 24px rgb(0 0 0 / 10%);
-    }
+#explainer{
+  padding:18px 32px; border-bottom:1px solid var(--line);
+  background:var(--bg); font-size:13px; color:var(--muted);
+}
+#explainer.collapsed{display:none}
+#explainer p{margin:0 0 8px}
+#explainer strong{color:var(--ink)}
+#explainer ul{margin:6px 0 0 18px; padding:0}
+#explainer li{margin:2px 0}
 
-    .workspace {
-      width: min(1440px, 100%);
-      min-height: calc(100vh - 68px);
-      display: grid;
-      grid-template-columns: 326px minmax(0, 1fr);
-      margin: 0 auto;
-    }
-    .sidebar {
-      padding: 22px 20px 24px 28px;
-      border-right: 1px solid var(--line);
-      background: #f0f0ed;
-    }
-    h1, h2, p { margin-top: 0; }
-    h1 {
-      margin-bottom: 16px;
-      font: 400 28px/1.12 var(--serif);
-      letter-spacing: 0;
-    }
-    h2 {
-      margin: 0;
-      font: 400 20px/1.2 var(--serif);
-      letter-spacing: 0;
-    }
-    .field { margin-top: 12px; }
-    .field-label { display: block; margin-bottom: 7px; color: var(--soft-ink); }
-    select, input[type="number"] {
-      width: 100%;
-      min-height: 40px;
-      padding: 8px 11px;
-      border: 1px solid var(--heavy-line);
-      border-radius: 0;
-      background: var(--white);
-    }
-    .drop-zone {
-      min-height: 84px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 3px;
-      padding: 10px 12px;
-      border: 1px dashed #858585;
-      background: var(--white);
-      text-align: center;
-      cursor: pointer;
-      transition: background 140ms ease, border-color 140ms ease;
-    }
-    .drop-zone:hover, .drop-zone.is-over { border-color: var(--ink); background: var(--wash); }
-    .upload-symbol {
-      width: 24px;
-      height: 24px;
-      display: grid;
-      place-items: center;
-      margin-bottom: 2px;
-      border: 1px solid var(--ink);
-      font: 18px/1 var(--serif);
-    }
-    .drop-primary { font-size: 13px; font-weight: 650; }
-    .drop-secondary { color: var(--muted); font: 10px/1.5 var(--mono); }
-    #file-input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-    .drop-primary { overflow-wrap: anywhere; }
-    .upload-message:empty { display: none; }
-    .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .primary-button {
-      width: 100%;
-      min-height: 38px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 9px;
-      margin-top: 12px;
-      padding: 8px 12px;
-      border: 1px solid var(--ink);
-      border-radius: 0;
-      background: var(--ink);
-      color: var(--white);
-      font-size: 12px;
-      font-weight: 650;
-      transition: background 140ms ease, color 140ms ease;
-    }
-    .primary-button:hover:not(:disabled) { background: var(--white); color: var(--ink); }
-    .primary-button:disabled { cursor: wait; opacity: .55; }
-    .upload-message { min-height: 16px; margin: 7px 0 0; font-size: 12px; }
-    .upload-message[data-kind="error"] { color: #8a1d1d; }
-    .upload-message[data-kind="success"] { color: #222; }
-    .content { min-width: 0; padding: 24px clamp(22px, 4vw, 56px) 28px; }
-    .content-header {
-      display: flex;
-      align-items: flex-end;
-      justify-content: space-between;
-      gap: 24px;
-      padding-bottom: 15px;
-      border-bottom: 1px solid var(--line);
-    }
-    .run-control { width: min(310px, 45%); }
-    .run-control select { font-size: 12px; }
-    .overview {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      margin: 14px 0 24px;
-      border-top: 1px solid var(--ink);
-      border-bottom: 1px solid var(--line);
-    }
-    .metric { min-height: 66px; padding: 11px 18px 10px 0; }
-    .metric + .metric { padding-left: 20px; border-left: 1px solid var(--line); }
-    .metric-value { font: 400 25px/1 var(--serif); }
-    .metric-label { margin-top: 6px; color: var(--muted); font: 10px/1.4 var(--mono); text-transform: uppercase; }
-    .query-section { max-width: 760px; }
-    .question-input {
-      width: 100%;
-      min-height: 84px;
-      resize: vertical;
-      padding: 11px 13px;
-      border: 1px solid var(--heavy-line);
-      border-radius: 0;
-      background: var(--white);
-      font: 16px/1.55 var(--serif);
-    }
-    .query-actions {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 14px;
-      padding: 8px 0 11px;
-      border-bottom: 1px solid var(--line);
-    }
-    .query-hint { color: var(--muted); font: 10px/1.5 var(--mono); }
-    .ask-button {
-      min-width: 116px;
-      min-height: 38px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      border: 1px solid var(--ink);
-      border-radius: 0;
-      background: var(--white);
-      font-size: 12px;
-      font-weight: 650;
-    }
-    .ask-button:hover:not(:disabled) { background: var(--ink); color: var(--white); }
-    .ask-button:disabled { cursor: wait; opacity: .55; }
-    .llm-toggle { display: inline-flex; align-items: center; gap: 7px; color: var(--soft-ink); font: 10px/1 var(--mono); }
-    .llm-toggle input {
-      width: 32px;
-      height: 18px;
-      appearance: none;
-      position: relative;
-      margin: 0;
-      border: 1px solid #777;
-      border-radius: 0;
-      background: #e4e4e0;
-      cursor: pointer;
-      transition: background 140ms ease;
-    }
-    .llm-toggle input::after {
-      position: absolute;
-      top: 2px;
-      left: 2px;
-      width: 12px;
-      height: 12px;
-      background: #777;
-      content: "";
-      transition: left 140ms ease, background 140ms ease;
-    }
-    .llm-toggle input:checked { background: var(--ink); }
-    .llm-toggle input:checked::after { left: 16px; background: var(--white); }
-    .answer-area { min-height: 86px; padding: 14px 0; }
-    .answer-placeholder { max-width: 520px; color: var(--muted); font: 16px/1.65 var(--serif); }
-    .answer-text { max-width: 720px; margin: 0; font: 400 21px/1.55 var(--serif); }
-    .answer-error { color: #8a1d1d; }
-    .query-meta {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 10px;
-      padding: 14px 0;
-      border-top: 1px solid var(--line);
-      border-bottom: 1px solid var(--line);
-    }
-    .meta-item { min-width: 0; }
-    .meta-label { display: block; margin-bottom: 4px; color: var(--muted); font: 9px/1.4 var(--mono); text-transform: uppercase; }
-    .meta-value { display: block; overflow: hidden; font: 11px/1.45 var(--mono); text-overflow: ellipsis; white-space: nowrap; }
-    .recent-list { border-top: 1px solid var(--line); }
-    .recent-item {
-      width: 100%;
-      min-height: 48px;
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      align-items: center;
-      gap: 12px;
-      padding: 8px 0;
-      border: 0;
-      border-bottom: 1px solid var(--line);
-      background: transparent;
-      text-align: left;
-    }
-    .recent-item:hover .recent-run { text-decoration: underline; text-underline-offset: 3px; }
-    .recent-run { overflow: hidden; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-    .recent-source { color: var(--muted); font: 10px/1.4 var(--mono); text-transform: uppercase; }
-    .empty-runs { padding: 14px 0; color: var(--muted); font: 12px/1.5 var(--mono); }
-    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.controls{
+  padding:14px 32px; border-bottom:1px solid var(--line);
+  display:flex; gap:14px; align-items:center; flex-wrap:wrap;
+}
+.controls label:not(.os-btn){font-size:11px; letter-spacing:1px; color:var(--muted);
+  text-transform:uppercase}
+.controls select{
+  font-family:inherit; font-size:13px; padding:8px 10px;
+  border:1px solid var(--line); background:#fff; color:var(--ink);
+  min-width:220px;
+}
+button.os-btn, label.os-btn{
+  font-family:inherit; font-size:13px; padding:10px 20px; border:1px solid var(--ink);
+  background:var(--ink); color:#fff; cursor:pointer; letter-spacing:0.5px;
+  text-transform:none;
+  display:inline-flex; align-items:center; justify-content:center;
+}
+button.os-btn:hover, label.os-btn:hover{background:#000}
+button.os-btn:disabled{opacity:0.4; cursor:wait}
 
-    @media (max-width: 800px) {
-      .topbar { min-height: 60px; padding: 0 18px; }
-      .workspace { grid-template-columns: 1fr; }
-      .sidebar { padding: 14px 18px 8px; border-right: 0; border-bottom: 1px solid var(--line); }
-      .content { padding: 19px 20px 28px; }
-      .overview { margin-bottom: 20px; }
-    }
-    @media (max-width: 480px) {
-      h1 { font-size: 25px; }
-      .content-header { align-items: center; flex-direction: row; gap: 12px; }
-      .run-control { width: 42%; }
-      .run-control select { min-height: 36px; padding: 6px; }
-      .overview { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-      .metric { min-height: 60px; padding-right: 8px; }
-      .metric + .metric { padding-left: 11px; }
-      .metric-value { font-size: 22px; }
-      .query-actions { align-items: center; flex-wrap: nowrap; gap: 8px; }
-      .query-hint { display: none; }
-      .ask-button { min-width: 74px; }
-      .query-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .answer-area { min-height: 42px; padding: 7px 0; }
-      .answer-placeholder { font: 12px/1.4 var(--sans); }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
-    }
-  </style>
+main{flex:1; display:grid; grid-template-columns:260px 1fr;
+  min-height:0; overflow:hidden}
+
+#sidebar{
+  border-right:1px solid var(--line); padding:18px;
+  overflow-y:auto; background:var(--bg);
+}
+.panel{margin-bottom:22px}
+.panel h3{
+  font-size:11px; letter-spacing:1.5px; text-transform:uppercase;
+  color:var(--muted); margin:0 0 10px; font-weight:600;
+}
+.stats{display:flex; gap:18px; margin-bottom:22px}
+.stat-item .n{font-size:22px; font-weight:600; display:block}
+.stat-item .l{font-size:10px; color:var(--muted); letter-spacing:1px;
+  text-transform:uppercase}
+
+.comm-row{
+  display:flex; justify-content:space-between; align-items:center;
+  padding:6px 0; border-bottom:1px solid var(--line); font-size:12px;
+}
+.comm-hub{font-weight:600}
+.comm-meta{color:var(--muted); font-size:10px}
+.verdict{display:inline-block; padding:1px 5px; font-size:9px; border-radius:2px;
+  margin-left:5px; letter-spacing:0.5px; text-transform:uppercase}
+.verdict.real{background:#d4edda; color:#1e5a2a}
+.verdict.mixed{background:#fff3cd; color:#7a5c00}
+.verdict.hub{background:#f8d7da; color:#842029}
+
+.tense-row{
+  padding:7px 0; border-bottom:1px solid var(--line); font-size:12px;
+}
+.tense-pair{font-weight:600; display:block; margin-bottom:2px}
+.tense-meta{color:var(--muted); font-size:10px}
+
+#main-panel{display:flex; flex-direction:column; min-height:0}
+.tabs{
+  border-bottom:1px solid var(--line); display:flex;
+}
+.tabs button{
+  font-family:inherit; font-size:13px; padding:12px 22px; background:transparent;
+  border:0; border-bottom:2px solid transparent; cursor:pointer; color:var(--muted);
+}
+.tabs button.active{color:var(--ink); border-bottom-color:var(--ink)}
+
+.tab-content{flex:1; min-height:0; display:none; flex-direction:column}
+.tab-content.active{display:flex}
+#tab-graph iframe{flex:1; width:100%; border:0}
+
+.messages{
+  flex:1; overflow-y:auto; padding:22px 32px;
+}
+.message{margin-bottom:22px; max-width:820px}
+.q-sender{font-size:10px; color:var(--muted); letter-spacing:1px;
+  text-transform:uppercase; margin-bottom:4px}
+.q-text{font-size:15px; margin-bottom:12px}
+.a-sender{font-size:10px; color:var(--muted); letter-spacing:1px;
+  text-transform:uppercase; margin-bottom:4px}
+.a-text{white-space:pre-wrap}
+.a-text p{margin:0 0 8px}
+
+details{margin-top:12px; font-size:12px}
+details summary{
+  cursor:pointer; color:var(--muted); user-select:none;
+  padding:4px 0; outline:none;
+}
+details summary:hover{color:var(--ink)}
+.code-rail{margin-top:8px; padding:10px 14px; background:var(--bg);
+  border-left:2px solid var(--line)}
+.round{margin-bottom:12px}
+.round-label{font-size:10px; color:var(--muted); letter-spacing:1px;
+  margin-bottom:3px; text-transform:uppercase}
+.code-rail pre{
+  margin:0 0 8px; padding:8px 10px; background:#fff; border:1px solid var(--line);
+  overflow-x:auto; font-size:11px; line-height:1.4;
+  font-family:"SF Mono",Menlo,Consolas,monospace;
+}
+.code-rail .out-label{font-size:10px; color:var(--muted); margin:4px 0 3px;
+  letter-spacing:1px; text-transform:uppercase}
+
+.ask-form{
+  border-top:1px solid var(--line); padding:14px 32px; display:flex; gap:10px;
+  background:var(--bg);
+}
+.ask-form textarea{
+  flex:1; font-family:inherit; font-size:14px; padding:10px 12px;
+  border:1px solid var(--line); background:#fff; color:var(--ink);
+  resize:none; min-height:48px; max-height:140px; line-height:1.5;
+}
+.ask-form button{flex-shrink:0; min-width:90px;}
+
+.empty{color:var(--muted); font-style:italic}
+</style>
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <div class="brand-mark" aria-hidden="true">OSI</div>
-      <div>
-        <div class="brand-name">Open-Source Intelligence</div>
-      </div>
+
+<header>
+  <h1>OSI</h1>
+  <p class="tagline">Ask questions about any chat. Every answer shows its work.</p>
+</header>
+
+<section id="explainer">
+  <p><strong>What this is.</strong> A tool that reads a chat export (WhatsApp, Slack, Telegram) and answers questions about the people in it.</p>
+  <p><strong>How it works.</strong> When you ask a question, a language model writes Python to explore the data, runs it, sees the results, and iterates until it can answer. Every answer comes with the exact code it ran &mdash; expand <em>how this was computed</em> under any answer to see the math.</p>
+  <p><strong>What you can ask.</strong> Who is most central. Who positions people against each other. Who complains the most. Who talks to whom. Follow-ups remember the people mentioned in the previous answer.</p>
+</section>
+
+<section class="controls">
+  <label for="run-selector">Run</label>
+  <select id="run-selector"><option value="">loading...</option></select>
+  <label class="os-btn">
+    Upload chat
+    <input type="file" id="file-input" style="display:none">
+  </label>
+</section>
+
+<main>
+  <aside id="sidebar">
+    <div class="stats">
+      <div class="stat-item"><span class="n" id="stat-nodes">&mdash;</span><span class="l">nodes</span></div>
+      <div class="stat-item"><span class="n" id="stat-edges">&mdash;</span><span class="l">edges</span></div>
     </div>
-  </header>
+    <div class="panel">
+      <h3>Communities</h3>
+      <div id="communities-list"><div class="empty">none</div></div>
+    </div>
+    <div class="panel">
+      <h3>Tense relationships</h3>
+      <div id="tense-list"><div class="empty">none</div></div>
+    </div>
+  </aside>
 
-  <main class="workspace">
-    <aside class="sidebar" aria-label="Upload data">
-      <h1 id="import-title">Upload data.</h1>
-
-      <form id="upload-form">
-        <label class="field-label" for="source-select">Format</label>
-        <select id="source-select" name="source">
-          <option value="auto">Detect automatically</option>
-          <option value="file">CSV / TSV / GraphML / edge JSON</option>
-          <option value="slack">Slack export ZIP</option>
-          <option value="telegram">Telegram export JSON</option>
-          <option value="whatsapp">WhatsApp chat TXT</option>
-        </select>
-
-        <div class="field">
-          <label class="field-label" for="file-input">Transcript or graph file</label>
-          <label id="drop-zone" class="drop-zone" for="file-input" tabindex="0">
-            <span class="upload-symbol" aria-hidden="true">+</span>
-            <span id="drop-primary" class="drop-primary">Drop a file here or browse</span>
-            <span class="drop-secondary">CSV · TSV · JSON · GraphML · ZIP · TXT · 50 MB max</span>
-          </label>
-          <input id="file-input" name="file" type="file" accept=".csv,.tsv,.json,.graphml,.zip,.txt" required>
-        </div>
-
-        <div id="edge-options" class="field-row field" hidden>
-          <div>
-            <label class="field-label" for="edge-rule">Edge rule</label>
-            <select id="edge-rule" name="edge_rule"></select>
-          </div>
-          <div id="window-field">
-            <label class="field-label" for="window-minutes">Window · min</label>
-            <input id="window-minutes" name="window_minutes" type="number" min="0" max="1440" step="1" value="5">
-          </div>
-        </div>
-        <div id="cap-field" class="field" hidden>
-          <label class="field-label" for="chat-cap">Maximum chat members</label>
-          <input id="chat-cap" name="chat_cap" type="number" min="1" max="10000" value="500">
-        </div>
-        <div id="upload-message" class="upload-message" role="status" aria-live="polite"></div>
-        <button id="upload-button" class="primary-button" type="submit">
-          <span aria-hidden="true">↑</span><span>Analyze file</span>
-        </button>
+  <section id="main-panel">
+    <div class="tabs">
+      <button data-tab="chat" class="active">Chat</button>
+      <button data-tab="graph">Graph</button>
+    </div>
+    <div class="tab-content active" id="tab-chat">
+      <div class="messages" id="messages">
+        <div class="empty">Pick a run above, then ask a question below.</div>
+      </div>
+      <form class="ask-form" id="ask-form">
+        <textarea id="question" placeholder="Ask a question..." rows="1"></textarea>
+        <button type="submit" id="ask-btn" class="os-btn">Ask</button>
       </form>
-      <div id="saved-menu" class="saved-menu">
-        <button id="saved-menu-toggle" class="saved-menu-trigger" type="button" aria-label="Saved runs" aria-expanded="false" aria-controls="recent-runs">
-          <span>Saved runs</span>
-          <span class="saved-menu-count" id="run-count">00</span>
-          <span class="saved-menu-chevron" aria-hidden="true">⌃</span>
-        </button>
-        <div id="recent-runs" class="saved-menu-panel recent-list" aria-live="polite" hidden></div>
-      </div>
-    </aside>
+    </div>
+    <div class="tab-content" id="tab-graph">
+      <iframe id="graph-iframe"></iframe>
+    </div>
+  </section>
+</main>
 
-    <section class="content" aria-label="Graph view">
-      <div class="content-header">
-        <div class="run-control">
-          <label class="field-label" for="run-select">Active run</label>
-          <select id="run-select" aria-label="Active graph run"></select>
-        </div>
-      </div>
+<script>
+(function(){
+  const state = {
+    runs: [],
+    current: null,
+    history: [],
+    asking: false,
+  };
 
-      <div class="overview" aria-label="Selected graph summary">
-        <div class="metric"><div id="node-count" class="metric-value">—</div><div class="metric-label">Nodes</div></div>
-        <div class="metric"><div id="edge-count" class="metric-value">—</div><div class="metric-label">Edges</div></div>
-        <div class="metric"><div id="component-count" class="metric-value">—</div><div class="metric-label">Components</div></div>
-      </div>
+  const $ = (id) => document.getElementById(id);
+  const escapeHtml = (s) => String(s).replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
 
-      <section class="query-section" aria-label="Ask a question">
-        <label class="field-label" for="question">Question</label>
-        <textarea id="question" class="question-input" placeholder="e.g. top 5 by pagerank">top 5 by pagerank</textarea>
-        <div class="query-actions">
-          <label class="llm-toggle" title="Use language model">
-            <input id="use-llm" type="checkbox" aria-label="Use language model">
-            <span aria-hidden="true">LLM</span>
-          </label>
-          <button id="ask-button" class="ask-button" type="button"><span aria-hidden="true">↗</span> Ask</button>
-        </div>
-        <div id="answer-area" class="answer-area" aria-live="polite"></div>
-        <div id="query-meta" class="query-meta" hidden></div>
-      </section>
-    </section>
-  </main>
-
-  <script>
-    const runSelect = document.getElementById("run-select");
-    const fileInput = document.getElementById("file-input");
-    const dropZone = document.getElementById("drop-zone");
-    const sourceSelect = document.getElementById("source-select");
-    const edgeOptions = document.getElementById("edge-options");
-    const edgeRule = document.getElementById("edge-rule");
-    const capField = document.getElementById("cap-field");
-    const windowField = document.getElementById("window-field");
-    const uploadMessage = document.getElementById("upload-message");
-    const uploadButton = document.getElementById("upload-button");
-    const askButton = document.getElementById("ask-button");
-    const answerArea = document.getElementById("answer-area");
-    const metaArea = document.getElementById("query-meta");
-    const savedMenu = document.getElementById("saved-menu");
-    const savedMenuToggle = document.getElementById("saved-menu-toggle");
-    const recentRuns = document.getElementById("recent-runs");
-    let runDetails = new Map();
-
-    function closeSavedRuns() {
-      savedMenu.dataset.open = "false";
-      savedMenuToggle.setAttribute("aria-expanded", "false");
-      recentRuns.hidden = true;
-    }
-
-    savedMenuToggle.addEventListener("click", () => {
-      const isOpen = savedMenuToggle.getAttribute("aria-expanded") === "true";
-      savedMenu.dataset.open = String(!isOpen);
-      savedMenuToggle.setAttribute("aria-expanded", String(!isOpen));
-      recentRuns.hidden = isOpen;
-    });
-
-    const ruleChoices = {
-      auto: [],
-      file: [],
-      slack: [["thread", "Shared thread"], ["channel", "Same channel"], ["mention", "Mentions"]],
-      telegram: [["reply", "Replies"], ["mention", "Mentions"], ["temporal", "Within time window"]],
-      whatsapp: [["temporal", "Within time window"], ["sequence", "Adjacent messages"], ["mention", "Mentions"]],
-    };
-
-    function setSelectOptions(select, items, placeholder) {
-      select.replaceChildren();
-      if (placeholder) select.add(new Option(placeholder, ""));
-      for (const [value, label] of items) select.add(new Option(label, value));
-    }
-
-    function updateSourceControls() {
-      const source = sourceSelect.value;
-      const choices = ruleChoices[source] || [];
-      edgeOptions.hidden = choices.length === 0;
-      capField.hidden = !["slack", "telegram", "whatsapp"].includes(source);
-      windowField.hidden = source !== "whatsapp";
-      setSelectOptions(edgeRule, choices, "Use format default");
-      if (source === "whatsapp") edgeRule.value = "temporal";
-      if (source === "telegram") edgeRule.value = "reply";
-      if (source === "slack") edgeRule.value = "thread";
-    }
-
-    function showUploadMessage(text, kind = "") {
-      uploadMessage.textContent = text;
-      uploadMessage.dataset.kind = kind;
-    }
-
-    function renderRecentRuns(runs) {
-      const list = document.getElementById("recent-runs");
-      document.getElementById("run-count").textContent = String(runs.length).padStart(2, "0");
-      list.replaceChildren();
-      if (!runs.length) {
-        const empty = document.createElement("div");
-        empty.className = "empty-runs";
-        empty.textContent = "No saved graphs yet.";
-        list.append(empty);
+  async function loadRuns() {
+    try {
+      const resp = await fetch('/api/runs');
+      const runs = await resp.json();
+      state.runs = runs
+        .filter(r => (r.nodes || 0) >= 5)
+        .sort((a, b) => (b.nodes || 0) - (a.nodes || 0));
+      const sel = $('run-selector');
+      sel.innerHTML = '';
+      if (!state.runs.length) {
+        sel.innerHTML = '<option value="">no runs</option>';
         return;
       }
-      for (const id of [...runs].reverse().slice(0, 8)) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "recent-item";
-        const run = document.createElement("span");
-        run.className = "recent-run";
-        run.textContent = id;
-        const source = document.createElement("span");
-        source.className = "recent-source";
-        source.textContent = runDetails.get(id)?.source || "saved";
-        button.append(run, source);
-        button.addEventListener("click", () => {
-          runSelect.value = id;
-          closeSavedRuns();
-          showRunDetails(id);
-        });
-        list.append(button);
+      for (const r of state.runs) {
+        const opt = document.createElement('option');
+        opt.value = r.run_id;
+        const display = r.run_id === 'wa-real' ? 'WhatsApp sample' : r.run_id;
+        opt.textContent = display + ' (' + (r.nodes||0) + 'n/' + (r.edges||0) + 'e)';
+        sel.appendChild(opt);
       }
+      await selectRun(state.runs[0].run_id);
+    } catch (e) {
+      console.error('loadRuns failed', e);
     }
+  }
 
-    async function showRunDetails(id) {
-      let info = runDetails.get(id);
-      if (id && !info) {
-        try {
-          const response = await fetch(`/api/runs/${encodeURIComponent(id)}`);
-          if (response.ok) {
-            info = await response.json();
-            runDetails.set(id, info);
+  async function selectRun(runId) {
+    state.current = runId;
+    state.history = [];
+    $('run-selector').value = runId;
+    $('messages').innerHTML = '<div class="empty">Ask a question below.</div>';
+    $('graph-iframe').src = '/graph/' + encodeURIComponent(runId);
+    loadSidebar(runId);
+  }
+
+  async function loadSidebar(runId) {
+    try {
+      const [commResp, tenseResp] = await Promise.all([
+        fetch('/api/communities/' + encodeURIComponent(runId)).then(r => r.json()),
+        fetch('/api/tense/' + encodeURIComponent(runId)).then(r => r.json()),
+      ]);
+      // stats
+      const run = state.runs.find(r => r.run_id === runId);
+      if (run) {
+        $('stat-nodes').textContent = run.nodes;
+        $('stat-edges').textContent = run.edges;
+      }
+      // communities
+      const comms = commResp.communities || [];
+      const cl = $('communities-list');
+      cl.innerHTML = '';
+      if (!comms.length) {
+        cl.innerHTML = '<div class="empty">none</div>';
+      } else {
+        for (const c of comms) {
+          const row = document.createElement('div');
+          row.className = 'comm-row';
+          row.innerHTML = '<span class="comm-hub">' + escapeHtml(c.hub) +
+            '<span class="verdict ' + c.verdict + '">' + c.verdict + '</span></span>' +
+            '<span class="comm-meta">' + c.size + '</span>';
+          cl.appendChild(row);
+        }
+      }
+      // tense
+      const edges = tenseResp.edges || [];
+      const tl = $('tense-list');
+      tl.innerHTML = '';
+      if (!edges.length) {
+        tl.innerHTML = '<div class="empty">none scored yet</div>';
+      } else {
+        for (const e of edges.slice(0, 8)) {
+          const row = document.createElement('div');
+          row.className = 'tense-row';
+          row.innerHTML = '<span class="tense-pair">' + escapeHtml(e.a) + ' \u2194 ' + escapeHtml(e.b) + '</span>' +
+            '<span class="tense-meta">' + e.message_count + ' messages \u00b7 ' + escapeHtml(e.label) + '</span>';
+          tl.appendChild(row);
+        }
+      }
+    } catch (e) {
+      console.error('loadSidebar failed', e);
+    }
+  }
+
+  function renderMessage(role, content, codeHistory, rounds) {
+    const msgs = $('messages');
+    // Clear the empty state on first real message
+    const empty = msgs.querySelector('.empty');
+    if (empty) empty.remove();
+
+    const div = document.createElement('div');
+    div.className = 'message';
+    let html = '';
+    if (role === 'user') {
+      html = '<div class="q-sender">you</div>' +
+             '<div class="q-text">' + escapeHtml(content) + '</div>';
+    } else {
+      html = '<div class="a-sender">answer</div>' +
+             '<div class="a-text">' + escapeHtml(content).replace(/\n/g, '<br>') + '</div>';
+      if (codeHistory && codeHistory.length) {
+        const n = codeHistory.length;
+        html += '<details><summary>how this was computed (' + n + ' round' + (n===1?'':'s') + ')</summary><div class="code-rail">';
+        for (const entry of codeHistory) {
+          html += '<div class="round">';
+          html += '<div class="round-label">round ' + entry.round + '</div>';
+          html += '<pre>' + escapeHtml(entry.code || '') + '</pre>';
+          if (entry.output) {
+            html += '<div class="out-label">output</div>';
+            html += '<pre>' + escapeHtml(entry.output) + '</pre>';
           }
-        } catch (_error) {
-          info = null;
+          if (entry.error) {
+            html += '<div class="out-label">error</div>';
+            html += '<pre>' + escapeHtml(entry.error) + '</pre>';
+          }
+          html += '</div>';
         }
+        html += '</div></details>';
       }
-      document.getElementById("node-count").textContent = info ? info.nodes.toLocaleString() : "—";
-      document.getElementById("edge-count").textContent = info ? info.edges.toLocaleString() : "—";
-      document.getElementById("component-count").textContent = info ? info.components.toLocaleString() : "—";
     }
+    div.innerHTML = html;
+    msgs.appendChild(div);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
 
-    async function loadRuns(preferredRun = "") {
-      const response = await fetch("/api/runs");
-      const runs = await response.json();
-      runSelect.replaceChildren();
-      for (const item of runs) {
-        const id = typeof item === "string" ? item : (item.run || item.run_id);
-        const optionText = typeof item === "object" && item.nodes !== undefined && item.edges !== undefined
-          ? `${id} (${item.nodes} nodes, ${item.edges} edges)`
-          : id;
-        const option = new Option(optionText, id);
-        runSelect.add(option);
-        if (typeof item === "object") runDetails.set(id, item);
+  function renderThinking() {
+    const msgs = $('messages');
+    const div = document.createElement('div');
+    div.className = 'message';
+    div.id = 'thinking';
+    div.innerHTML = '<div class="a-sender">answer</div><div class="a-text empty">exploring the data...</div>';
+    msgs.appendChild(div);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  function clearThinking() {
+    const t = $('thinking');
+    if (t) t.remove();
+  }
+
+  async function ask(question) {
+    if (state.asking || !state.current || !question.trim()) return;
+    state.asking = true;
+    $('ask-btn').disabled = true;
+    $('ask-btn').textContent = '...';
+
+    renderMessage('user', question);
+    $('question').value = '';
+    $('question').style.height = 'auto';
+    renderThinking();
+
+    try {
+      const resp = await fetch('/api/converse', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          run_id: state.current,
+          question: question,
+          history: state.history,
+        }),
+      });
+      clearThinking();
+      if (!resp.ok) {
+        const err = await resp.text();
+        renderMessage('assistant', 'Error: ' + err.slice(0, 300), [], 0);
+        return;
       }
-      renderRecentRuns(runs.map((item) => typeof item === "string" ? item : (item.run || item.run_id)));
-      if (preferredRun && runs.some((item) => (typeof item === "string" ? item : (item.run || item.run_id)) === preferredRun)) {
-        runSelect.value = preferredRun;
-      } else if ([...runSelect.options].some((option) => option.value === "r2012-v2")) {
-        runSelect.value = "r2012-v2";
-      }
-      await showRunDetails(runSelect.value);
+      const data = await resp.json();
+      renderMessage('assistant', data.answer || '(no answer)', data.code_history, data.rounds);
+      state.history.push({role: 'user', content: question});
+      state.history.push({role: 'assistant', content: data.answer});
+      // collapse explainer after first question
+      $('explainer').classList.add('collapsed');
+    } catch (e) {
+      clearThinking();
+      renderMessage('assistant', 'Network error: ' + e.message, [], 0);
+    } finally {
+      state.asking = false;
+      $('ask-btn').disabled = false;
+      $('ask-btn').textContent = 'Ask';
     }
+  }
 
-    function useFile(file) {
+  function setupTabs() {
+    document.querySelectorAll('.tabs button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        const tab = $('tab-' + btn.dataset.tab);
+        if (tab) tab.classList.add('active');
+      });
+    });
+  }
+
+  function setupForm() {
+    const form = $('ask-form');
+    const ta = $('question');
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      ask(ta.value);
+    });
+    ta.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        ask(ta.value);
+      }
+    });
+    ta.addEventListener('input', () => {
+      ta.style.height = 'auto';
+      ta.style.height = Math.min(ta.scrollHeight, 140) + 'px';
+    });
+  }
+
+  function setupUpload() {
+    const input = $('file-input');
+    input.addEventListener('change', async () => {
+      const file = input.files[0];
       if (!file) return;
-      const transfer = new DataTransfer();
-      transfer.items.add(file);
-      fileInput.files = transfer.files;
-      document.getElementById("drop-primary").textContent = file.name;
-      document.querySelector("#drop-zone .drop-secondary").textContent =
-        `${(file.size / 1024 / 1024).toFixed(2)} MB · click or drop to replace`;
-      showUploadMessage("");
-    }
-
-    fileInput.addEventListener("change", () => useFile(fileInput.files[0]));
-    sourceSelect.addEventListener("change", updateSourceControls);
-    runSelect.addEventListener("change", () => showRunDetails(runSelect.value));
-    dropZone.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        fileInput.click();
-      }
-    });
-    for (const eventName of ["dragenter", "dragover"]) {
-      dropZone.addEventListener(eventName, (event) => {
-        event.preventDefault();
-        dropZone.classList.add("is-over");
-      });
-    }
-    for (const eventName of ["dragleave", "drop"]) {
-      dropZone.addEventListener(eventName, (event) => {
-        event.preventDefault();
-        dropZone.classList.remove("is-over");
-      });
-    }
-    dropZone.addEventListener("drop", (event) => useFile(event.dataTransfer.files[0]));
-
-    document.getElementById("upload-form").addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const file = fileInput.files[0];
-      if (!file) {
-        showUploadMessage("Choose a file to analyze.", "error");
-        return;
-      }
       const form = new FormData();
-      form.append("file", file);
-      form.append("source", sourceSelect.value);
-      form.append("edge_rule", edgeRule.value);
-      form.append("window_minutes", document.getElementById("window-minutes").value || "5");
-      form.append("chat_cap", document.getElementById("chat-cap").value || "500");
-      uploadButton.disabled = true;
-      uploadButton.lastElementChild.textContent = "Analyzing…";
-      showUploadMessage("Reading file and building graph…");
-      try {
-        const response = await fetch("/api/uploads", {method: "POST", body: form});
-        const body = await response.json();
-        if (!response.ok) throw new Error(body.detail || "Upload failed.");
-        runDetails.set((body.run || body.run_id), body);
-        runSelect.value = (body.run || body.run_id);   // set it immediately
-        showRunDetails((body.run || body.run_id));     // update the sidebar with the data we have
-        showUploadMessage(`${body.title} · ${body.nodes} nodes · ${body.edges} edges · ${body.components} components`, "success");
-        answerArea.innerHTML = '<p class="answer-placeholder">Graph ready. Ask a question about its connections.</p>';
-        metaArea.hidden = true;
-        await loadRuns((body.run || body.run_id));     // update the list and recent runs
-      } catch (error) {
-        showUploadMessage(error.message || "Upload failed.", "error");
-      } finally {
-        uploadButton.disabled = false;
-        uploadButton.lastElementChild.textContent = "Analyze file";
+      form.append('file', file);
+      form.append('source', 'auto');
+      const resp = await fetch('/api/uploads', {method:'POST', body: form});
+      if (resp.ok) {
+        await loadRuns();
+      } else {
+        alert('Upload failed');
       }
+      input.value = '';
     });
+  }
 
-    async function askGraph() {
-      if (!runSelect.value) {
-        answerArea.innerHTML = '<p class="answer-placeholder">Upload a file first to create a graph.</p>';
-        return;
-      }
-      const question = document.getElementById("question").value.trim();
-      if (!question) return;
-      askButton.disabled = true;
-      askButton.lastChild.textContent = " Thinking…";
-      answerArea.innerHTML = '<p class="answer-placeholder">Following the connections…</p>';
-      metaArea.hidden = true;
-      try {
-        const response = await fetch("/api/ask", {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({
-            run: runSelect.value,
-            question,
-            use_llm: document.getElementById("use-llm").checked,
-            use_agent: false,
-          }),
-        });
-        const body = await response.json();
-        if (!response.ok) throw new Error(body.detail || "The question could not be answered.");
-        const answer = document.createElement("p");
-        answer.className = "answer-text";
-        answer.textContent = body.answer;
-        answerArea.replaceChildren(answer);
-        metaArea.replaceChildren();
-        for (const [label, value] of [
-          ["Intent", body.intent], ["Method", body.method], ["Confidence", body.trust], ["Runtime", `${body.runtime_ms} ms`],
-        ]) {
-          const item = document.createElement("div");
-          item.className = "meta-item";
-          const key = document.createElement("span");
-          key.className = "meta-label";
-          key.textContent = label;
-          const val = document.createElement("span");
-          val.className = "meta-value";
-          val.textContent = value;
-          item.append(key, val);
-          metaArea.append(item);
-        }
-        metaArea.hidden = false;
-      } catch (error) {
-        const message = document.createElement("p");
-        message.className = "answer-text answer-error";
-        message.textContent = error.message || "The question could not be answered.";
-        answerArea.replaceChildren(message);
-      } finally {
-        askButton.disabled = false;
-        askButton.lastChild.textContent = " Ask";
-      }
-    }
+  function setupRunSelector() {
+    $('run-selector').addEventListener('change', (e) => {
+      if (e.target.value) selectRun(e.target.value);
+    });
+  }
 
-    askButton.addEventListener("click", askGraph);
-    document.getElementById("question").addEventListener("keydown", (event) => {
-      if (event.key === "Enter" && !event.shiftKey) {
-        event.preventDefault();
-        askGraph();
-      }
-    });
-    updateSourceControls();
-    loadRuns().catch(() => {
-      document.getElementById("recent-runs").textContent = "Could not load saved runs.";
-    });
-  </script>
+  // Boot
+  setupTabs();
+  setupForm();
+  setupUpload();
+  setupRunSelector();
+  loadRuns();
+})();
+</script>
 </body>
 </html>

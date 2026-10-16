@@ -283,6 +283,49 @@ async def upload_graph(
     }
 
 
+@app.post("/api/converse")
+async def api_converse(req: dict) -> dict:
+    """Conversation loop: LLM writes code, iterates, answers."""
+    from osi.converse import converse
+    run_id = req.get("run_id")
+    question = (req.get("question") or "").strip()
+    history = req.get("history") or []
+    if not run_id or not question:
+        raise HTTPException(status_code=400, detail="run_id and question required")
+
+    meta = get_run(run_id)
+    if meta is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    layer = (meta.get("config") or {}).get("layer")
+    if not layer:
+        raise HTTPException(status_code=400, detail="run has no layer")
+    graph = load_graph(run_id, layer)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="graph not found")
+
+    # Load messages from the run if available
+    messages = []
+    try:
+        cfg = meta.get("config") or {}
+        path = cfg.get("path")
+        if path:
+            from osi.loaders.whatsapp import _parse_export
+            _, messages = _parse_export(path)
+    except Exception:
+        messages = []
+
+    try:
+        result = converse(question, graph, messages, verbose=False, history=history)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"converse failed: {e}")
+
+    return {
+        "answer": result.get("answer", ""),
+        "rounds": result.get("rounds", 0),
+        "code_history": result.get("code_history", []),
+    }
+
+
 @app.post("/api/ask")
 def post_ask(req: AskRequest) -> dict:
     """Run the pipeline and return the answer plus metadata.
@@ -336,6 +379,89 @@ def index() -> FileResponse:
 def static(path: str) -> FileResponse:
     """Serve static files from src/osi/static/."""
     return FileResponse(_static_file(path))
+
+
+@app.get("/api/communities/{run_id}")
+def api_communities(run_id: str) -> dict:
+    import networkx as nx
+    from osi.analysis import pagerank
+    meta = get_run(run_id)
+    if meta is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    layer = (meta.get("config") or {}).get("layer")
+    graph = load_graph(run_id, layer) if layer else None
+    if graph is None:
+        raise HTTPException(status_code=404, detail="graph not found")
+    try:
+        communities = list(nx.community.louvain_communities(graph, seed=42))
+    except Exception:
+        return {"communities": []}
+    pr = pagerank(graph)
+    out = []
+    for i, members in enumerate(communities):
+        n = len(members)
+        max_internal = n * (n - 1) / 2
+        internal = [(u, v) for u, v in graph.edges() if u in members and v in members]
+        density = len(internal) / max_internal if max_internal else 0
+        hub = max(members, key=lambda m: pr.get(m, 0))
+        hub_edges = sum(1 for u, v in internal if hub in (u, v))
+        hub_share = hub_edges / len(internal) if internal else 0
+        if density > 0.3 and hub_share < 0.6:
+            verdict = "real"
+        elif hub_share > 0.75 and density < 0.15:
+            verdict = "hub"
+        else:
+            verdict = "mixed"
+        out.append({"id": i, "size": n, "hub": hub, "density": round(density, 3),
+                    "hub_share": round(hub_share, 2), "verdict": verdict})
+    out.sort(key=lambda x: -x["size"])
+    return {"communities": out}
+
+
+@app.get("/api/tense/{run_id}")
+def api_tense(run_id: str) -> dict:
+    meta = get_run(run_id)
+    if meta is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    layer = (meta.get("config") or {}).get("layer")
+    graph = load_graph(run_id, layer) if layer else None
+    if graph is None:
+        raise HTTPException(status_code=404, detail="graph not found")
+    rows = []
+    for u, v, data in graph.edges(data=True):
+        label = data.get("llm_label")
+        if label in ("tense", "hostile", "condescending", "dismissive"):
+            rows.append({"a": u, "b": v, "label": label,
+                         "weight": data.get("weight", 1),
+                         "message_count": data.get("message_count", 0),
+                         "reason": (data.get("llm_reason") or "")[:200]})
+    rows.sort(key=lambda r: -r["message_count"])
+    return {"edges": rows}
+
+
+@app.get("/graph/{run_id}")
+def api_graph_html(run_id: str):
+    from fastapi.responses import HTMLResponse
+    from osi.viz import render_interactive_html
+    import tempfile
+    meta = get_run(run_id)
+    if meta is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    layer = (meta.get("config") or {}).get("layer")
+    graph = load_graph(run_id, layer) if layer else None
+    if graph is None:
+        raise HTTPException(status_code=404, detail="graph not found")
+    with tempfile.NamedTemporaryFile(suffix=".html", delete=False) as tmp:
+        tmp_path = tmp.name
+    try:
+        render_interactive_html(graph, tmp_path, top_edges=120, min_edge_weight=2.0, top_labels=40)
+        html = Path(tmp_path).read_text(encoding="utf-8")
+    finally:
+        try:
+            Path(tmp_path).unlink()
+        except Exception:
+            pass
+    return HTMLResponse(content=html)
 
 
 def main() -> None:
