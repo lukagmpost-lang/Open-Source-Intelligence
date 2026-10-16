@@ -1,0 +1,32 @@
+{
+  "Stella|Нина Дубовец": {
+    "polarity": -0.2,
+    "label": "tense",
+    "reason": "Stella’s messages are highly emotional and accusatory, while Nina’s replies are formal, factual, and largely non‑confrontational. The dynamic shows Stella driving the conversation with complaints, and Nina responding in a detached, procedural tone, creating a strained, tense interaction."
+  },
+  "Dmitrij Bleszynski|Дерябина Лариса Валентиновна Кипр": {
+    "polarity": 0.1,
+    "label": "tense",
+    "reason": "Person A dominates the conversation with emotional complaints and frequent initiations, while Person B responds with formal, legalistic language that feels dismissive and corrective. The tone is strained, with A’s frustration meeting B’s bureaucratic rigidity, creating a tense dynamic."
+  },
+  "Stella|Дерябина Лариса Валентиновна Кипр": {
+    "polarity": 0.1,
+    "label": "tense",
+    "reason": "Larisa’s messages are highly emotional and accusatory, while Stella responds in a calm, factual tone, often offering solutions or information. The imbalance in emotional intensity and the lack of reciprocal warmth create a strained dynamic."
+  },
+  "Dmitrij Bleszynski|Нина Дубовец": {
+    "polarity": -0.6,
+    "label": "tense",
+    "reason": "Dmitrij’s messages are formal, legalistic, and often accusatory, while Nina’s replies are informal, supportive, and defensive. The tone is strained, with Dmitrij initiating criticism and Nina responding with updates and justifications, creating a clear power imbalance and tension."
+  },
+  "Маша Гусева|Нина Дубовец": {
+    "polarity": 0.1,
+    "label": "tense",
+    "reason": "Masha’s messages mix sarcasm and blunt criticism, while Nina responds with formal updates and occasional accusations. The back‑and‑forth shows a power imbalance where Nina dominates with authoritative information, and Masha feels defensive, leading to a strained, tense dynamic."
+  },
+  "Наташа Садовская А101|Нина Дубовец": {
+    "polarity": -0.4,
+    "label": "tense",
+    "reason": "Natasha’s messages are highly critical, emotional, and confrontational, while Nina’s replies are formal, calm, and informational. The dynamic shows Natasha pushing and accusing, with Nina responding in a more detached, authoritative tone, creating a strained, tense interaction."
+  }
+}

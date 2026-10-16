@@ -27,6 +27,12 @@ from osi.store import create_run, get_run, list_runs, load_graph, save_graph, st
 
 app = FastAPI()
 
+
+@app.on_event("startup")
+async def _on_startup():
+    _ensure_demo_run()
+
+
 _STATIC = Path(__file__).resolve().parent / "static"
 _MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
@@ -464,7 +470,57 @@ def api_graph_html(run_id: str):
     return HTMLResponse(content=html)
 
 
+def _ensure_demo_run() -> None:
+    """Create wa-real from the bundled example if it doesn't exist yet."""
+    import json as _json
+    try:
+        from osi.store import get_run, create_run as _create, save_graph as _save
+        if get_run("wa-real") is not None:
+            return
+    except Exception:
+        return
+
+    root = Path(__file__).resolve().parents[2]
+    fixture = root / "examples" / "whatsapp-demo.txt"
+    labels_file = root / "examples" / "whatsapp-demo-edges.json"
+    if not fixture.exists():
+        return
+
+    try:
+        from osi.loaders.whatsapp import load_whatsapp_export
+        graph, _meta = load_whatsapp_export(str(fixture), edge_rule="sequence")
+    except Exception:
+        return
+
+    if labels_file.exists():
+        try:
+            labels = _json.loads(labels_file.read_text(encoding="utf-8"))
+            for key, result in labels.items():
+                if "|" not in key:
+                    continue
+                a, b = key.split("|", 1)
+                if graph.has_edge(a, b):
+                    graph[a][b]["llm_label"] = result.get("label")
+                    graph[a][b]["llm_polarity"] = result.get("polarity")
+                    graph[a][b]["llm_reason"] = result.get("reason")
+        except Exception:
+            pass
+
+    try:
+        rid = _create(
+            "whatsapp",
+            {"source": "whatsapp", "layer": "whatsapp", "edge_rule": "sequence",
+             "path": str(fixture)},
+            "WhatsApp sample",
+            run_id="wa-real",
+        )
+        _save(rid, "whatsapp", graph)
+    except Exception:
+        pass
+
+
 def main() -> None:
+    _ensure_demo_run()
     """Bind every interface. Render sets PORT; local use defaults to 7860.
 
     uvicorn reads the port at start. The request handlers do not.
