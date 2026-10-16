@@ -118,6 +118,47 @@ def _parse_action(reply):
         return None
 
 
+_RESOLVE_PROMPT = """Below is a conversation and a new question. Rewrite the new
+question so that any pronouns (they, them, those, these, he, she, it) are
+replaced with the specific people named in the previous assistant answer.
+
+If the new question has no pronouns, return it unchanged.
+If you cannot determine who the pronouns refer to, return it unchanged.
+
+Return ONLY the rewritten question, nothing else.
+
+CONVERSATION:
+{conversation}
+
+NEW QUESTION: {question}
+
+REWRITTEN:"""
+
+
+def _resolve_question(question, history):
+    """If the question has pronouns, rewrite it using the prior conversation."""
+    if not history:
+        return question
+    # Build a short view of recent turns
+    turns = []
+    for h in history[-4:]:
+        role = h.get("role", "?")
+        content = (h.get("content") or "")[:600]
+        turns.append(role.upper() + ": " + content)
+    conversation_text = "\n\n".join(turns)
+    prompt = _RESOLVE_PROMPT.format(conversation=conversation_text, question=question)
+    try:
+        rewritten = call_llm(prompt, temperature=0.0).strip()
+    except Exception:
+        return question
+    # Sanity: don't accept an empty or absurdly long response
+    if not rewritten or len(rewritten) > 400:
+        return question
+    # Strip quotes if the model wrapped the answer
+    rewritten = rewritten.strip('"\'' )
+    return rewritten
+
+
 def _load_extras():
     extras = {"framings": [], "irony_candidates": []}
     try:
@@ -136,12 +177,19 @@ def _load_extras():
     return extras
 
 
-def converse(question, graph, messages, max_rounds=4, verbose=False):
+def converse(question, graph, messages, max_rounds=4, verbose=False, history=None):
     extras = _load_extras()
-    history = [
-        {"role": "system", "content": _SYSTEM},
-        {"role": "user", "content": question},
-    ]
+    prior = history if history is not None else []
+    original_question = question
+    if prior:
+        question = _resolve_question(question, prior)
+        if question != original_question:
+            print("[resolved] " + question)
+    conversation = [{"role": "system", "content": _SYSTEM}]
+    for h in prior[-6:]:
+        conversation.append(h)
+    conversation.append({"role": "user", "content": question})
+    history = conversation
     code_history = []
 
     for round_num in range(max_rounds):
@@ -169,7 +217,11 @@ def converse(question, graph, messages, max_rounds=4, verbose=False):
 
         kind = action.get("action")
         if kind == "answer":
-            return {"answer": action.get("answer", "").strip(),
+            answer_text = action.get("answer", "").strip()
+            if prior is not None:
+                prior.append({"role": "user", "content": question})
+                prior.append({"role": "assistant", "content": answer_text})
+            return {"answer": answer_text,
                     "rounds": round_num + 1, "code_history": code_history}
 
         if kind == "run_python":
@@ -233,6 +285,9 @@ def converse(question, graph, messages, max_rounds=4, verbose=False):
         return {"answer": "LLM error on final answer: " + str(e),
                 "rounds": max_rounds, "code_history": code_history}
 
+    if prior is not None:
+        prior.append({"role": "user", "content": question})
+        prior.append({"role": "assistant", "content": answer_text.strip()})
     return {"answer": answer_text.strip(),
             "rounds": max_rounds, "code_history": code_history}
 
