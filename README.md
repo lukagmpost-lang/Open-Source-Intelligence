@@ -1,4 +1,4 @@
-# Open-Source-Intelligence
+# Lattice
 
 Local multi-layer graph of public social relations. Accounts are nodes, public relations are weighted edges, and each relation type is a layer.
 
