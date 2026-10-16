@@ -10,3 +10,6 @@ networkx==3.7
 
 # Optional extra "web": the FastAPI page. The CLI does not import it.
 # pip install fastapi uvicorn
+
+# Interactive HTML graph for the /graph endpoint.
+pyvis==0.3.2
