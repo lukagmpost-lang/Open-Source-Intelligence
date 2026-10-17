@@ -28,6 +28,11 @@ Objects available in your code:
   confidence, reason. Precomputed: messages already flagged as possibly
   ironic. USE THIS for questions about sarcasm, passive aggression, hidden
   hostility.
+- commitments: list of dicts with keys speaker, target, obligation,
+  stated_at, status ('fulfilled' / 'violated' / 'unresolved'), evidence_index,
+  violation_reason. Precomputed: promises people made and whether they
+  were kept. USE THIS for questions about broken promises, who owes what,
+  reliability, or follow-through.
 
 Allowed imports: networkx (as nx), math, statistics, collections, itertools,
 re, json, datetime.
@@ -160,7 +165,12 @@ def _resolve_question(question, history):
 
 
 def _load_extras():
-    extras = {"framings": [], "irony_candidates": []}
+    extras = {"framings": [], "irony_candidates": [], "commitments": []}
+    try:
+        from osi.commitments import load_commitments
+        extras["commitments"] = load_commitments()
+    except Exception:
+        pass
     try:
         from osi.framing import load_framings
         extras["framings"] = load_framings()

@@ -19,7 +19,7 @@ from osi.answer import call_llm
 PROMPT_VERSION = "v1"
 MODEL_NAME = "openai/gpt-oss-120b"
 SLEEP_BETWEEN_CALLS = 32
-FAILOVER_MODELS = ["openai-fast"]  # seconds between LLM calls
+FAILOVER_MODELS = ["qwen/qwen3.8-27b"]
 
 DEFAULT_DB_PATH = Path.home() / ".osi" / "store.db"
 
@@ -359,6 +359,138 @@ def extract_commitments(
     return {
         "commitments": _dedupe(commitments),
         "directives": _dedupe(directives),
+    }
+
+
+_VIOLATION_PROMPT = """You are checking whether a commitment was KEPT or BROKEN.
+
+Commitment:
+  Speaker: {speaker}
+  Target: {target}
+  Obligation: {obligation}
+  Stated at: {stated_at}
+
+Below are messages that came AFTER this commitment. Look for:
+  - FULFILLED evidence: the thing was done, thanked for, confirmed
+  - VIOLATED evidence: someone complains it was missed, or later messages
+    reference it as still outstanding
+  - UNRESOLVED: no clear signal either way
+
+Reply with ONLY a JSON object, nothing else:
+{{"status": "fulfilled" | "violated" | "unresolved",
+  "evidence_idx": <int or null>,
+  "reason": "<one sentence>"}}
+
+MESSAGES:
+{messages}
+"""
+
+
+def _format_window(block, start_idx):
+    lines = []
+    for i, m in enumerate(block):
+        sender = m.get("sender", "?")
+        text = (m.get("text") or "").replace("\n", " ")[:200]
+        lines.append(str(start_idx + i) + ": " + sender + ": " + text)
+    return "\n".join(lines)
+
+
+def _parse_violation(reply):
+    import json as _json
+    text = (reply or "").strip()
+    if text.startswith("```"):
+        parts = text.split("```")
+        if len(parts) >= 2:
+            text = parts[1]
+            if text.startswith("json"):
+                text = text[4:]
+            text = text.strip()
+    try:
+        return _json.loads(text)
+    except Exception:
+        s, e = text.find("{"), text.rfind("}")
+        if s == -1 or e == -1:
+            return {}
+        try:
+            return _json.loads(text[s:e+1])
+        except Exception:
+            return {}
+
+
+def detect_violations(commitments, messages, window=400, sleep_seconds=20):
+    """For each commitment, look forward for evidence it was kept or broken.
+
+    Evidence is recorded with its source index so the gate can later filter
+    on 'was there a violation BEFORE this message'.
+    """
+    import time as _time
+    updated = []
+    for i, c in enumerate(commitments):
+        stated = c.get("source_index", 0)
+        slice_start = stated + 1
+        slice_end = min(len(messages), stated + window)
+        if slice_start >= slice_end:
+            c["status"] = c.get("status") or "unresolved"
+            updated.append(c)
+            continue
+
+        if i > 0 and sleep_seconds:
+            print("[ledger] sleeping " + str(sleep_seconds) + "s", file=sys.stderr)
+            _time.sleep(sleep_seconds)
+
+        prompt = _VIOLATION_PROMPT.format(
+            speaker=c.get("speaker", ""),
+            target=c.get("target") or "the group",
+            obligation=c.get("obligation", ""),
+            stated_at=c.get("stated_at", ""),
+            messages=_format_window(messages[slice_start:slice_end], slice_start),
+        )
+        print("[ledger] checking commitment " + str(i+1) + "/" + str(len(commitments)) +
+              " (" + c.get("speaker", "") + " -> " + (c.get("obligation") or "")[:40] + ")",
+              file=sys.stderr)
+
+        try:
+            reply = call_llm(prompt, temperature=0.0)
+        except Exception as e:
+            print("[ledger] LLM error: " + str(e), file=sys.stderr)
+            c["status"] = c.get("status") or "unresolved"
+            updated.append(c)
+            continue
+
+        result = _parse_violation(reply)
+        status = (result.get("status") or "unresolved").lower()
+        if status not in ("fulfilled", "violated", "unresolved"):
+            status = "unresolved"
+        c["status"] = status
+        ev = result.get("evidence_idx")
+        if isinstance(ev, int) and 0 <= ev < len(messages):
+            c["evidence_index"] = ev
+            msg = messages[ev]
+            c["violated_at"] = msg.get("date").isoformat() if hasattr(msg.get("date"), "isoformat") else str(msg.get("date"))
+        c["violation_reason"] = (result.get("reason") or "")[:200]
+        updated.append(c)
+
+    return updated
+
+
+def commitment_summary(db_path=None):
+    """Aggregate: top speakers, top targets, status counts."""
+    rows = load_commitments(db_path)
+    from collections import Counter
+    by_speaker = Counter(r["speaker"] for r in rows)
+    by_target = Counter(r.get("target") for r in rows if r.get("target") and r.get("target") != "group")
+    status = Counter(r.get("status", "unresolved") for r in rows)
+    violated = [r for r in rows if r.get("status") == "violated"]
+    return {
+        "total": len(rows),
+        "by_status": dict(status),
+        "top_speakers": by_speaker.most_common(10),
+        "top_targets": by_target.most_common(10),
+        "violated_examples": [
+            {"speaker": r["speaker"], "obligation": r["obligation"],
+             "reason": r.get("violation_reason", "")[:120]}
+            for r in violated[:5]
+        ],
     }
 
 
